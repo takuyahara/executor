@@ -7,6 +7,7 @@ import {
 import {
   makeControlPlaneToolsService,
   type ControlPlaneToolsServiceShape,
+  type SourceToolDetail,
   type SourceToolSummary,
 } from "@executor-v2/management-api";
 import {
@@ -175,5 +176,78 @@ export const createPmToolsService = (
       listSourceTools(sourceStore, toolArtifactStore, {
         workspaceId: input.workspaceId,
         sourceId: input.sourceId,
+      }),
+
+    getToolDetail: (input) =>
+      Effect.gen(function* () {
+        const sourceOption = yield* sourceStore
+          .getById(input.workspaceId, input.sourceId)
+          .pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromSourceStore("tools.get_detail_source", error),
+            ),
+          );
+
+        const source = Option.getOrNull(sourceOption);
+        if (source === null) {
+          return null;
+        }
+
+        const artifactOption = yield* toolArtifactStore
+          .getBySource(input.workspaceId, input.sourceId)
+          .pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromToolArtifactStore("tools.get_detail_artifact", error),
+            ),
+          );
+
+        const artifact = Option.getOrNull(artifactOption);
+        if (artifact === null) {
+          return null;
+        }
+
+        const manifestResult = yield* Effect.try({
+          try: () => JSON.parse(artifact.manifestJson) as unknown,
+          catch: () => null as never,
+        }).pipe(Effect.option);
+
+        if (Option.isNone(manifestResult)) {
+          return null;
+        }
+
+        const decoded = yield* decodeOpenApiToolManifest(manifestResult.value).pipe(
+          Effect.option,
+        );
+
+        if (Option.isNone(decoded)) {
+          return null;
+        }
+
+        const manifest = decoded.value;
+        const tool = manifest.tools.find((t) => t.operationHash === input.operationHash);
+        if (!tool) {
+          return null;
+        }
+
+
+
+        const detail: SourceToolDetail = {
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceKind: source.kind,
+          toolId: tool.toolId,
+          name: tool.name,
+          description: tool.description,
+          method: tool.method,
+          path: tool.path,
+          operationHash: tool.operationHash,
+          inputSchemaJson: tool.typing?.inputSchemaJson ?? null,
+          outputSchemaJson: tool.typing?.outputSchemaJson ?? null,
+          refHintTableJson: manifest.refHintTable
+            ? JSON.stringify(manifest.refHintTable)
+            : null,
+        };
+
+        return detail;
       }),
   });

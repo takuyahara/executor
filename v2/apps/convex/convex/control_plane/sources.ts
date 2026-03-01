@@ -160,8 +160,8 @@ export const setSourceIngestState = internalMutation({
 
     await ctx.db.patch(sourceRow._id, {
       status: args.status,
-      sourceHash: args.sourceHash ?? sourceRow.sourceHash,
-      lastError: args.lastError ?? sourceRow.lastError,
+      sourceHash: args.sourceHash !== undefined ? args.sourceHash : sourceRow.sourceHash,
+      lastError: args.lastError !== undefined ? args.lastError : sourceRow.lastError,
       updatedAt: Date.now(),
     });
   },
@@ -187,15 +187,37 @@ export const removeSource = mutation({
       return { removed: false };
     }
 
-    const existingBinding = await ctx.db
+    const existingOpenApiBinding = await ctx.db
       .query("openApiSourceArtifactBindings")
       .withIndex("by_workspaceId_sourceId", (q) =>
         q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
       )
       .unique();
 
-    if (existingBinding) {
-      await ctx.db.delete(existingBinding._id);
+    if (existingOpenApiBinding) {
+      await ctx.db.delete(existingOpenApiBinding._id);
+    }
+
+    const existingGraphqlBinding = await ctx.db
+      .query("graphqlSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
+      )
+      .unique();
+
+    if (existingGraphqlBinding) {
+      await ctx.db.delete(existingGraphqlBinding._id);
+    }
+
+    const existingMcpBinding = await ctx.db
+      .query("mcpSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
+      )
+      .unique();
+
+    if (existingMcpBinding) {
+      await ctx.db.delete(existingMcpBinding._id);
     }
 
     await ctx.db.delete(existing._id);

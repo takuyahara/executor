@@ -892,12 +892,15 @@ function asyncSyscallImpl() {
                         if (job === null) {
                             return;
                         }
-                        if (job.state.kind !== "inProgress") {
+                        if (job.state.kind === "canceled") {
+                            return;
+                        }
+                        if (job.state.kind !== "inProgress" && job.state.kind !== "pending") {
                             throw new Error(`\`convexTest\` invariant error: Unexpected scheduled function state after it finished running: ${job.state.kind}`);
                         }
                         await writeToDatabase(async (txDb) => {
                             const latestJob = txDb.get("_scheduled_functions", jobId);
-                            if (latestJob !== null) {
+                            if (latestJob !== null && latestJob.state.kind !== "canceled") {
                                 txDb.patch("_scheduled_functions", jobId, {
                                     state: { kind: "success" },
                                 });

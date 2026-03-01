@@ -1,6 +1,7 @@
 "use client";
 
 import { RegistryProvider } from "@effect-atom/atom-react";
+import { ThemeProvider } from "next-themes";
 import type { ReactNode } from "react";
 
 type ProvidersProps = {
@@ -8,5 +9,12 @@ type ProvidersProps = {
 };
 
 export const Providers = ({ children }: ProvidersProps) => (
-  <RegistryProvider>{children}</RegistryProvider>
+  <ThemeProvider
+    attribute="class"
+    defaultTheme="dark"
+    enableSystem
+    enableColorScheme
+  >
+    <RegistryProvider>{children}</RegistryProvider>
+  </ThemeProvider>
 );

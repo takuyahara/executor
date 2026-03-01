@@ -1,6 +1,5 @@
-import { WorkerEntrypoint } from "cloudflare:workers";
+import { RpcTarget } from "cloudflare:workers";
 
-import GLOBALS_MODULE from "./isolate/globals.isolate.js";
 import HARNESS_CODE from "./isolate/harness.isolate.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -53,6 +52,10 @@ type BridgeProps = {
   runId: string;
 };
 
+type SandboxEntrypoint = {
+  evaluate: (bridge: ToolBridge) => Promise<RunResult>;
+};
+
 type Env = {
   AUTH_TOKEN: string;
   LOADER: {
@@ -66,9 +69,7 @@ type Env = {
         globalOutbound: null;
       }>,
     ) => {
-      getEntrypoint: () => {
-        fetch: (url: string, init: RequestInit) => Promise<Response>;
-      };
+      getEntrypoint: () => SandboxEntrypoint;
     };
   };
 };
@@ -184,62 +185,33 @@ const validateRunRequest = (value: unknown): RunRequest | null => {
 const buildUserModule = (userCode: string): string =>
   `export async function run(tools, console) {\n"use strict";\n${userCode}\n}\n`;
 
-const getBridgePropsFromContext = (
-  context: ExecutionContext | Record<string, unknown> | null | undefined,
-): BridgeProps => {
-  if (!isObjectRecord(context) || !isObjectRecord(context.props)) {
-    throw new Error("ToolBridge props are missing");
-  }
+class ToolBridge extends RpcTarget {
+  readonly #props: BridgeProps;
 
-  const props = context.props;
-
-  if (
-    typeof props.callbackUrl !== "string" ||
-    typeof props.runId !== "string"
-  ) {
-    throw new Error("ToolBridge props are invalid");
-  }
-
-  if (
-    props.callbackInternalSecret !== null &&
-    props.callbackInternalSecret !== undefined &&
-    typeof props.callbackInternalSecret !== "string"
-  ) {
-    throw new Error("ToolBridge callback secret is invalid");
-  }
-
-  return {
-    callbackUrl: props.callbackUrl,
-    callbackInternalSecret:
-      props.callbackInternalSecret === undefined ? null : props.callbackInternalSecret,
-    runId: props.runId,
-  };
-};
-
-class ToolBridge extends WorkerEntrypoint<Env> {
-  private get props(): BridgeProps {
-    return getBridgePropsFromContext(this.ctx);
+  constructor(props: BridgeProps) {
+    super();
+    this.#props = props;
   }
 
   async callTool(
     toolPath: string,
     input: unknown,
-    callId?: string,
+    callId: string,
   ): Promise<RuntimeToolCallResult> {
     const headers = new Headers({
       "content-type": "application/json",
     });
 
-    if (this.props.callbackInternalSecret) {
-      headers.set("x-internal-secret", this.props.callbackInternalSecret);
+    if (this.#props.callbackInternalSecret) {
+      headers.set("x-internal-secret", this.#props.callbackInternalSecret);
     }
 
-    const response = await fetch(this.props.callbackUrl, {
+    const response = await fetch(this.#props.callbackUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({
-        runId: this.props.runId,
-        callId: callId ?? `call_${crypto.randomUUID()}`,
+        runId: this.#props.runId,
+        callId,
         toolPath,
         input,
       }),
@@ -274,28 +246,15 @@ class ToolBridge extends WorkerEntrypoint<Env> {
 
 const executeSandboxRun = async (
   request: RunRequest,
-  ctx: ExecutionContext,
   env: Env,
 ): Promise<RunResult> => {
   const timeoutMsRaw = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const timeoutMs = Math.max(1, Math.min(MAX_TIMEOUT_MS, Math.floor(timeoutMsRaw)));
 
-  const contextAsRecord = ctx as unknown as Record<string, unknown>;
-  if (!isObjectRecord(contextAsRecord.exports)) {
-    return toFailedResult("Execution context exports are unavailable");
-  }
-
-  const toolBridgeFactory = contextAsRecord.exports.ToolBridge;
-  if (typeof toolBridgeFactory !== "function") {
-    return toFailedResult("Execution context ToolBridge export is unavailable");
-  }
-
-  const toolBridgeBinding = toolBridgeFactory({
-    props: {
-      callbackUrl: request.callback.url,
-      callbackInternalSecret: request.callback.internalSecret ?? null,
-      runId: request.runId,
-    },
+  const toolBridge = new ToolBridge({
+    callbackUrl: request.callback.url,
+    callbackInternalSecret: request.callback.internalSecret ?? null,
+    runId: request.runId,
   });
 
   const worker = env.LOADER.get(request.taskId, async () => ({
@@ -303,44 +262,45 @@ const executeSandboxRun = async (
     mainModule: "harness.js",
     modules: {
       "harness.js": HARNESS_CODE,
-      "globals.js": GLOBALS_MODULE,
       "user-code.js": buildUserModule(request.code),
     },
-    env: {
-      TOOL_BRIDGE: toolBridgeBinding,
-    },
+    env: {},
     globalOutbound: null,
   }));
 
   const entrypoint = worker.getEntrypoint();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
-  let response: Response;
+  let payload: RunResult;
   try {
-    response = await entrypoint.fetch("http://sandbox.internal/run", {
-      method: "POST",
-      signal: controller.signal,
+    const timeoutResult = new Promise<RunResult>((resolve) => {
+      timer = setTimeout(() => {
+        resolve({
+          status: "timed_out",
+          error: `Execution timed out after ${timeoutMs}ms`,
+        });
+      }, timeoutMs);
     });
-  } catch (error) {
-    clearTimeout(timer);
-    if (error instanceof DOMException && error.name === "AbortError") {
-      return {
-        status: "timed_out",
-        error: `Execution timed out after ${timeoutMs}ms`,
-      };
-    }
 
+    payload = await Promise.race([
+      entrypoint.evaluate(toolBridge),
+      timeoutResult,
+    ]);
+  } catch (error) {
+    if (timer) {
+      clearTimeout(timer);
+    }
     return toFailedResult(
-      `Sandbox isolate request failed: ${
+      `Sandbox isolate execution failed: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
   }
 
-  clearTimeout(timer);
+  if (timer) {
+    clearTimeout(timer);
+  }
 
-  const payload = await response.json().catch(() => null);
   if (!isRunResult(payload)) {
     return toFailedResult("Sandbox isolate returned invalid response payload");
   }
@@ -351,7 +311,7 @@ const executeSandboxRun = async (
 export { ToolBridge };
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
@@ -376,7 +336,7 @@ export default {
       return json({ error: "invalid_payload" }, 400);
     }
 
-    const runResult = await executeSandboxRun(payload, ctx, env);
+    const runResult = await executeSandboxRun(payload, env);
     return json(runResult, 200);
   },
 };

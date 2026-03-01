@@ -43,7 +43,9 @@ export {
 } from "./organizations/api";
 
 export {
+  SourceToolDetailSchema,
   SourceToolSummarySchema,
+  type SourceToolDetail,
   type SourceToolSummary,
 } from "./tools/api";
 

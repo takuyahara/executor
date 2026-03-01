@@ -1,13 +1,19 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@custom-variant dark (&:is(.dark *));
+
 @theme inline {
-  --font-sans: var(--font-body), "IBM Plex Sans", sans-serif;
+  --font-sans: var(--font-body), "IBM Plex Sans", ui-sans-serif, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --font-display: var(--font-display), "Fraunces", serif;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -20,25 +26,68 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-active: var(--sidebar-active);
 }
 
 :root {
-  --background: oklch(0.986 0.01 92);
-  --foreground: oklch(0.22 0.01 96);
-  --card: oklch(0.995 0.004 95);
-  --card-foreground: oklch(0.22 0.01 96);
-  --primary: oklch(0.51 0.13 170);
-  --primary-foreground: oklch(0.98 0.004 120);
-  --secondary: oklch(0.95 0.008 85);
-  --secondary-foreground: oklch(0.32 0.01 92);
-  --muted: oklch(0.95 0.008 90);
-  --muted-foreground: oklch(0.48 0.015 92);
-  --accent: oklch(0.93 0.01 160);
-  --accent-foreground: oklch(0.26 0.02 165);
-  --destructive: oklch(0.56 0.2 25);
-  --border: oklch(0.88 0.01 92);
-  --input: oklch(0.88 0.01 92);
-  --ring: oklch(0.51 0.13 170);
+  --background: oklch(0.985 0.002 260);
+  --foreground: oklch(0.18 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 260);
+  --primary: oklch(0.45 0.18 155);
+  --primary-foreground: oklch(0.98 0.005 155);
+  --secondary: oklch(0.95 0.005 260);
+  --secondary-foreground: oklch(0.30 0.01 260);
+  --muted: oklch(0.94 0.005 260);
+  --muted-foreground: oklch(0.45 0.01 260);
+  --accent: oklch(0.94 0.008 260);
+  --accent-foreground: oklch(0.18 0.01 260);
+  --destructive: oklch(0.55 0.22 25);
+  --border: oklch(0.88 0.008 260);
+  --input: oklch(0.88 0.008 260);
+  --ring: oklch(0.45 0.18 155);
+
+  --sidebar: oklch(0.97 0.004 260);
+  --sidebar-foreground: oklch(0.30 0.01 260);
+  --sidebar-border: oklch(0.88 0.008 260);
+  --sidebar-active: oklch(0.93 0.01 260);
+
+  --shiki-light: #24292e;
+  --shiki-light-bg: #ffffff;
+  --shiki-dark: #e1e4e8;
+  --shiki-dark-bg: #0d1117;
+}
+
+.dark {
+  --background: oklch(0.11 0.005 260);
+  --foreground: oklch(0.88 0.01 250);
+  --card: oklch(0.15 0.005 260);
+  --card-foreground: oklch(0.88 0.01 250);
+  --popover: oklch(0.15 0.005 260);
+  --popover-foreground: oklch(0.88 0.01 250);
+  --primary: oklch(0.75 0.18 155);
+  --primary-foreground: oklch(0.13 0.01 155);
+  --secondary: oklch(0.2 0.008 260);
+  --secondary-foreground: oklch(0.75 0.01 250);
+  --muted: oklch(0.18 0.005 260);
+  --muted-foreground: oklch(0.55 0.01 250);
+  --accent: oklch(0.2 0.01 260);
+  --accent-foreground: oklch(0.88 0.01 250);
+  --destructive: oklch(0.65 0.22 25);
+  --border: oklch(0.24 0.008 260);
+  --input: oklch(0.2 0.008 260);
+  --ring: oklch(0.75 0.18 155);
+
+  --sidebar: oklch(0.13 0.005 260);
+  --sidebar-foreground: oklch(0.75 0.01 250);
+  --sidebar-border: oklch(0.22 0.008 260);
+  --sidebar-active: oklch(0.2 0.01 260);
 }
 
 @layer base {
@@ -52,10 +101,27 @@
   }
 
   body {
-    @apply font-sans text-foreground antialiased;
-    background:
-      radial-gradient(circle at 12% 18%, color-mix(in oklch, var(--primary) 22%, transparent), transparent 42%),
-      radial-gradient(circle at 84% 6%, oklch(0.8 0.07 84 / 0.35), transparent 38%),
-      linear-gradient(170deg, #f3f0e6 0%, #f7f4ec 58%, #ece6d9 100%);
+    @apply bg-background font-sans text-foreground antialiased;
   }
+}
+
+[style*="--shiki-light"] {
+  color: var(--shiki-light) !important;
+  background-color: transparent !important;
+}
+
+.dark [style*="--shiki-dark"] {
+  color: var(--shiki-dark) !important;
+  background-color: transparent !important;
+}
+
+.dark [style*="--shiki-light"] {
+  color: var(--shiki-dark) !important;
+  background-color: transparent !important;
+}
+
+[data-streamdown="code-block-body"] {
+  background-color: var(--muted) !important;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
 }

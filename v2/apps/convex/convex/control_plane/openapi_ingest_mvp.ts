@@ -12,12 +12,27 @@ const defaultExtractorVersion = "openapi_mvp_v1";
 const defaultToolBatchSize = 100;
 const maxToolBatchSize = 1000;
 
+const maxRefHintBytes = 900_000;
+
+const safeRefHintTableJson = (
+  refHintTable: Record<string, unknown> | undefined,
+): string | null => {
+  if (!refHintTable) {
+    return null;
+  }
+
+  const serialized = JSON.stringify(refHintTable);
+  const bytes = new TextEncoder().encode(serialized).length;
+  return bytes <= maxRefHintBytes ? serialized : null;
+};
+
 
 export const upsertOpenApiArtifactMeta = internalMutation({
   args: {
     sourceHash: v.string(),
     extractorVersion: v.string(),
     toolCount: v.number(),
+    refHintTableJson: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -32,6 +47,7 @@ export const upsertOpenApiArtifactMeta = internalMutation({
       await ctx.db.patch(existing._id, {
         toolCount: args.toolCount,
         updatedAt: now,
+        refHintTableJson: args.refHintTableJson ?? null,
       });
 
       return {
@@ -48,6 +64,7 @@ export const upsertOpenApiArtifactMeta = internalMutation({
       extractorVersion: args.extractorVersion,
       toolCount: args.toolCount,
       createdAt: now,
+      refHintTableJson: args.refHintTableJson ?? null,
       updatedAt: now,
     });
 
@@ -71,6 +88,8 @@ export const putOpenApiArtifactToolsBatch = internalMutation({
         path: v.string(),
         operationHash: v.string(),
         invocationJson: v.string(),
+        inputSchemaJson: v.optional(v.union(v.string(), v.null())),
+        outputSchemaJson: v.optional(v.union(v.string(), v.null())),
       })
     ),
   },
@@ -90,6 +109,8 @@ export const putOpenApiArtifactToolsBatch = internalMutation({
           path: tool.path,
           operationHash: tool.operationHash,
           invocationJson: tool.invocationJson,
+          inputSchemaJson: tool.inputSchemaJson ?? null,
+          outputSchemaJson: tool.outputSchemaJson ?? null,
           createdAt: now,
           updatedAt: now,
         });
@@ -117,6 +138,8 @@ export const putOpenApiArtifactToolsBatch = internalMutation({
         path: tool.path,
         operationHash: tool.operationHash,
         invocationJson: tool.invocationJson,
+        inputSchemaJson: tool.inputSchemaJson ?? null,
+        outputSchemaJson: tool.outputSchemaJson ?? null,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
@@ -251,6 +274,7 @@ export const profileOpenApiIngestMvp = action({
         sourceHash: manifest.sourceHash,
         extractorVersion: selectedExtractorVersion,
         toolCount: manifest.tools.length,
+        refHintTableJson: safeRefHintTableJson(manifest.refHintTable),
       }
     );
 
@@ -267,6 +291,8 @@ export const profileOpenApiIngestMvp = action({
         path: tool.path,
         operationHash: tool.operationHash,
         invocationJson: JSON.stringify(tool.invocation),
+        inputSchemaJson: tool.typing?.inputSchemaJson ?? null,
+        outputSchemaJson: tool.typing?.outputSchemaJson ?? null,
       }));
 
       if (selectedWriteMode === "single") {

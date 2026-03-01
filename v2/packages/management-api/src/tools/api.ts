@@ -26,10 +26,28 @@ export const SourceToolSummarySchema = Schema.Struct({
   operationHash: Schema.String,
 });
 
+export const SourceToolDetailSchema = Schema.Struct({
+  sourceId: SourceIdSchema,
+  sourceName: Schema.String,
+  sourceKind: SourceKindSchema,
+  toolId: Schema.String,
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  method: OpenApiHttpMethodSchema,
+  path: Schema.String,
+  operationHash: Schema.String,
+  inputSchemaJson: Schema.NullOr(Schema.String),
+  outputSchemaJson: Schema.NullOr(Schema.String),
+  refHintTableJson: Schema.NullOr(Schema.String),
+});
+
+export type SourceToolDetail = typeof SourceToolDetailSchema.Type;
+
 export type SourceToolSummary = typeof SourceToolSummarySchema.Type;
 
 const workspaceIdParam = HttpApiSchema.param("workspaceId", WorkspaceIdSchema);
 const sourceIdParam = HttpApiSchema.param("sourceId", SourceIdSchema);
+const operationHashParam = HttpApiSchema.param("operationHash", Schema.String);
 
 export class ToolsApi extends HttpApiGroup.make("tools")
   .add(
@@ -45,6 +63,16 @@ export class ToolsApi extends HttpApiGroup.make("tools")
       "listSourceTools",
     )`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/tools`
       .addSuccess(Schema.Array(SourceToolSummarySchema))
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getToolDetail",
+    )`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/tools/by-operation/${operationHashParam}`
+      .addSuccess(Schema.NullOr(SourceToolDetailSchema))
       .addError(ControlPlaneBadRequestError)
       .addError(ControlPlaneUnauthorizedError)
       .addError(ControlPlaneForbiddenError)

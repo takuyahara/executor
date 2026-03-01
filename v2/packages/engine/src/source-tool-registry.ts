@@ -393,6 +393,22 @@ const loadSourceEntries = (
         const namespace = sourceNamespace(source);
 
         if (source.kind === "openapi") {
+          const providerDiscovered = yield* options.toolProviderRegistry
+            .discoverFromSource(source)
+            .pipe(Effect.either);
+
+          if (providerDiscovered._tag === "Right") {
+            return {
+              entries: providerDiscovered.right.tools.map((descriptor) => ({
+                path: sourceToolPath(source, descriptor),
+                namespace,
+                source,
+                descriptor,
+              })),
+              refHintTable: {},
+            };
+          }
+
           const artifactOption = yield* options.toolArtifactStore
             .getBySource(source.workspaceId, source.id)
             .pipe(

@@ -1,5 +1,6 @@
 import {
   PersistentToolApprovalPolicyStoreError,
+  ToolProviderError,
   createPersistentToolApprovalPolicy,
   createSourceToolRegistry,
   makeOpenApiToolProvider,
@@ -7,7 +8,10 @@ import {
   type PersistentToolApprovalRecord,
   type PersistentToolApprovalStore,
   type ToolApprovalPolicy,
+  type ToolDiscoveryResult,
+  type ToolProvider,
 } from "@executor-v2/engine";
+
 import {
   SourceStoreError,
   ToolArtifactStoreError,
@@ -16,10 +20,12 @@ import {
 } from "@executor-v2/persistence-ports";
 import {
   ApprovalSchema,
+  OpenApiInvocationPayloadSchema,
   OpenApiToolManifestSchema,
   SourceSchema,
   ToolArtifactSchema,
   type Approval,
+  type CanonicalToolDescriptor,
   type Source,
   type SourceId,
   type ToolArtifact,
@@ -28,6 +34,7 @@ import {
 import { v } from "convex/values";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as ParseResult from "effect/ParseResult";
 import * as Schema from "effect/Schema";
 
 import { api, internal } from "./_generated/api";
@@ -145,6 +152,128 @@ const toolArtifactStoreMutationError = (
     details: String(cause),
   });
 
+const decodeOpenApiInvocationPayload = Schema.decodeUnknownSync(OpenApiInvocationPayloadSchema);
+
+const GraphqlInvocationArgSchema = Schema.Struct({
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  required: Schema.Boolean,
+  type: Schema.String,
+  defaultValue: Schema.NullOr(Schema.String),
+});
+
+const GraphqlRawInvocationSchema = Schema.Struct({
+  kind: Schema.Literal("graphql_raw"),
+  endpoint: Schema.String,
+});
+
+const GraphqlFieldInvocationSchema = Schema.Struct({
+  kind: Schema.Literal("graphql_field"),
+  endpoint: Schema.String,
+  operationType: Schema.Literal("query", "mutation"),
+  fieldName: Schema.String,
+  args: Schema.Array(GraphqlInvocationArgSchema),
+});
+
+const GraphqlInvocationPayloadSchema = Schema.Union(
+  GraphqlRawInvocationSchema,
+  GraphqlFieldInvocationSchema,
+);
+
+type GraphqlInvocationPayload = typeof GraphqlInvocationPayloadSchema.Type;
+
+const decodeGraphqlInvocationPayload = Schema.decodeUnknownSync(GraphqlInvocationPayloadSchema);
+
+const McpInvocationPayloadSchema = Schema.Struct({
+  kind: Schema.Literal("mcp_tool"),
+  endpoint: Schema.String,
+  transport: Schema.Literal("streamable-http", "sse"),
+  queryParams: Schema.Record({
+    key: Schema.String,
+    value: Schema.String,
+  }),
+  toolName: Schema.String,
+  inputSchema: Schema.optional(Schema.Unknown),
+  outputSchema: Schema.optional(Schema.Unknown),
+});
+
+type McpInvocationPayload = typeof McpInvocationPayloadSchema.Type;
+
+const decodeMcpInvocationPayload = Schema.decodeUnknownSync(McpInvocationPayloadSchema);
+
+const OpenApiRuntimeToolRowSchema = Schema.Struct({
+  toolId: Schema.String,
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  invocationJson: Schema.String,
+});
+
+type OpenApiRuntimeToolRow = typeof OpenApiRuntimeToolRowSchema.Type;
+
+const GraphqlRuntimeToolRowSchema = Schema.Struct({
+  toolId: Schema.String,
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  invocationJson: Schema.String,
+});
+
+type GraphqlRuntimeToolRow = typeof GraphqlRuntimeToolRowSchema.Type;
+
+const McpRuntimeToolRowSchema = Schema.Struct({
+  toolId: Schema.String,
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  invocationJson: Schema.String,
+});
+
+type McpRuntimeToolRow = typeof McpRuntimeToolRowSchema.Type;
+
+const decodeOpenApiRuntimeToolRow = Schema.decodeUnknownSync(OpenApiRuntimeToolRowSchema);
+const decodeGraphqlRuntimeToolRow = Schema.decodeUnknownSync(GraphqlRuntimeToolRowSchema);
+const decodeMcpRuntimeToolRow = Schema.decodeUnknownSync(McpRuntimeToolRowSchema);
+
+const toToolProviderDetails = (cause: unknown): string =>
+  ParseResult.isParseError(cause)
+    ? ParseResult.TreeFormatter.formatErrorSync(cause)
+    : String(cause);
+
+const toToolProviderError = (
+  providerKind: "openapi" | "graphql" | "mcp",
+  operation: string,
+  message: string,
+  cause: unknown,
+): ToolProviderError =>
+  new ToolProviderError({
+    providerKind,
+    operation,
+    message,
+    details: toToolProviderDetails(cause),
+  });
+
+const jsonObjectFromUnknown = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const safeJsonParse = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const headersToRecord = (headers: Headers): Record<string, string> => {
+  const record: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    record[key] = value;
+  });
+  return record;
+};
+
 export const listSourcesForWorkspace = query({
   args: {
     workspaceId: v.string(),
@@ -214,6 +343,90 @@ export const getToolArtifactBySource = query({
   },
 });
 
+export const listOpenApiToolsForSourceRuntime = query({
+  args: {
+    workspaceId: v.string(),
+    sourceId: v.string(),
+  },
+  handler: async (ctx, args): Promise<Array<OpenApiRuntimeToolRow>> => {
+    const binding = await ctx.db
+      .query("openApiSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
+      )
+      .unique();
+
+    if (!binding) {
+      return [];
+    }
+
+    const rows = await ctx.db
+      .query("openApiArtifactTools")
+      .withIndex("by_artifactId", (q) => q.eq("artifactId", binding.artifactId))
+      .collect();
+
+    return rows
+      .map((row) => decodeOpenApiRuntimeToolRow(stripConvexSystemFields(row as Record<string, unknown>)))
+      .sort((left, right) => left.toolId.localeCompare(right.toolId));
+  },
+});
+
+export const listGraphqlToolsForSourceRuntime = query({
+  args: {
+    workspaceId: v.string(),
+    sourceId: v.string(),
+  },
+  handler: async (ctx, args): Promise<Array<GraphqlRuntimeToolRow>> => {
+    const binding = await ctx.db
+      .query("graphqlSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
+      )
+      .unique();
+
+    if (!binding) {
+      return [];
+    }
+
+    const rows = await ctx.db
+      .query("graphqlArtifactTools")
+      .withIndex("by_artifactId", (q) => q.eq("artifactId", binding.artifactId))
+      .collect();
+
+    return rows
+      .map((row) => decodeGraphqlRuntimeToolRow(stripConvexSystemFields(row as Record<string, unknown>)))
+      .sort((left, right) => left.toolId.localeCompare(right.toolId));
+  },
+});
+
+export const listMcpToolsForSourceRuntime = query({
+  args: {
+    workspaceId: v.string(),
+    sourceId: v.string(),
+  },
+  handler: async (ctx, args): Promise<Array<McpRuntimeToolRow>> => {
+    const binding = await ctx.db
+      .query("mcpSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
+      )
+      .unique();
+
+    if (!binding) {
+      return [];
+    }
+
+    const rows = await ctx.db
+      .query("mcpArtifactTools")
+      .withIndex("by_artifactId", (q) => q.eq("artifactId", binding.artifactId))
+      .collect();
+
+    return rows
+      .map((row) => decodeMcpRuntimeToolRow(stripConvexSystemFields(row as Record<string, unknown>)))
+      .sort((left, right) => left.toolId.localeCompare(right.toolId));
+  },
+});
+
 export const upsertToolArtifactForSource = internalMutation({
   args: {
     artifact: v.object({
@@ -246,6 +459,9 @@ export const upsertToolArtifactForSource = internalMutation({
         sourceHash: artifact.sourceHash,
         extractorVersion: openApiExtractorVersion,
         toolCount: manifest.tools.length,
+        refHintTableJson: manifest.refHintTable
+          ? JSON.stringify(manifest.refHintTable)
+          : null,
         createdAt: now,
         updatedAt: now,
       });
@@ -261,6 +477,8 @@ export const upsertToolArtifactForSource = internalMutation({
           path: tool.path,
           operationHash: tool.operationHash,
           invocationJson: JSON.stringify(tool.invocation),
+          inputSchemaJson: tool.typing?.inputSchemaJson ?? null,
+          outputSchemaJson: tool.typing?.outputSchemaJson ?? null,
           createdAt: now,
           updatedAt: now,
         });
@@ -419,6 +637,389 @@ export const evaluateToolApproval = internalMutation({
   },
 });
 
+const createOpenApiDescriptor = (
+  source: Source,
+  tool: OpenApiRuntimeToolRow,
+): CanonicalToolDescriptor => ({
+  providerKind: "openapi",
+  sourceId: source.id,
+  workspaceId: source.workspaceId,
+  toolId: tool.toolId,
+  name: tool.name,
+  description: tool.description,
+  invocationMode: "http",
+  availability: "remote_capable",
+  providerPayload: decodeOpenApiInvocationPayload(safeJsonParse(tool.invocationJson)),
+});
+
+const createGraphqlDescriptor = (
+  source: Source,
+  tool: GraphqlRuntimeToolRow,
+): CanonicalToolDescriptor => ({
+  providerKind: "graphql",
+  sourceId: source.id,
+  workspaceId: source.workspaceId,
+  toolId: tool.toolId,
+  name: tool.name,
+  description: tool.description,
+  invocationMode: "graphql",
+  availability: "remote_capable",
+  providerPayload: decodeGraphqlInvocationPayload(safeJsonParse(tool.invocationJson)),
+});
+
+const createMcpDescriptor = (
+  source: Source,
+  tool: McpRuntimeToolRow,
+): CanonicalToolDescriptor => ({
+  providerKind: "mcp",
+  sourceId: source.id,
+  workspaceId: source.workspaceId,
+  toolId: tool.toolId,
+  name: tool.name,
+  description: tool.description,
+  invocationMode: "mcp",
+  availability: "remote_capable",
+  providerPayload: decodeMcpInvocationPayload(safeJsonParse(tool.invocationJson)),
+});
+
+const createConvexOpenApiToolProvider = (ctx: ActionCtx): ToolProvider => {
+  const openApiProvider = makeOpenApiToolProvider();
+
+  return {
+    kind: "openapi",
+
+    discoverFromSource: (source) =>
+      Effect.tryPromise({
+        try: async (): Promise<ToolDiscoveryResult> => {
+          const tools = await ctx.runQuery(runtimeApi.source_tool_registry.listOpenApiToolsForSourceRuntime, {
+            workspaceId: source.workspaceId,
+            sourceId: source.id,
+          });
+
+          return {
+            sourceHash: source.sourceHash,
+            tools: tools.map((tool: OpenApiRuntimeToolRow) => createOpenApiDescriptor(source, tool)),
+          };
+        },
+        catch: (cause) =>
+          toToolProviderError(
+            "openapi",
+            "discover_source_tools",
+            `Failed to list OpenAPI tools for source: ${source.id}`,
+            cause,
+          ),
+      }),
+
+    invoke: (input) => openApiProvider.invoke(input),
+  };
+};
+
+const normalizeGraphqlInvokeInput = (input: unknown): Record<string, unknown> => {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+
+  return input as Record<string, unknown>;
+};
+
+const asOptionalString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value : null;
+
+const createGraphqlOperationQuery = (
+  payload: Extract<GraphqlInvocationPayload, { kind: "graphql_field" }>,
+  args: Record<string, unknown>,
+): {
+  query: string;
+  variables: Record<string, unknown>;
+} => {
+  const definitions: Array<string> = [];
+  const callArgs: Array<string> = [];
+  const variables: Record<string, unknown> = {};
+
+  for (const arg of payload.args) {
+    const value = args[arg.name];
+
+    if (value === undefined || value === null) {
+      if (arg.required) {
+        throw new Error(`Missing required GraphQL argument: ${arg.name}`);
+      }
+
+      continue;
+    }
+
+    const varType = arg.type.trim().length > 0 ? arg.type : "String";
+    definitions.push(`$${arg.name}: ${varType}`);
+    callArgs.push(`${arg.name}: $${arg.name}`);
+    variables[arg.name] = value;
+  }
+
+  const variableDefs = definitions.length > 0 ? `(${definitions.join(", ")})` : "";
+  const fieldArgs = callArgs.length > 0 ? `(${callArgs.join(", ")})` : "";
+  const selectionSet = asOptionalString(args.selectionSet);
+  const fieldSelection =
+    selectionSet && selectionSet.length > 0
+      ? `${payload.fieldName}${fieldArgs} { ${selectionSet} }`
+      : `${payload.fieldName}${fieldArgs}`;
+  const query = `${payload.operationType}${variableDefs} { ${fieldSelection} }`;
+
+  return { query, variables };
+};
+
+const graphqlResponseBody = async (response: Response): Promise<unknown> => {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType.includes("application/json")) {
+    return await response.json();
+  }
+
+  return await response.text();
+};
+
+const createConvexGraphqlToolProvider = (ctx: ActionCtx): ToolProvider => ({
+  kind: "graphql",
+
+  discoverFromSource: (source) =>
+    Effect.tryPromise({
+      try: async (): Promise<ToolDiscoveryResult> => {
+        const tools = await ctx.runQuery(runtimeApi.source_tool_registry.listGraphqlToolsForSourceRuntime, {
+          workspaceId: source.workspaceId,
+          sourceId: source.id,
+        });
+
+        return {
+          sourceHash: source.sourceHash,
+          tools: tools.map((tool: GraphqlRuntimeToolRow) => createGraphqlDescriptor(source, tool)),
+        };
+      },
+      catch: (cause) =>
+        toToolProviderError(
+          "graphql",
+          "discover_source_tools",
+          `Failed to list GraphQL tools for source: ${source.id}`,
+          cause,
+        ),
+    }),
+
+  invoke: (input) =>
+    Effect.tryPromise({
+      try: async () => {
+        if (!input.source) {
+          throw new Error("GraphQL provider requires a source");
+        }
+
+        const payload = decodeGraphqlInvocationPayload(input.tool.providerPayload);
+        const args = normalizeGraphqlInvokeInput(input.args);
+
+        let query: string;
+        let variables: Record<string, unknown> | undefined;
+        let operationName: string | undefined;
+
+        if (payload.kind === "graphql_raw") {
+          const rawQuery = asOptionalString(args.query);
+          if (!rawQuery) {
+            throw new Error("Missing required GraphQL query string at args.query");
+          }
+
+          query = rawQuery;
+          variables = jsonObjectFromUnknown(args.variables);
+          operationName = asOptionalString(args.operationName) ?? undefined;
+        } else {
+          const built = createGraphqlOperationQuery(payload, args);
+          query = built.query;
+          variables = built.variables;
+          operationName = payload.fieldName;
+        }
+
+        const response = await fetch(payload.endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            query,
+            variables,
+            operationName,
+          }),
+        });
+
+        const body = await graphqlResponseBody(response);
+        const bodyRecord = jsonObjectFromUnknown(body);
+        const hasErrors = Array.isArray(bodyRecord.errors);
+
+        return {
+          output: {
+            status: response.status,
+            headers: headersToRecord(response.headers),
+            body,
+          },
+          isError: response.status >= 400 || hasErrors,
+        };
+      },
+      catch: (cause) =>
+        toToolProviderError(
+          "graphql",
+          "invoke_tool",
+          `GraphQL invocation failed for tool: ${input.tool.toolId}`,
+          cause,
+        ),
+    }),
+});
+
+const createMcpEndpointUrl = (payload: McpInvocationPayload): URL => {
+  const url = new URL(payload.endpoint);
+
+  for (const [key, value] of Object.entries(payload.queryParams)) {
+    url.searchParams.set(key, value);
+  }
+
+  return url;
+};
+
+const postMcpJsonRpc = async (
+  endpoint: URL,
+  body: unknown,
+  sessionId: string | null,
+): Promise<Response> => {
+  const headers = new Headers({
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
+  });
+
+  if (sessionId && sessionId.trim().length > 0) {
+    headers.set("mcp-session-id", sessionId);
+  }
+
+  return await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+};
+
+const decodeMcpJsonResponse = async (response: Response): Promise<Record<string, unknown>> => {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
+    return { raw: text };
+  }
+
+  return jsonObjectFromUnknown(await response.json());
+};
+
+const createConvexMcpToolProvider = (ctx: ActionCtx): ToolProvider => ({
+  kind: "mcp",
+
+  discoverFromSource: (source) =>
+    Effect.tryPromise({
+      try: async (): Promise<ToolDiscoveryResult> => {
+        const tools = await ctx.runQuery(runtimeApi.source_tool_registry.listMcpToolsForSourceRuntime, {
+          workspaceId: source.workspaceId,
+          sourceId: source.id,
+        });
+
+        return {
+          sourceHash: source.sourceHash,
+          tools: tools.map((tool: McpRuntimeToolRow) => createMcpDescriptor(source, tool)),
+        };
+      },
+      catch: (cause) =>
+        toToolProviderError(
+          "mcp",
+          "discover_source_tools",
+          `Failed to list MCP tools for source: ${source.id}`,
+          cause,
+        ),
+    }),
+
+  invoke: (input) =>
+    Effect.tryPromise({
+      try: async () => {
+        const payload = decodeMcpInvocationPayload(input.tool.providerPayload);
+        const args = normalizeGraphqlInvokeInput(input.args);
+
+        if (payload.transport !== "streamable-http") {
+          throw new Error(
+            `Unsupported MCP transport for runtime invocation: ${payload.transport}`,
+          );
+        }
+
+        const endpoint = createMcpEndpointUrl(payload);
+        const initializeResponse = await postMcpJsonRpc(
+          endpoint,
+          {
+            jsonrpc: "2.0",
+            id: `init_${crypto.randomUUID()}`,
+            method: "initialize",
+            params: {
+              protocolVersion: "2024-11-05",
+              capabilities: {},
+              clientInfo: {
+                name: "executor-v2-runtime",
+                version: "0.1.0",
+              },
+            },
+          },
+          null,
+        );
+        const initializeBody = await decodeMcpJsonResponse(initializeResponse);
+
+        const sessionId = initializeResponse.headers.get("mcp-session-id");
+
+        if (initializeResponse.status >= 400 || initializeBody.error !== undefined) {
+          return {
+            output: {
+              status: initializeResponse.status,
+              headers: headersToRecord(initializeResponse.headers),
+              body: initializeBody,
+            },
+            isError: true,
+          };
+        }
+
+        await postMcpJsonRpc(
+          endpoint,
+          {
+            jsonrpc: "2.0",
+            method: "notifications/initialized",
+            params: {},
+          },
+          sessionId,
+        );
+
+        const callResponse = await postMcpJsonRpc(
+          endpoint,
+          {
+            jsonrpc: "2.0",
+            id: `call_${crypto.randomUUID()}`,
+            method: "tools/call",
+            params: {
+              name: payload.toolName,
+              arguments: args,
+            },
+          },
+          sessionId,
+        );
+        const callBody = await decodeMcpJsonResponse(callResponse);
+
+        return {
+          output: {
+            status: callResponse.status,
+            headers: headersToRecord(callResponse.headers),
+            body: callBody,
+          },
+          isError: callResponse.status >= 400 || callBody.error !== undefined,
+        };
+      },
+      catch: (cause) =>
+        toToolProviderError(
+          "mcp",
+          "invoke_tool",
+          `MCP invocation failed for tool: ${input.tool.toolId}`,
+          cause,
+        ),
+    }),
+});
+
 const createConvexSourceStore = (ctx: ActionCtx): SourceStore => ({
   getById: (workspaceId: WorkspaceId, sourceId: SourceId) =>
     Effect.tryPromise({
@@ -505,7 +1106,11 @@ export const createConvexSourceToolRegistry = (
 ) => {
   const sourceStore = createConvexSourceStore(ctx);
   const toolArtifactStore = createConvexToolArtifactStore(ctx);
-  const toolProviderRegistry = makeToolProviderRegistry([makeOpenApiToolProvider()]);
+  const toolProviderRegistry = makeToolProviderRegistry([
+    createConvexOpenApiToolProvider(ctx),
+    createConvexGraphqlToolProvider(ctx),
+    createConvexMcpToolProvider(ctx),
+  ]);
   const requireApprovals = options.requireToolApprovals ?? requireToolApprovalsByDefault;
   const approvalRetryAfterMs =
     typeof options.approvalRetryAfterMs === "number" &&

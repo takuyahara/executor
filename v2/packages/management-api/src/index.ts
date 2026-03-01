@@ -15,6 +15,7 @@ export {
   RemoveStorageInstanceResultSchema,
   ResolveApprovalPayloadSchema,
   ResolveApprovalStatusSchema,
+  SourceToolDetailSchema,
   SourceToolSummarySchema,
   UpsertCredentialBindingPayloadSchema,
   UpsertOrganizationPayloadSchema,
@@ -36,6 +37,7 @@ export {
   type RemoveSourceResult,
   type RemoveStorageInstanceResult,
   type ResolveApprovalPayload,
+  type SourceToolDetail,
   type SourceToolSummary,
   type UpsertCredentialBindingPayload,
   type UpsertOrganizationPayload,
@@ -120,6 +122,7 @@ export {
   ControlPlaneToolsLive,
   makeControlPlaneToolsService,
   type ControlPlaneToolsServiceShape,
+  type GetToolDetailInput,
   type ListSourceToolsInput,
 } from "./tools";
 
@@ -173,4 +176,8 @@ export {
 } from "./source-manager";
 
 export { fetchOpenApiDocument, parseOpenApiDocument } from "./openapi-document";
+export {
+  resolveSchemaJsonWithRefHints,
+  resolveTypingSchemasWithRefHints,
+} from "./openapi-schema-refs";
 

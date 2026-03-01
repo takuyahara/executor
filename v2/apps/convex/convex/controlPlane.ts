@@ -33,6 +33,7 @@ import {
   removeStorageInstance as removeStorageInstanceImpl,
 } from "./control_plane/storage";
 import {
+  getToolDetail as getToolDetailImpl,
   listSourceTools as listSourceToolsImpl,
   listWorkspaceTools as listWorkspaceToolsImpl,
 } from "./control_plane/tools";
@@ -56,6 +57,7 @@ export const listWorkspaces = listWorkspacesImpl;
 export const upsertWorkspace = upsertWorkspaceImpl;
 export const listWorkspaceTools = listWorkspaceToolsImpl;
 export const listSourceTools = listSourceToolsImpl;
+export const getToolDetail = getToolDetailImpl;
 export const listStorageInstances = listStorageInstancesImpl;
 export const openStorageInstance = openStorageInstanceImpl;
 export const closeStorageInstance = closeStorageInstanceImpl;

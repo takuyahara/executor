@@ -113,5 +113,29 @@ export const ControlPlaneToolsLive = HttpApiBuilder.group(
             toStorageError("tools.listSource", cause),
           ),
         ),
+      )
+      .handle("getToolDetail", ({ path }) =>
+        Effect.gen(function* () {
+          const service = yield* ControlPlaneService;
+          const actor = yield* resolveWorkspaceActor(path.workspaceId);
+
+          return yield* withPolicy(requireReadTools(path.workspaceId))(
+            service.getToolDetail({
+              workspaceId: path.workspaceId,
+              sourceId: path.sourceId,
+              operationHash: path.operationHash,
+            }),
+          ).pipe(Effect.provideService(Actor, actor));
+        }).pipe(
+          Effect.catchTag("ActorUnauthenticatedError", (cause) =>
+            toUnauthorizedError("tools.getDetail", cause),
+          ),
+          Effect.catchTag("ActorForbiddenError", (cause) =>
+            toForbiddenError("tools.getDetail", cause),
+          ),
+          Effect.catchTag("SourceStoreError", (cause) =>
+            toStorageError("tools.getDetail", cause),
+          ),
+        ),
       ),
 );

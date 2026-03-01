@@ -136,6 +136,16 @@ export const makeConvexControlPlaneService = (
           }),
         catch: (cause) => toSourceStoreError("controlPlane.listSourceTools", cause),
       }),
+    getToolDetail: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.getToolDetail, {
+            workspaceId: input.workspaceId,
+            sourceId: input.sourceId,
+            operationHash: input.operationHash,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.getToolDetail", cause),
+      }),
     listStorageInstances: (workspaceId) =>
       Effect.tryPromise({
         try: () =>

@@ -18,8 +18,11 @@ const setup = () =>
     "./source_tool_registry.ts": () => import("./source_tool_registry"),
     "./task_runs.ts": () => import("./task_runs"),
     "./control_plane/storage.ts": () => import("./control_plane/storage"),
+    "./control_plane/credentials.ts": () => import("./control_plane/credentials"),
     "./control_plane/sources.ts": () => import("./control_plane/sources"),
     "./control_plane/openapi_ingest_mvp.ts": () => import("./control_plane/openapi_ingest_mvp"),
+    "./control_plane/graphql_ingest_support.ts": () => import("./control_plane/graphql_ingest_support"),
+    "./control_plane/mcp_ingest_support.ts": () => import("./control_plane/mcp_ingest_support"),
     "./control_plane/openapi_ingest.ts": () => import("./control_plane/openapi_ingest"),
     "./controlPlane.ts": () => import("./controlPlane"),
     "./_generated/api.js": () => import("./_generated/api.js"),
@@ -62,7 +65,7 @@ describe("Convex executor and control-plane", () => {
         name: string;
       };
 
-      yield* Effect.tryPromise(() => t.finishInProgressScheduledFunctions());
+      yield* Effect.tryPromise(() => t.finishAllScheduledFunctions(() => {}));
 
       expect(added.id).toBe("src_1");
       expect(added.workspaceId).toBe("ws_1");
@@ -461,11 +464,12 @@ describe("Convex executor and control-plane", () => {
       expect(workspaces).toHaveLength(1);
       expect(workspaces[0]?.id).toBe("ws_1");
 
+      const nowForOpenApiSource = Date.now();
       yield* Effect.tryPromise(() =>
-        t.mutation(api.controlPlane.upsertSource, {
-          workspaceId: "ws_1",
-          payload: {
+        t.run(async (ctx) => {
+          await ctx.db.insert("sources", {
             id: "src_1",
+            workspaceId: "ws_1",
             name: "Weather API",
             kind: "openapi",
             endpoint: "https://example.com/openapi.json",
@@ -474,10 +478,11 @@ describe("Convex executor and control-plane", () => {
             status: "draft",
             sourceHash: null,
             lastError: null,
-          },
+            createdAt: nowForOpenApiSource,
+            updatedAt: nowForOpenApiSource,
+          });
         }),
       );
-      yield* Effect.tryPromise(() => t.finishInProgressScheduledFunctions());
 
       const manifest = yield* extractOpenApiManifest("Weather API", {
         openapi: "3.0.0",
@@ -538,6 +543,188 @@ describe("Convex executor and control-plane", () => {
       expect(sourceTools).toHaveLength(1);
       expect(sourceTools[0]?.sourceId).toBe("src_1");
 
+      const nowForGraphqlSource = Date.now();
+      yield* Effect.tryPromise(() =>
+        t.run(async (ctx) => {
+          await ctx.db.insert("sources", {
+            id: "src_graphql_1",
+            workspaceId: "ws_1",
+            name: "Linear API",
+            kind: "graphql",
+            endpoint: "https://api.linear.app/graphql",
+            enabled: true,
+            configJson: "{}",
+            status: "draft",
+            sourceHash: null,
+            lastError: null,
+            createdAt: nowForGraphqlSource,
+            updatedAt: nowForGraphqlSource,
+          });
+        }),
+      );
+
+      const graphqlArtifactMeta = (yield* Effect.tryPromise(() =>
+        t.mutation(runtimeInternal.control_plane.graphql_ingest_support.upsertGraphqlArtifactMeta, {
+          schemaHash: "graphql_schema_hash_1",
+          extractorVersion: "graphql_v1",
+          toolCount: 2,
+        }),
+      )) as {
+        artifactId: string;
+        created: boolean;
+      };
+
+      expect(graphqlArtifactMeta.created).toBe(true);
+
+      yield* Effect.tryPromise(() =>
+        t.mutation(runtimeInternal.control_plane.graphql_ingest_support.putGraphqlArtifactToolsBatch, {
+          artifactId: graphqlArtifactMeta.artifactId,
+          insertOnly: true,
+          tools: [
+            {
+              toolId: "linear.graphql",
+              name: "Linear GraphQL",
+              description: "Run raw GraphQL queries against Linear",
+              operationType: "raw",
+              fieldName: "graphql",
+              operationHash: "raw_hash",
+              invocationJson: "{}",
+            },
+            {
+              toolId: "linear.query.viewer",
+              name: "viewer",
+              description: "Current viewer",
+              operationType: "query",
+              fieldName: "viewer",
+              operationHash: "viewer_hash",
+              invocationJson: "{}",
+            },
+          ],
+        }),
+      );
+
+      yield* Effect.tryPromise(() =>
+        t.mutation(runtimeInternal.control_plane.graphql_ingest_support.bindSourceToGraphqlArtifact, {
+          workspaceId: "ws_1",
+          sourceId: "src_graphql_1",
+          artifactId: graphqlArtifactMeta.artifactId,
+          schemaHash: "graphql_schema_hash_1",
+          extractorVersion: "graphql_v1",
+        }),
+      );
+
+      const graphqlSourceTools = (yield* Effect.tryPromise(() =>
+        t.query(api.controlPlane.listSourceTools, {
+          workspaceId: "ws_1",
+          sourceId: "src_graphql_1",
+        }),
+      )) as Array<{
+        sourceId: string;
+        toolId: string;
+        method: string;
+      }>;
+
+      expect(graphqlSourceTools).toHaveLength(2);
+      expect(graphqlSourceTools[0]?.sourceId).toBe("src_graphql_1");
+      expect(graphqlSourceTools[0]?.method).toBe("post");
+
+      const workspaceToolsWithGraphql = (yield* Effect.tryPromise(() =>
+        t.query(api.controlPlane.listWorkspaceTools, {
+          workspaceId: "ws_1",
+        }),
+      )) as Array<{
+        sourceId: string;
+      }>;
+
+      expect(workspaceToolsWithGraphql.some((tool) => tool.sourceId === "src_graphql_1")).toBe(
+        true,
+      );
+
+      const nowForMcpSource = Date.now();
+
+      yield* Effect.tryPromise(() =>
+        t.run(async (ctx) => {
+          await ctx.db.insert("sources", {
+            id: "src_mcp_1",
+            workspaceId: "ws_1",
+            name: "Deepwiki",
+            kind: "mcp",
+            endpoint: "https://example.com/mcp",
+            enabled: true,
+            configJson: "{}",
+            status: "draft",
+            sourceHash: null,
+            lastError: null,
+            createdAt: nowForMcpSource,
+            updatedAt: nowForMcpSource,
+          });
+        }),
+      );
+
+      const mcpArtifactMeta = (yield* Effect.tryPromise(() =>
+        t.mutation(runtimeInternal.control_plane.mcp_ingest_support.upsertMcpArtifactMeta, {
+          sourceHash: "mcp_source_hash_1",
+          extractorVersion: "mcp_v1",
+          toolCount: 1,
+        }),
+      )) as {
+        artifactId: string;
+        created: boolean;
+      };
+
+      expect(mcpArtifactMeta.created).toBe(true);
+
+      yield* Effect.tryPromise(() =>
+        t.mutation(runtimeInternal.control_plane.mcp_ingest_support.putMcpArtifactToolsBatch, {
+          artifactId: mcpArtifactMeta.artifactId,
+          insertOnly: true,
+          tools: [
+            {
+              toolId: "deepwiki.mcp.search_docs",
+              name: "search_docs",
+              description: "Search docs",
+              toolName: "search_docs",
+              operationHash: "mcp_hash_1",
+              invocationJson: "{}",
+            },
+          ],
+        }),
+      );
+
+      yield* Effect.tryPromise(() =>
+        t.mutation(runtimeInternal.control_plane.mcp_ingest_support.bindSourceToMcpArtifact, {
+          workspaceId: "ws_1",
+          sourceId: "src_mcp_1",
+          artifactId: mcpArtifactMeta.artifactId,
+          sourceHash: "mcp_source_hash_1",
+          extractorVersion: "mcp_v1",
+        }),
+      );
+
+      const mcpSourceTools = (yield* Effect.tryPromise(() =>
+        t.query(api.controlPlane.listSourceTools, {
+          workspaceId: "ws_1",
+          sourceId: "src_mcp_1",
+        }),
+      )) as Array<{
+        sourceId: string;
+        path: string;
+      }>;
+
+      expect(mcpSourceTools).toHaveLength(1);
+      expect(mcpSourceTools[0]?.sourceId).toBe("src_mcp_1");
+      expect(mcpSourceTools[0]?.path).toContain("#mcp.search_docs");
+
+      const workspaceToolsWithMcp = (yield* Effect.tryPromise(() =>
+        t.query(api.controlPlane.listWorkspaceTools, {
+          workspaceId: "ws_1",
+        }),
+      )) as Array<{
+        sourceId: string;
+      }>;
+
+      expect(workspaceToolsWithMcp.some((tool) => tool.sourceId === "src_mcp_1")).toBe(true);
+
       const sourceToolsFromWrongWorkspace = (yield* Effect.tryPromise(() =>
         t.query(api.controlPlane.listSourceTools, {
           workspaceId: "ws_2",
@@ -546,6 +733,437 @@ describe("Convex executor and control-plane", () => {
       )) as Array<unknown>;
 
       expect(sourceToolsFromWrongWorkspace).toHaveLength(0);
+    }),
+  );
+
+  it.effect("marks graphql sources auth_required when introspection is unauthorized", () =>
+    Effect.gen(function* () {
+      const t = setup();
+      const originalFetch = globalThis.fetch;
+
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            errors: [
+              {
+                message: "Unauthorized",
+              },
+            ],
+          }),
+          {
+            status: 401,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        )) as unknown as typeof fetch;
+
+      try {
+        const now = Date.now();
+
+        yield* Effect.tryPromise(() =>
+          t.run(async (ctx) => {
+            await ctx.db.insert("sources", {
+              id: "src_graphql_auth_1",
+              workspaceId: "ws_auth",
+              name: "Linear API",
+              kind: "graphql",
+              endpoint: "https://api.linear.app/graphql",
+              enabled: true,
+              configJson: "{}",
+              status: "draft",
+              sourceHash: null,
+              lastError: null,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }),
+        );
+
+        yield* Effect.tryPromise(() =>
+          t.action(runtimeInternal.control_plane.openapi_ingest.ingestSourceArtifact, {
+            workspaceId: "ws_auth",
+            sourceId: "src_graphql_auth_1",
+          }),
+        );
+
+        const sources = (yield* Effect.tryPromise(() =>
+          t.query(api.controlPlane.listSources, {
+            workspaceId: "ws_auth",
+          }),
+        )) as Array<{
+          status: string;
+          lastError: string | null;
+        }>;
+
+        expect(sources).toHaveLength(1);
+        expect(sources[0]?.status).toBe("auth_required");
+        expect(sources[0]?.lastError?.toLowerCase()).toContain("unauthor");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }),
+  );
+
+  it.effect("uses credential bindings when ingesting graphql sources", () =>
+    Effect.gen(function* () {
+      const t = setup();
+      const originalFetch = globalThis.fetch;
+
+      globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+        const authHeader = new Headers(init?.headers).get("authorization");
+        if (authHeader !== "Bearer linear_token") {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  message: "Unauthorized",
+                },
+              ],
+            }),
+            {
+              status: 401,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        const bodyText = typeof init?.body === "string" ? init.body : "{}";
+        const payload = JSON.parse(bodyText) as {
+          query?: string;
+          variables?: {
+            name?: string;
+          };
+        };
+
+        if (payload.query?.includes("SchemaRoots")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                __schema: {
+                  queryType: { name: "Query" },
+                  mutationType: null,
+                },
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (payload.query?.includes("RootFields") && payload.variables?.name === "Query") {
+          return new Response(
+            JSON.stringify({
+              data: {
+                __type: {
+                  name: "Query",
+                  fields: [
+                    {
+                      name: "viewer",
+                      description: "Current viewer",
+                      args: [],
+                    },
+                  ],
+                },
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              __type: {
+                name: payload.variables?.name ?? "Unknown",
+                fields: [],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      }) as unknown as typeof fetch;
+
+      try {
+        const now = Date.now();
+
+        yield* Effect.tryPromise(() =>
+          t.mutation(api.controlPlane.upsertCredentialBinding, {
+            workspaceId: "ws_cred",
+            payload: {
+              id: "credential_binding_linear",
+              credentialId: "cred_linear",
+              scopeType: "workspace",
+              sourceKey: "source:src_graphql_cred_1",
+              provider: "bearer",
+              secretRef: "linear_token",
+              accountId: null,
+              additionalHeadersJson: null,
+              boundAuthFingerprint: null,
+            },
+          }),
+        );
+
+        yield* Effect.tryPromise(() =>
+          t.run(async (ctx) => {
+            await ctx.db.insert("sources", {
+              id: "src_graphql_cred_1",
+              workspaceId: "ws_cred",
+              name: "Linear API",
+              kind: "graphql",
+              endpoint: "https://api.linear.app/graphql",
+              enabled: true,
+              configJson: "{}",
+              status: "draft",
+              sourceHash: null,
+              lastError: null,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }),
+        );
+
+        yield* Effect.tryPromise(() =>
+          t.action(runtimeInternal.control_plane.openapi_ingest.ingestSourceArtifact, {
+            workspaceId: "ws_cred",
+            sourceId: "src_graphql_cred_1",
+          }),
+        );
+
+        const sources = (yield* Effect.tryPromise(() =>
+          t.query(api.controlPlane.listSources, {
+            workspaceId: "ws_cred",
+          }),
+        )) as Array<{
+          status: string;
+          sourceHash: string | null;
+        }>;
+
+        expect(sources).toHaveLength(1);
+        expect(sources[0]?.status).toBe("connected");
+        expect(sources[0]?.sourceHash).toBeTypeOf("string");
+
+        const sourceTools = (yield* Effect.tryPromise(() =>
+          t.query(api.controlPlane.listSourceTools, {
+            workspaceId: "ws_cred",
+            sourceId: "src_graphql_cred_1",
+          }),
+        )) as Array<{
+          toolId: string;
+        }>;
+
+        expect(sourceTools.length).toBeGreaterThan(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }),
+  );
+
+  it.effect("ingests mcp sources with credential headers", () =>
+    Effect.gen(function* () {
+      const t = setup();
+      const originalFetch = globalThis.fetch;
+
+      globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+        const authHeader = new Headers(init?.headers).get("authorization");
+        if (authHeader !== "Bearer mcp_token") {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 401,
+                message: "Unauthorized",
+              },
+            }),
+            {
+              status: 401,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        const bodyText = typeof init?.body === "string" ? init.body : "{}";
+        const payload = JSON.parse(bodyText) as {
+          id?: string | number;
+          method?: string;
+        };
+
+        if (payload.method === "initialize") {
+          return new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: payload.id,
+              result: {
+                protocolVersion: "2025-03-26",
+                capabilities: {
+                  tools: {},
+                },
+                serverInfo: {
+                  name: "fake-mcp",
+                  version: "0.1.0",
+                },
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (payload.method === "notifications/initialized") {
+          return new Response(null, {
+            status: 204,
+          });
+        }
+
+        if (payload.method === "tools/list") {
+          return new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: payload.id,
+              result: {
+                tools: [
+                  {
+                    name: "search_docs",
+                    description: "Search docs",
+                    inputSchema: {
+                      type: "object",
+                      properties: {},
+                    },
+                    outputSchema: {
+                      type: "object",
+                      properties: {
+                        results: {
+                          type: "array",
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: payload.id,
+            error: {
+              code: -32601,
+              message: "Method not found",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      }) as unknown as typeof fetch;
+
+      try {
+        const now = Date.now();
+
+        yield* Effect.tryPromise(() =>
+          t.mutation(api.controlPlane.upsertCredentialBinding, {
+            workspaceId: "ws_mcp_ingest",
+            payload: {
+              id: "credential_binding_mcp",
+              credentialId: "cred_mcp",
+              scopeType: "workspace",
+              sourceKey: "source:src_mcp_ingest_1",
+              provider: "bearer",
+              secretRef: "mcp_token",
+              accountId: null,
+              additionalHeadersJson: null,
+              boundAuthFingerprint: null,
+            },
+          }),
+        );
+
+        yield* Effect.tryPromise(() =>
+          t.run(async (ctx) => {
+            await ctx.db.insert("sources", {
+              id: "src_mcp_ingest_1",
+              workspaceId: "ws_mcp_ingest",
+              name: "Deepwiki",
+              kind: "mcp",
+              endpoint: "https://example.com/mcp",
+              enabled: true,
+              configJson: "{}",
+              status: "draft",
+              sourceHash: null,
+              lastError: null,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }),
+        );
+
+        yield* Effect.tryPromise(() =>
+          t.action(runtimeInternal.control_plane.openapi_ingest.ingestSourceArtifact, {
+            workspaceId: "ws_mcp_ingest",
+            sourceId: "src_mcp_ingest_1",
+          }),
+        );
+
+        const sources = (yield* Effect.tryPromise(() =>
+          t.query(api.controlPlane.listSources, {
+            workspaceId: "ws_mcp_ingest",
+          }),
+        )) as Array<{
+          status: string;
+          sourceHash: string | null;
+        }>;
+
+        expect(sources).toHaveLength(1);
+        expect(sources[0]?.status).toBe("connected");
+        expect(sources[0]?.sourceHash).toBeTypeOf("string");
+
+        const sourceTools = (yield* Effect.tryPromise(() =>
+          t.query(api.controlPlane.listSourceTools, {
+            workspaceId: "ws_mcp_ingest",
+            sourceId: "src_mcp_ingest_1",
+          }),
+        )) as Array<{
+          sourceId: string;
+          path: string;
+        }>;
+
+        expect(sourceTools).toHaveLength(1);
+        expect(sourceTools[0]?.sourceId).toBe("src_mcp_ingest_1");
+        expect(sourceTools[0]?.path).toContain("#mcp.search_docs");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     }),
   );
 

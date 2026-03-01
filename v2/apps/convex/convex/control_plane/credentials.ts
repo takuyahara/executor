@@ -1,12 +1,19 @@
+import {
+  buildCredentialHeaders,
+  selectOAuthAccessToken,
+} from "@executor-v2/engine";
 import { type UpsertCredentialBindingPayload } from "@executor-v2/management-api";
 import {
+  OAuthTokenSchema,
   SourceCredentialBindingSchema,
+  type OAuthToken,
   type SourceCredentialBinding,
 } from "@executor-v2/schema";
 import { v } from "convex/values";
 import * as Schema from "effect/Schema";
 
 import {
+  internalQuery,
   mutation,
   query,
   type MutationCtx,
@@ -16,6 +23,7 @@ import {
 const decodeSourceCredentialBinding = Schema.decodeUnknownSync(
   SourceCredentialBindingSchema,
 );
+const decodeOAuthToken = Schema.decodeUnknownSync(OAuthTokenSchema);
 
 const stripConvexSystemFields = (
   value: Record<string, unknown>,
@@ -81,6 +89,195 @@ const canAccessSourceCredentialBinding = (
 ): boolean =>
   binding.workspaceId === input.workspaceId
   || (binding.workspaceId === null && binding.organizationId === input.organizationId);
+
+const toOAuthToken = (document: Record<string, unknown>): OAuthToken =>
+  decodeOAuthToken(stripConvexSystemFields(document));
+
+const sourceSlug = (value: string): string =>
+  value
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "");
+
+const parseHostname = (endpoint: string): string | null => {
+  try {
+    const hostname = new URL(endpoint).hostname.trim().toLowerCase();
+    return hostname.length > 0 ? hostname : null;
+  } catch {
+    return null;
+  }
+};
+
+const sourceKeyCandidatesForIngest = (input: {
+  sourceId: string;
+  sourceName: string;
+  sourceEndpoint: string;
+}): Array<string> => {
+  const values = new Set<string>();
+
+  const addCandidate = (value: string | null): void => {
+    if (!value) {
+      return;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      values.add(trimmed);
+    }
+  };
+
+  addCandidate(`source:${input.sourceId}`);
+  addCandidate(input.sourceId);
+  addCandidate(input.sourceName.toLowerCase());
+  addCandidate(sourceSlug(input.sourceName));
+
+  const hostname = parseHostname(input.sourceEndpoint);
+  addCandidate(hostname);
+  if (hostname) {
+    const hostnameWithoutApi = hostname.replace(/^api\./, "");
+    addCandidate(hostnameWithoutApi);
+    const firstLabel = hostnameWithoutApi.split(".")[0] ?? null;
+    addCandidate(firstLabel);
+  }
+
+  return [...values];
+};
+
+const bindingScopeScore = (
+  binding: SourceCredentialBinding,
+  input: {
+    workspaceId: string;
+    organizationId: string;
+  },
+): number => {
+  if (binding.scopeType === "workspace") {
+    return binding.workspaceId === input.workspaceId ? 20 : -1;
+  }
+
+  if (binding.scopeType === "organization") {
+    return binding.organizationId === input.organizationId ? 10 : -1;
+  }
+
+  return -1;
+};
+
+const selectBestIngestBinding = (
+  candidates: ReadonlyArray<{
+    binding: SourceCredentialBinding;
+    sourceKeyRank: number;
+  }>,
+  input: {
+    workspaceId: string;
+    organizationId: string;
+  },
+): SourceCredentialBinding | null => {
+  const ranked = candidates
+    .map((candidate) => ({
+      binding: candidate.binding,
+      scopeScore: bindingScopeScore(candidate.binding, input),
+      sourceKeyRank: candidate.sourceKeyRank,
+    }))
+    .filter((candidate) => candidate.scopeScore >= 0)
+    .sort((left, right) => {
+      if (left.scopeScore !== right.scopeScore) {
+        return right.scopeScore - left.scopeScore;
+      }
+
+      if (left.sourceKeyRank !== right.sourceKeyRank) {
+        return right.sourceKeyRank - left.sourceKeyRank;
+      }
+
+      if (left.binding.updatedAt !== right.binding.updatedAt) {
+        return right.binding.updatedAt - left.binding.updatedAt;
+      }
+
+      return right.binding.createdAt - left.binding.createdAt;
+    });
+
+  return ranked[0]?.binding ?? null;
+};
+
+export const resolveSourceCredentialHeadersForIngest = internalQuery({
+  args: {
+    workspaceId: v.string(),
+    sourceId: v.string(),
+    sourceName: v.string(),
+    sourceEndpoint: v.string(),
+  },
+  handler: async (ctx, args): Promise<{
+    headers: Record<string, string>;
+  }> => {
+    const organizationId = await resolveWorkspaceOrganizationId(ctx, args.workspaceId);
+    const sourceKeys = sourceKeyCandidatesForIngest({
+      sourceId: args.sourceId,
+      sourceName: args.sourceName,
+      sourceEndpoint: args.sourceEndpoint,
+    });
+
+    const candidateRows = await Promise.all(
+      sourceKeys.map((sourceKey) =>
+        ctx.db
+          .query("sourceCredentialBindings")
+          .withIndex("by_sourceKey", (q) => q.eq("sourceKey", sourceKey))
+          .collect()
+          .then((rows) =>
+            rows.map((row) => ({
+              binding: toSourceCredentialBinding(row as unknown as Record<string, unknown>),
+              sourceKey,
+            })),
+          ),
+      ),
+    );
+
+    const flattened = candidateRows.flat();
+    const dedupedById = new Map<string, { binding: SourceCredentialBinding; sourceKey: string }>();
+    for (const candidate of flattened) {
+      if (!dedupedById.has(candidate.binding.id)) {
+        dedupedById.set(candidate.binding.id, candidate);
+      }
+    }
+
+    const sourceKeyRankByKey = new Map<string, number>();
+    sourceKeys.forEach((sourceKey, index) => {
+      sourceKeyRankByKey.set(sourceKey, sourceKeys.length - index);
+    });
+
+    const binding = selectBestIngestBinding(
+      [...dedupedById.values()].map((candidate) => ({
+        binding: candidate.binding,
+        sourceKeyRank: sourceKeyRankByKey.get(candidate.sourceKey) ?? 0,
+      })),
+      {
+        workspaceId: args.workspaceId,
+        organizationId,
+      },
+    );
+
+    if (!binding || !canAccessSourceCredentialBinding(binding, { workspaceId: args.workspaceId, organizationId })) {
+      return { headers: {} };
+    }
+
+    const oauthTokens = binding.provider === "oauth2"
+      ? (await ctx.db
+          .query("oauthTokens")
+          .withIndex("by_sourceId", (q) => q.eq("sourceId", args.sourceId))
+          .collect()).map((row) => toOAuthToken(row as unknown as Record<string, unknown>))
+      : [];
+
+    const oauthAccessToken = binding.provider === "oauth2"
+      ? selectOAuthAccessToken(oauthTokens, {
+          workspaceId: args.workspaceId,
+          organizationId,
+          accountId: null,
+          sourceKey: binding.sourceKey,
+        }, args.sourceId)
+      : null;
+
+    const headers = buildCredentialHeaders(binding, { oauthAccessToken });
+
+    return { headers };
+  },
+});
 
 export const listCredentialBindings = query({
   args: {

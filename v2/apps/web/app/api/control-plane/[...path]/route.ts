@@ -113,6 +113,11 @@ const buildProxyHeaders = (request: NextRequest): Headers => {
     headers.set("accept", accept);
   }
 
+  const acceptEncoding = readOptionalHeader(request.headers, "accept-encoding");
+  if (acceptEncoding !== null) {
+    headers.set("accept-encoding", acceptEncoding);
+  }
+
   return headers;
 };
 
@@ -213,18 +218,17 @@ const normalizeControlPlaneErrorResponse = async (
   );
 };
 
-const normalizeSuccessResponse = async (
+const normalizeSuccessResponse = (
   upstreamResponse: Response,
-): Promise<Response> => {
+): Response => {
   const contentType = upstreamResponse.headers.get("content-type")?.toLowerCase() ?? "";
-  const payload = await upstreamResponse.arrayBuffer();
 
   const headers = new Headers();
   if (contentType.length > 0) {
     headers.set("content-type", contentType);
   }
 
-  return new Response(payload, {
+  return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,
     headers,
   });

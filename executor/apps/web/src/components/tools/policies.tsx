@@ -878,12 +878,11 @@ export function PoliciesPanel({
   const deleteToolPolicyAssignment = useMutation(convexApi.workspace.deleteToolPolicyAssignment);
 
   const loading = Boolean(context) && policiesQuery === undefined;
-  const policies = useMemo(() => (policiesQuery ?? []) as ToolPolicyRecord[], [policiesQuery]);
+  const policies = (policiesQuery ?? []) as ToolPolicyRecord[];
 
-  const currentWorkspace = useMemo(() => {
-    if (!context) return null;
-    return workspaces.find((workspace) => workspace.id === context.workspaceId) ?? null;
-  }, [context, workspaces]);
+  const currentWorkspace = context
+    ? workspaces.find((workspace) => workspace.id === context.workspaceId) ?? null
+    : null;
   const currentOrganizationId = currentWorkspace?.organizationId ?? null;
 
   const membersQuery = useQuery(
@@ -892,38 +891,28 @@ export function PoliciesPanel({
       ? { organizationId: currentOrganizationId, sessionId: context.sessionId }
       : "skip",
   );
-  const memberItems = useMemo(
-    () => ((membersQuery?.items ?? []) as OrganizationMemberListItem[]),
-    [membersQuery],
-  );
-  const selfMembership = useMemo(() => {
-    if (!context) return null;
-    return memberItems.find((member) => member.accountId === context.accountId) ?? null;
-  }, [context, memberItems]);
+  const memberItems = (membersQuery?.items ?? []) as OrganizationMemberListItem[];
+  const selfMembership = context
+    ? memberItems.find((member) => member.accountId === context.accountId) ?? null
+    : null;
   const canManageRoles = selfMembership?.role === "owner" || selfMembership?.role === "admin";
 
   const rolesQuery = useQuery(
     convexApi.workspace.listToolPolicySets,
     context && canManageRoles ? listArgs : "skip",
   );
-  const roleItems = useMemo(() => ((rolesQuery ?? []) as ToolPolicySetRecord[]), [rolesQuery]);
-  const activeRoleId = useMemo(() => {
-    if (!canManageRoles) {
-      return null;
-    }
-
-    if (selectedRoleId && roleItems.some((role) => role.id === selectedRoleId)) {
-      return selectedRoleId;
-    }
-
-    return roleItems[0]?.id ?? null;
-  }, [canManageRoles, roleItems, selectedRoleId]);
+  const roleItems = (rolesQuery ?? []) as ToolPolicySetRecord[];
+  const activeRoleId = !canManageRoles
+    ? null
+    : selectedRoleId && roleItems.some((role) => role.id === selectedRoleId)
+      ? selectedRoleId
+      : roleItems[0]?.id ?? null;
 
   const bindingsQuery = useQuery(
     convexApi.workspace.listToolPolicyAssignments,
     context && canManageRoles ? listArgs : "skip",
   );
-  const bindingItems = useMemo(() => ((bindingsQuery ?? []) as ToolPolicyAssignmentRecord[]), [bindingsQuery]);
+  const bindingItems = (bindingsQuery ?? []) as ToolPolicyAssignmentRecord[];
 
   const roleRulesQuery = useQuery(
     convexApi.workspace.listToolPolicyRules,
@@ -935,10 +924,7 @@ export function PoliciesPanel({
         }
       : "skip",
   );
-  const selectedRoleRules = useMemo(
-    () => ((roleRulesQuery ?? []) as ToolPolicyRuleRecord[]),
-    [roleRulesQuery],
-  );
+  const selectedRoleRules = (roleRulesQuery ?? []) as ToolPolicyRuleRecord[];
 
   const namespaces = useMemo(() => buildNamespaces(tools), [tools]);
   const sourceOptions = useMemo(() => {
@@ -952,18 +938,9 @@ export function PoliciesPanel({
       .sort((a, b) => a.localeCompare(b));
   }, [namespaces]);
 
-  const selectedRole = useMemo(
-    () => roleItems.find((role) => role.id === activeRoleId) ?? null,
-    [activeRoleId, roleItems],
-  );
-  const selectedRoleBindings = useMemo(
-    () => bindingItems.filter((binding) => binding.roleId === activeRoleId),
-    [activeRoleId, bindingItems],
-  );
-  const activeMemberOptions = useMemo(
-    () => memberItems.filter((member) => member.status === "active"),
-    [memberItems],
-  );
+  const selectedRole = roleItems.find((role) => role.id === activeRoleId) ?? null;
+  const selectedRoleBindings = bindingItems.filter((binding) => binding.roleId === activeRoleId);
+  const activeMemberOptions = memberItems.filter((member) => member.status === "active");
 
   // ── Handlers ──
 

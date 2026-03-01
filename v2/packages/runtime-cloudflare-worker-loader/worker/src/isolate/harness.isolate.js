@@ -1,68 +1,65 @@
-import { ResponseJson as _ResponseJson } from "./globals.js";
+import { WorkerEntrypoint } from "cloudflare:workers";
+
 import { run } from "./user-code.js";
 
 const APPROVAL_DENIED_PREFIX = "APPROVAL_DENIED:";
 
+function isObjectRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function decodeToolBridgeResult(rawResult) {
-  const parsed = (() => {
-    if (typeof rawResult === "string") {
-      try {
-        return JSON.parse(rawResult);
-      } catch {
-        return null;
-      }
-    }
-
-    if (rawResult && typeof rawResult === "object") {
-      return rawResult;
-    }
-
-    return null;
-  })();
-
-  if (!parsed || typeof parsed !== "object") {
+  if (!isObjectRecord(rawResult)) {
     return {
       ok: false,
       kind: "failed",
-      error: "Tool bridge returned an invalid payload",
+      error: "Tool bridge returned a non-object payload",
     };
   }
 
-  if (parsed.ok === true) {
+  if (rawResult.ok === true) {
     return {
       ok: true,
-      value: parsed.value,
+      value: rawResult.value,
     };
   }
 
   if (
-    parsed.ok === false
-    && parsed.kind === "pending"
-    && typeof parsed.approvalId === "string"
-    && typeof parsed.retryAfterMs === "number"
+    rawResult.ok === false
+    && rawResult.kind === "pending"
+    && typeof rawResult.approvalId === "string"
+    && typeof rawResult.retryAfterMs === "number"
   ) {
     return {
       ok: false,
       kind: "pending",
-      approvalId: parsed.approvalId,
-      retryAfterMs: parsed.retryAfterMs,
-      ...(typeof parsed.error === "string" ? { error: parsed.error } : {}),
+      approvalId: rawResult.approvalId,
+      retryAfterMs: rawResult.retryAfterMs,
+      ...(typeof rawResult.error === "string" ? { error: rawResult.error } : {}),
     };
   }
 
-  if (parsed.ok === false && parsed.kind === "denied" && typeof parsed.error === "string") {
+  if (
+    rawResult.ok === false
+    && rawResult.kind === "denied"
+    && typeof rawResult.error === "string"
+  ) {
     return {
       ok: false,
       kind: "denied",
-      error: parsed.error,
+      error: rawResult.error,
     };
   }
 
-  if (parsed.ok === false && parsed.kind === "failed" && typeof parsed.error === "string") {
+  if (
+    rawResult.ok === false
+    && rawResult.kind === "failed"
+    && typeof rawResult.error === "string"
+  ) {
     return {
       ok: false,
       kind: "failed",
-      error: parsed.error,
+      error: rawResult.error,
     };
   }
 
@@ -165,9 +162,9 @@ function sanitizeExecutionResult(value) {
   }
 }
 
-export default {
-  async fetch(_request, env, _ctx) {
-    const tools = createToolsProxy(env.TOOL_BRIDGE);
+export default class SandboxHarness extends WorkerEntrypoint {
+  async evaluate(bridge) {
+    const tools = createToolsProxy(bridge);
     const console = {
       log: (..._args) => {},
       info: (..._args) => {},
@@ -177,26 +174,26 @@ export default {
 
     try {
       const value = await run(tools, console);
-      return _ResponseJson({
+      return {
         status: "completed",
         result: sanitizeExecutionResult(value),
         exitCode: 0,
-      });
+      };
     } catch (error) {
       const message = describeExecutionError(error);
 
       if (message.startsWith(APPROVAL_DENIED_PREFIX)) {
         const denied = message.replace(APPROVAL_DENIED_PREFIX, "").trim();
-        return _ResponseJson({
+        return {
           status: "denied",
           error: denied,
-        });
+        };
       }
 
-      return _ResponseJson({
+      return {
         status: "failed",
         error: message,
-      });
+      };
     }
-  },
-};
+  }
+}

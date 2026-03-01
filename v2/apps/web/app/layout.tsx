@@ -27,11 +27,12 @@ type RootLayoutProps = {
 };
 
 const RootLayout = ({ children }: RootLayoutProps) => (
-  <html lang="en" className={`${bodyFont.variable} ${displayFont.variable}`}>
-    <body>
+  <html lang="en" suppressHydrationWarning className={`${bodyFont.variable} ${displayFont.variable}`}>
+    <body className="antialiased">
       <Providers>{children}</Providers>
     </body>
   </html>
 );
+
 
 export default RootLayout;
