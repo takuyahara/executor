@@ -1,0 +1,135 @@
+---
+import Base from "../layouts/Base.astro";
+import Hero from "../components/Hero.astro";
+import Section from "../components/Section.astro";
+import { AddSources } from "../components/AddSources";
+import { SystemPrompt } from "../components/SystemPrompt";
+import { CodeEditor } from "../components/CodeEditor";
+import { ExampleQueries } from "../components/ExampleQueries";
+import { ApprovalFlow } from "../components/ApprovalFlow";
+import { UsageCards } from "../components/UsageCards";
+---
+
+<Base title="Executor — Tool calling that actually works" description="Give AI agents safe, governed access to any API. Sandboxed TypeScript execution with policy-based approval flows.">
+  <main>
+    <!-- ======================================================
+         HERO
+         ====================================================== -->
+    <Hero
+      title="Tool calling is"
+      highlight="broken."
+      subtitle="Your agent wastes half its context on tool schemas, hallucinates parameter formats, and has zero guardrails. There's a better way."
+    />
+
+    <!-- ======================================================
+         PROBLEM
+         ====================================================== -->
+    <Section>
+      <p>
+        Every time your AI agent calls an external API, the same things go wrong. It guesses parameter names. It hallucinates enum values. It burns 40k tokens just loading tool definitions into context. And when it finally gets a call right, there's nothing stopping it from creating a DNS record, charging a credit card, or deleting a production deployment.
+      </p>
+      <p>
+        <strong>This is the state of tool calling today.</strong> Dump the entire OpenAPI spec into the system prompt, cross your fingers, and hope the model figures it out. It doesn't scale, it's not safe, and it wastes your money.
+      </p>
+
+      <!-- ======================================================
+           ADD SOURCES
+           ====================================================== -->
+      <h2>Add any API as a source</h2>
+      <p>
+        Connect OpenAPI specs, MCP servers, or GraphQL endpoints. Each source is compiled into typed, discoverable tools — not raw schema definitions pasted into context.
+      </p>
+
+      <div class="my-8 bg-surface-elevated border border-white/[0.08] rounded-lg overflow-hidden">
+        <div class="px-5 py-4 bg-white/[0.02] border-b border-white/[0.06]">
+          <h4 class="font-serif text-lg font-normal m-0">Add sources</h4>
+        </div>
+        <div class="p-5">
+          <AddSources client:visible />
+        </div>
+      </div>
+
+      <!-- ======================================================
+           SYSTEM PROMPT
+           ====================================================== -->
+      <h2>The system prompt stays at ~1k tokens</h2>
+      <p>
+        Traditional tool calling dumps every tool definition into context. 3 API sources = 45,000+ tokens before your agent even starts thinking. Executor injects a compact system prompt that teaches the model to <em>discover</em> tools on demand.
+      </p>
+
+      <div class="my-8">
+        <SystemPrompt client:visible />
+      </div>
+
+      <!-- ======================================================
+           CODE EDITOR
+           ====================================================== -->
+      <h2>Your agent writes code, not JSON</h2>
+      <p>
+        Instead of rigid JSON tool calls that fail on the first typo, your agent writes TypeScript in a sandboxed runtime. It gets autocomplete-style discovery, can chain multiple operations, handle errors, and return structured results — all in a single execution.
+      </p>
+
+      <div class="my-8">
+        <CodeEditor client:visible />
+      </div>
+
+      <blockquote>
+        The sandbox has no filesystem, no process access, no imports. The only way to reach the outside world is through the <code>tools</code> object — and every call goes through your policies.
+      </blockquote>
+
+      <!-- ======================================================
+           EXAMPLE QUERIES
+           ====================================================== -->
+      <h2>What your agents can do</h2>
+      <p>
+        Real workflows, not toy demos. Each query runs as sandboxed TypeScript with full tool discovery, policy enforcement, and structured output.
+      </p>
+
+      <div class="my-8 bg-surface-elevated border border-white/[0.08] rounded-lg overflow-hidden">
+        <div class="px-5 py-4 bg-white/[0.02] border-b border-white/[0.06]">
+          <h4 class="font-serif text-lg font-normal m-0">Example queries</h4>
+        </div>
+        <div class="p-5">
+          <ExampleQueries client:visible />
+        </div>
+      </div>
+
+      <!-- ======================================================
+           APPROVAL FLOW
+           ====================================================== -->
+      <h2>Every tool call is policy-governed</h2>
+      <p>
+        Define roles, bind them to workspaces or users, and set approval requirements per tool. Read operations auto-approve. Write operations require human confirmation. Destructive operations get denied by default.
+      </p>
+
+      <div class="my-8">
+        <ApprovalFlow client:visible />
+      </div>
+
+      <p>
+        Approvals work inline (via MCP elicitation in Claude Code) or out-of-band (via the web dashboard). The agent pauses, waits for your decision, and resumes or exits gracefully.
+      </p>
+
+      <!-- ======================================================
+           USE VIA
+           ====================================================== -->
+      <h2>Works everywhere you need it</h2>
+      <p>
+        One install. Standard MCP protocol. Connect from Claude Code, the Vercel AI SDK, or any MCP-compatible client.
+      </p>
+
+      <div class="my-8">
+        <UsageCards />
+      </div>
+    </Section>
+
+    <!-- ======================================================
+         FOOTER
+         ====================================================== -->
+    <footer class="py-10 border-t border-[#222] text-center">
+      <p class="text-xs text-muted">
+        Executor — sandboxed tool calling for AI agents.
+      </p>
+    </footer>
+  </main>
+</Base>

@@ -1,0 +1,32 @@
+---
+import Terminal from "./Terminal.astro";
+
+interface Props {
+  title: string;
+  highlight: string;
+  subtitle: string;
+}
+
+const { title, highlight, subtitle } = Astro.props;
+---
+
+<section class="min-h-screen flex flex-col justify-center py-[60px] pb-20 relative">
+  <div class="w-full max-w-[1000px] mx-auto px-6 max-sm:px-4">
+    <div class="text-left mb-12 animate-fade-up" style="animation-delay: 0.1s;">
+      <h1 class="font-serif text-[clamp(3.5rem,10vw,7rem)] font-normal leading-[1.05] mb-3 tracking-[-0.02em] max-sm:text-[clamp(2.5rem,12vw,4rem)] max-[400px]:text-4xl">
+        {title} <span class="text-accent">{highlight}</span>
+      </h1>
+      <p class="font-serif text-[clamp(1.125rem,2.5vw,1.5rem)] text-white/50 max-sm:text-base">
+        {subtitle}
+      </p>
+      <slot name="author" />
+    </div>
+    <Terminal />
+  </div>
+  <!-- Scroll indicator -->
+  <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-white/30 text-[0.7rem] uppercase tracking-widest animate-fade-up-delay-2 max-sm:bottom-5">
+    <svg class="animate-bounce w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 5v14M19 12l-7 7-7-7" />
+    </svg>
+  </div>
+</section>

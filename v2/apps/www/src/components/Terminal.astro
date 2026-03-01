@@ -1,0 +1,45 @@
+---
+const toolCallLines = [
+  { time: "03:14:22.847", level: "CALL", levelClass: "text-blue-400/80", msg: "tools.cloudflare.zones.list({ account_id: 'acc_8f7a2b3c' })" },
+  { time: "03:14:23.912", level: "FAIL", levelClass: "text-red-400/80", msg: "ToolCallError: 'zones.list' is not a valid tool. Did you mean 'list_zones'? Available: list_zones, create_zone, zone_details, edit_zone..." },
+  { time: "03:14:24.156", level: "CALL", levelClass: "text-blue-400/80", msg: "tools.cloudflare.list_zones({ account: { id: 'acc_8f7a2b3c' } })" },
+  { time: "03:14:25.201", level: "FAIL", levelClass: "text-red-400/80", msg: "ToolCallError: Invalid input. Expected 'account.id' to be in query params, not body. Schema: { query: { account.id: string } }" },
+  { time: "03:14:26.445", level: "RETRY", levelClass: "text-yellow-400/70", msg: "Attempt 3/5 — reformatting parameters based on error message..." },
+  { time: "03:14:27.892", level: "CALL", levelClass: "text-blue-400/80", msg: "tools.vercel.deployments.list({ teamId: 'team_xyz', limit: 10 })" },
+  { time: "03:14:28.156", level: "FAIL", levelClass: "text-red-400/80", msg: "ToolCallError: Authentication failed. Bearer token expired 47 minutes ago. No refresh mechanism available." },
+  { time: "03:14:29.312", level: "WARN", levelClass: "text-yellow-400/70", msg: "Token context window: 47,291 tokens consumed by tool definitions alone. 3 sources × ~15,000 tokens each." },
+  { time: "03:14:30.445", level: "CALL", levelClass: "text-blue-400/80", msg: "tools.posthog.events.query({ filter: { event: '$pageview' }, date_from: '-7d' })" },
+  { time: "03:14:31.112", level: "FAIL", levelClass: "text-red-400/80", msg: "ToolCallError: Parameter 'date_from' expects ISO 8601 format, got relative string. See: properties.date_from.format" },
+  { time: "03:14:32.201", level: "RETRY", levelClass: "text-yellow-400/70", msg: "Attempt 2/5 — agent hallucinated parameter format, retrying with schema hint..." },
+  { time: "03:14:33.556", level: "CALL", levelClass: "text-blue-400/80", msg: "tools.github.repos.create({ name: 'new-project', org: 'acme', private: true })" },
+  { time: "03:14:34.112", level: "OK", levelClass: "text-green-400/80", msg: "Created repo acme/new-project — but wait, did anyone approve this? No policy gate. No audit trail." },
+  { time: "03:14:35.445", level: "WARN", levelClass: "text-yellow-400/70", msg: "Context budget: 128k limit, 89k consumed. 41k on tool schemas, 31k on retries from format errors, 17k actual work." },
+  { time: "03:14:36.112", level: "CALL", levelClass: "text-blue-400/80", msg: "tools.stripe.charges.create({ amount: 9900, currency: 'usd', source: 'tok_visa' })" },
+  { time: "03:14:36.201", level: "OK", levelClass: "text-green-400/80", msg: "Charge created: ch_3Np... $99.00 USD — no approval required, no human in the loop." },
+  { time: "03:14:37.445", level: "ERR", levelClass: "text-red-400/80", msg: "Session summary: 5 tool calls, 3 failed on first attempt, 47k tokens wasted on retries, 0 policy checks." },
+  { time: "03:14:38.112", level: "INFO", levelClass: "text-white/40", msg: "This is how tool calling works today. It doesn't have to be this way." },
+];
+
+const allLines = [...toolCallLines, ...toolCallLines];
+---
+
+<div class="animate-fade-up-delay w-screen ml-[calc(-50vw+50%)]">
+  <div class="bg-surface-elevated border-t border-white/[0.06] overflow-hidden relative after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-20 after:bg-gradient-to-b after:from-transparent after:to-surface after:pointer-events-none">
+    <div class="bg-white/[0.02] px-12 py-3.5 flex gap-1.5 border-b border-white/[0.06] max-sm:px-6">
+      <div class="w-2.5 h-2.5 rounded-full bg-gray-500 opacity-60"></div>
+      <div class="w-2.5 h-2.5 rounded-full bg-gray-500 opacity-60"></div>
+      <div class="w-2.5 h-2.5 rounded-full bg-gray-500 opacity-60"></div>
+    </div>
+    <div class="px-12 py-5 h-[480px] overflow-hidden relative max-sm:px-4 max-sm:h-[200px] after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[140px] after:bg-gradient-to-b after:from-transparent after:to-surface-elevated after:pointer-events-none">
+      <div class="animate-scroll-logs">
+        {allLines.map((line) => (
+          <div class="font-mono text-xs leading-8 whitespace-nowrap text-white/40 max-sm:text-[0.65rem]">
+            <span class="text-white/20 mr-4">{line.time}</span>
+            <span class:list={["inline-block w-[52px] mr-4", line.levelClass]}>{line.level}</span>
+            <span class="text-white/50">{line.msg}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
