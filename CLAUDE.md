@@ -177,6 +177,10 @@ Topics: quick-start, project-setup, tsconfig, basics, services-and-layers, data-
 
 Never guess at Effect patterns - check the guide first.
 
+- Prefer Effect-native helpers/combinators over manual branching when possible (e.g. `Result.match`, `Result.isSuccess`, `Effect.catchTag`, `ParseResult` formatters).
+- Avoid ad-hoc `_tag` checks and `instanceof Error` fallbacks in business logic when a typed/tagged Effect error path exists.
+- Keep error/result mapping centralized in atoms/services/handlers rather than spread through UI components.
+
 <!-- effect-solutions:end -->
 
 Unless I explicitly state otherwise, the request relates to this codebase. i.e "add the deepwiki MCP to the default sources" means look through the codebase for how thats relevant, not update opencode config

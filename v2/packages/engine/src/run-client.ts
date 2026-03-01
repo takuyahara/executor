@@ -61,17 +61,8 @@ export type CreateInMemoryRuntimeRunClientOptions = {
   makeRunId?: () => string;
 };
 
-const formatRuntimeExecuteError = (error: RuntimeExecuteError): string => {
-  switch (error._tag) {
-    case "RuntimeAdapterError":
-    case "LocalCodeRunnerError":
-    case "DenoSubprocessRunnerError":
-    case "ToolProviderError":
-      return error.details ? `${error.message}: ${error.details}` : error.message;
-    case "ToolProviderRegistryError":
-      return error.message;
-  }
-};
+const formatRuntimeExecuteError = (error: RuntimeExecuteError): string =>
+  error.details ? `${error.message}: ${error.details}` : error.message;
 
 const toInMemoryDescriptor = (
   toolName: string,

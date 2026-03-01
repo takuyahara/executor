@@ -8,11 +8,11 @@ import * as Either from "effect/Either";
 import * as Schema from "effect/Schema";
 
 import {
-  makeCloudflareWorkerLoaderRuntimeAdapter,
-  makeLocalInProcessRuntimeAdapter,
   makeRuntimeAdapterRegistry,
   RuntimeAdapterError,
 } from "./runtime-adapters";
+import { makeCloudflareWorkerLoaderRuntimeAdapter } from "@executor-v2/runtime-cloudflare-worker-loader";
+import { makeLocalInProcessRuntimeAdapter } from "@executor-v2/runtime-local-inproc";
 import {
   makeToolProviderRegistry,
   ToolProviderRegistryService,

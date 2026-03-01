@@ -26,6 +26,7 @@
         "@executor-v2/domain": "workspace:*",
         "@executor-v2/engine": "workspace:*",
         "@executor-v2/mcp-gateway": "workspace:*",
+        "@executor-v2/runtime-local-inproc": "workspace:*",
         "@executor-v2/schema": "workspace:*",
         "@executor-v2/sdk": "workspace:*",
         "convex": "catalog:",
@@ -47,6 +48,9 @@
         "@executor-v2/engine": "workspace:*",
         "@executor-v2/mcp-gateway": "workspace:*",
         "@executor-v2/persistence-local": "workspace:*",
+        "@executor-v2/runtime-cloudflare-worker-loader": "workspace:*",
+        "@executor-v2/runtime-deno-subprocess": "workspace:*",
+        "@executor-v2/runtime-local-inproc": "workspace:*",
         "@executor-v2/sdk": "workspace:*",
         "effect": "catalog:",
       },
@@ -81,6 +85,8 @@
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "@executor-v2/engine": "workspace:*",
+        "@executor-v2/runtime-deno-subprocess": "workspace:*",
+        "@executor-v2/runtime-local-inproc": "workspace:*",
         "ai": "^6.0.0",
         "effect": "catalog:",
         "vitest": "catalog:",
@@ -139,6 +145,9 @@
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
+        "@executor-v2/runtime-cloudflare-worker-loader": "workspace:*",
+        "@executor-v2/runtime-deno-subprocess": "workspace:*",
+        "@executor-v2/runtime-local-inproc": "workspace:*",
         "@executor-v2/source-manager": "workspace:*",
         "vitest": "catalog:",
       },
@@ -153,6 +162,29 @@
     },
     "packages/oauth": {
       "name": "@executor-v2/oauth",
+    },
+    "packages/runtime-cloudflare-worker-loader": {
+      "name": "@executor-v2/runtime-cloudflare-worker-loader",
+      "dependencies": {
+        "@executor-v2/engine": "workspace:*",
+        "effect": "catalog:",
+      },
+    },
+    "packages/runtime-deno-subprocess": {
+      "name": "@executor-v2/runtime-deno-subprocess",
+      "dependencies": {
+        "@executor-v2/engine": "workspace:*",
+        "@executor-v2/schema": "workspace:*",
+        "effect": "catalog:",
+      },
+    },
+    "packages/runtime-local-inproc": {
+      "name": "@executor-v2/runtime-local-inproc",
+      "dependencies": {
+        "@executor-v2/engine": "workspace:*",
+        "@executor-v2/schema": "workspace:*",
+        "effect": "catalog:",
+      },
     },
     "packages/schema": {
       "name": "@executor-v2/schema",
@@ -341,6 +373,12 @@
     "@executor-v2/persistence-local": ["@executor-v2/persistence-local@workspace:packages/state-local-file"],
 
     "@executor-v2/persistence-ports": ["@executor-v2/persistence-ports@workspace:packages/state-contracts"],
+
+    "@executor-v2/runtime-cloudflare-worker-loader": ["@executor-v2/runtime-cloudflare-worker-loader@workspace:packages/runtime-cloudflare-worker-loader"],
+
+    "@executor-v2/runtime-deno-subprocess": ["@executor-v2/runtime-deno-subprocess@workspace:packages/runtime-deno-subprocess"],
+
+    "@executor-v2/runtime-local-inproc": ["@executor-v2/runtime-local-inproc@workspace:packages/runtime-local-inproc"],
 
     "@executor-v2/schema": ["@executor-v2/schema@workspace:packages/schema"],
 

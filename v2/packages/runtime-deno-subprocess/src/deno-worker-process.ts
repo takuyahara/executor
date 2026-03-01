@@ -26,13 +26,7 @@ export const spawnDenoWorkerProcess = (
 ): DenoWorkerProcess => {
   const child = spawn(
     input.executable,
-    [
-      "run",
-      "--quiet",
-      "--no-prompt",
-      "--no-check",
-      input.scriptPath,
-    ],
+    ["run", "--quiet", "--no-prompt", "--no-check", input.scriptPath],
     {
       stdio: ["pipe", "pipe", "pipe"],
     },

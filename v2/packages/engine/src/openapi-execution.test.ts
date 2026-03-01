@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { executeJavaScriptWithTools } from "./local-runner";
+import { executeJavaScriptWithTools } from "@executor-v2/runtime-local-inproc";
 import {
   makeOpenApiToolProvider,
   openApiToolDescriptorsFromManifest,

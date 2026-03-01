@@ -11,7 +11,6 @@ export const mcpHandler = httpAction(async (ctx, request) => {
   );
 
   return handleMcpHttpRequest(request, {
-    target: "remote",
     serverName: "executor-v2-convex",
     serverVersion: "0.0.0",
     runClient,

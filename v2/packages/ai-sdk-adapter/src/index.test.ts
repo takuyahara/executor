@@ -2,10 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   createInMemoryRuntimeRunClient,
   createRuntimeRunClient,
-  makeDenoSubprocessRuntimeAdapter,
-  makeLocalInProcessRuntimeAdapter,
   makeToolProviderRegistry,
 } from "@executor-v2/engine";
+import { makeDenoSubprocessRuntimeAdapter } from "@executor-v2/runtime-deno-subprocess";
+import { makeLocalInProcessRuntimeAdapter } from "@executor-v2/runtime-local-inproc";
 import { createExecutorRunClient } from "@executor-v2/sdk";
 import type { ExecuteRunResult } from "@executor-v2/sdk";
 import { createGateway, generateText, stepCountIs, tool } from "ai";

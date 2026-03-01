@@ -1,32 +1,15 @@
-import type { Source } from "@executor-v2/schema";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import {
-  DenoSubprocessRunnerError,
-  executeJavaScriptInDenoSubprocess,
-} from "./deno-subprocess-runner";
-import {
-  executeJavaScriptWithTools,
-  LocalCodeRunnerError,
-} from "./local-runner";
-import {
-  ToolProviderError,
-  ToolProviderRegistryError,
-  type CanonicalToolDescriptor,
-  type ToolProviderRegistryService,
-} from "./tool-providers";
+import type { ToolProviderRegistryService } from "./tool-providers";
 
-export type RuntimeAdapterKind =
-  | "local-inproc"
-  | "deno-subprocess"
-  | "cloudflare-worker-loader";
+export type RuntimeAdapterKind = string;
 
 export type RuntimeRunnableTool = {
-  descriptor: CanonicalToolDescriptor;
-  source: Source | null;
+  descriptor: unknown;
+  source: unknown | null;
 };
 
 export type RuntimeExecuteInput = {
@@ -42,12 +25,7 @@ export class RuntimeAdapterError extends Data.TaggedError("RuntimeAdapterError")
   details: string | null;
 }> {}
 
-export type RuntimeExecuteError =
-  | RuntimeAdapterError
-  | LocalCodeRunnerError
-  | DenoSubprocessRunnerError
-  | ToolProviderRegistryError
-  | ToolProviderError;
+export type RuntimeExecuteError = RuntimeAdapterError;
 
 export interface RuntimeAdapter {
   readonly kind: RuntimeAdapterKind;
@@ -87,11 +65,6 @@ export class RuntimeAdapterRegistryService extends Context.Tag(
   "@executor-v2/engine/RuntimeAdapterRegistryService",
 )<RuntimeAdapterRegistryService, RuntimeAdapterRegistry>() {}
 
-type DenoSubprocessRuntimeAdapterOptions = {
-  denoExecutable?: string;
-  defaultTimeoutMs?: number;
-};
-
 const duplicateRuntimeAdapterError = (
   runtimeKind: RuntimeAdapterKind,
 ): RuntimeAdapterRegistryError =>
@@ -110,42 +83,6 @@ const runtimeAdapterNotFoundError = (
     runtimeKind,
     message: `No runtime adapter registered for kind: ${runtimeKind}`,
   });
-
-export const makeLocalInProcessRuntimeAdapter = (): RuntimeAdapter => ({
-  kind: "local-inproc",
-  isAvailable: () => Effect.succeed(true),
-  execute: (input) =>
-    executeJavaScriptWithTools({
-      code: input.code,
-      tools: input.tools,
-    }),
-});
-
-export const makeDenoSubprocessRuntimeAdapter = (
-  options: DenoSubprocessRuntimeAdapterOptions = {},
-): RuntimeAdapter => ({
-  kind: "deno-subprocess",
-  isAvailable: () => Effect.succeed(true),
-  execute: (input) =>
-    executeJavaScriptInDenoSubprocess({
-      code: input.code,
-      tools: input.tools,
-      timeoutMs: input.timeoutMs ?? options.defaultTimeoutMs,
-      denoExecutable: options.denoExecutable,
-    }),
-});
-
-export const makeCloudflareWorkerLoaderRuntimeAdapter = (): RuntimeAdapter => ({
-  kind: "cloudflare-worker-loader",
-  isAvailable: () => Effect.succeed(false),
-  execute: () =>
-    new RuntimeAdapterError({
-      operation: "execute",
-      runtimeKind: "cloudflare-worker-loader",
-      message: "Cloudflare worker loader runtime adapter is not implemented yet",
-      details: null,
-    }),
-});
 
 export const makeRuntimeAdapterRegistry = (
   initialAdapters: ReadonlyArray<RuntimeAdapter> = [],

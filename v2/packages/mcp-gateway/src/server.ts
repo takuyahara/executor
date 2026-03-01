@@ -3,8 +3,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 
-export type GatewayTarget = "local" | "remote";
-
 export type ExecuteToolInput = {
   code: string;
   timeoutMs?: number;
@@ -33,12 +31,10 @@ const toGatewayExecuteResult = (
 };
 
 export type McpGatewayOptions = {
-  target: GatewayTarget;
   serverName?: string;
   serverVersion?: string;
   runClient: ExecutorRunClient;
 };
-
 const DEFAULT_SERVER_NAME = "executor-v2";
 const DEFAULT_SERVER_VERSION = "0.0.0";
 const EXECUTE_TOOL_NAME = "executor.execute";

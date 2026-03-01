@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import {
   DenoSubprocessRunnerError,
   executeJavaScriptInDenoSubprocess,
-} from "./deno-subprocess-runner";
+} from "@executor-v2/runtime-deno-subprocess";
 import {
   makeToolProviderRegistry,
   ToolProviderRegistryService,

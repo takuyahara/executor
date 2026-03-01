@@ -1,7 +1,18 @@
 import * as BunContext from "@effect/platform-bun/BunContext";
 import { ControlPlaneServiceLive } from "@executor-v2/control-plane";
-import { ToolInvocationServiceLive } from "@executor-v2/domain";
-import { makeLocalInProcessRuntimeAdapter } from "@executor-v2/engine";
+import {
+  RunExecutionServiceLive,
+  RuntimeToolInvokerUnimplementedLive,
+  ToolInvocationServiceLive,
+} from "@executor-v2/domain";
+import {
+  RuntimeAdapterRegistryLive,
+  ToolProviderRegistryService,
+  makeToolProviderRegistry,
+} from "@executor-v2/engine";
+import { makeCloudflareWorkerLoaderRuntimeAdapter } from "@executor-v2/runtime-cloudflare-worker-loader";
+import { makeDenoSubprocessRuntimeAdapter } from "@executor-v2/runtime-deno-subprocess";
+import { makeLocalInProcessRuntimeAdapter } from "@executor-v2/runtime-local-inproc";
 import {
   LocalSourceStoreLive,
   LocalStateStoreLive,
@@ -14,17 +25,46 @@ import { PmConfigLive } from "./config";
 import { PmCredentialResolverLive } from "./credential-resolver";
 import { startPmHttpServer } from "./http-server";
 import { PmMcpHandlerLive } from "./mcp-handler";
-import {
-  PmRunExecutorLive,
-  PmToolProviderRegistryLive,
-} from "./run-executor";
+import { PmRuntimeExecutionPortLive } from "./runtime-execution-port";
 
-const runtimeAdapter = makeLocalInProcessRuntimeAdapter();
 const pmStateRootDir = process.env.PM_STATE_ROOT_DIR ?? ".executor-v2/pm-state";
 
-const PmMcpDependenciesLive = Layer.merge(
-  PmRunExecutorLive(runtimeAdapter),
+const readConfiguredRuntimeKind = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const pmRuntimeAdapters = [
+  makeLocalInProcessRuntimeAdapter(),
+  makeDenoSubprocessRuntimeAdapter(),
+  makeCloudflareWorkerLoaderRuntimeAdapter(),
+];
+
+const pmDefaultRuntimeKind =
+  readConfiguredRuntimeKind(process.env.PM_RUNTIME_KIND) ?? pmRuntimeAdapters[0].kind;
+
+const PmRuntimeAdapterRegistryLive = RuntimeAdapterRegistryLive(pmRuntimeAdapters);
+
+const PmToolProviderRegistryLive = Layer.succeed(
+  ToolProviderRegistryService,
+  makeToolProviderRegistry([]),
+);
+
+const PmRuntimeExecutionDependenciesLive = Layer.merge(
+  PmRuntimeAdapterRegistryLive,
   PmToolProviderRegistryLive,
+);
+
+const PmRuntimeExecutionPortDependenciesLive = PmRuntimeExecutionPortLive({
+  defaultRuntimeKind: pmDefaultRuntimeKind,
+}).pipe(Layer.provide(PmRuntimeExecutionDependenciesLive));
+
+const PmRunExecutionLive = RunExecutionServiceLive().pipe(
+  Layer.provide(PmRuntimeExecutionPortDependenciesLive),
 );
 
 const PmSourceStoreLive = LocalSourceStoreLive({
@@ -39,18 +79,14 @@ const PmControlPlaneDependenciesLive = ControlPlaneServiceLive.pipe(
   Layer.provide(PmSourceStoreLive),
 );
 
-const PmToolInvocationDependenciesLive = ToolInvocationServiceLive("pm").pipe(
+const PmToolInvocationDependenciesLive = ToolInvocationServiceLive.pipe(
+  Layer.provide(RuntimeToolInvokerUnimplementedLive("pm")),
   Layer.provide(PmCredentialResolverLive.pipe(Layer.provide(PmStateStoreLive))),
-);
-
-const PmMcpHandlerDependenciesLive = Layer.merge(
-  PmMcpDependenciesLive,
-  PmControlPlaneDependenciesLive,
 );
 
 const PmAppLive = Layer.mergeAll(
   PmConfigLive,
-  PmMcpHandlerLive.pipe(Layer.provide(PmMcpHandlerDependenciesLive)),
+  PmMcpHandlerLive.pipe(Layer.provide(PmRunExecutionLive)),
   PmToolInvocationDependenciesLive,
   PmControlPlaneDependenciesLive,
 );

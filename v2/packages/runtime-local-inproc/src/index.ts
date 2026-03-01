@@ -1,21 +1,16 @@
 import type { Source } from "@executor-v2/schema";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Runtime from "effect/Runtime";
 
 import {
-  ToolProviderRegistryError,
-  ToolProviderRegistryService,
+  RuntimeAdapterError,
   type CanonicalToolDescriptor,
-  type ToolProviderError,
-} from "./tool-providers";
+  type RuntimeAdapter,
+  type RuntimeRunnableTool,
+  ToolProviderRegistryService,
+} from "@executor-v2/engine";
 
-export class LocalCodeRunnerError extends Data.TaggedError("LocalCodeRunnerError")<{
-  operation: string;
-  message: string;
-  details: string | null;
-}> {
-}
+const runtimeKind = "local-inproc";
 
 export type RunnableTool = {
   descriptor: CanonicalToolDescriptor;
@@ -27,30 +22,42 @@ export type ExecuteJavaScriptInput = {
   tools: ReadonlyArray<RunnableTool>;
 };
 
-const duplicateToolIdError = (toolId: string): LocalCodeRunnerError =>
-  new LocalCodeRunnerError({
-    operation: "build_tools",
-    message: `Duplicate tool id in run context: ${toolId}`,
-    details: null,
+const runtimeError = (
+  operation: string,
+  message: string,
+  details: string | null,
+): RuntimeAdapterError =>
+  new RuntimeAdapterError({
+    operation,
+    runtimeKind,
+    message,
+    details,
   });
 
-const toolCallFailedError = (toolId: string): LocalCodeRunnerError =>
-  new LocalCodeRunnerError({
-    operation: "invoke_tool",
-    message: `Tool call returned error: ${toolId}`,
-    details: null,
-  });
+const toRuntimeAdapterError = (error: {
+  operation: string;
+  message: string;
+  details?: string | null;
+}): RuntimeAdapterError => runtimeError(error.operation, error.message, error.details ?? null);
 
-const toExecutionError = (cause: unknown): LocalCodeRunnerError =>
-  new LocalCodeRunnerError({
-    operation: "execute",
-    message: "JavaScript execution failed",
-    details: cause instanceof Error ? cause.stack ?? cause.message : String(cause),
-  });
+const duplicateToolIdError = (toolId: string): RuntimeAdapterError =>
+  runtimeError("build_tools", `Duplicate tool id in run context: ${toolId}`, null);
+
+const toolCallFailedError = (toolId: string): RuntimeAdapterError =>
+  runtimeError("invoke_tool", `Tool call returned error: ${toolId}`, null);
+
+const toExecutionError = (cause: unknown): RuntimeAdapterError =>
+  cause instanceof RuntimeAdapterError
+    ? cause
+    : runtimeError(
+        "execute",
+        "JavaScript execution failed",
+        cause instanceof Error ? cause.stack ?? cause.message : String(cause),
+      );
 
 const buildToolBindings = (
   tools: ReadonlyArray<RunnableTool>,
-): Effect.Effect<Map<string, RunnableTool>, LocalCodeRunnerError> =>
+): Effect.Effect<Map<string, RunnableTool>, RuntimeAdapterError> =>
   Effect.gen(function* () {
     const byToolId = new Map<string, RunnableTool>();
 
@@ -64,18 +71,17 @@ const buildToolBindings = (
 
     return byToolId;
   });
-// todo: run in sandbox
+
 const runJavaScript = (
   code: string,
   toolsObject: Record<string, (args: unknown) => Promise<unknown>>,
-): Effect.Effect<unknown, LocalCodeRunnerError> =>
+): Effect.Effect<unknown, RuntimeAdapterError> =>
   Effect.tryPromise({
     try: async () => {
       const execute = new Function(
         "tools",
         `"use strict"; return (async () => {\n${code}\n})();`,
-      ) as (tools: Record<string, (args: unknown) => Promise<unknown>>) =>
-          Promise<unknown>;
+      ) as (tools: Record<string, (args: unknown) => Promise<unknown>>) => Promise<unknown>;
 
       return await execute(toolsObject);
     },
@@ -84,11 +90,7 @@ const runJavaScript = (
 
 export const executeJavaScriptWithTools = (
   input: ExecuteJavaScriptInput,
-): Effect.Effect<
-  unknown,
-  LocalCodeRunnerError | ToolProviderRegistryError | ToolProviderError,
-  ToolProviderRegistryService
-> =>
+): Effect.Effect<unknown, RuntimeAdapterError, ToolProviderRegistryService> =>
   Effect.gen(function* () {
     const registry = yield* ToolProviderRegistryService;
     const runtime = yield* Effect.runtime<never>();
@@ -108,9 +110,10 @@ export const executeJavaScriptWithTools = (
               args,
             })
             .pipe(
+              Effect.mapError(toRuntimeAdapterError),
               Effect.flatMap((result) =>
                 result.isError
-                  ? toolCallFailedError(toolId)
+                  ? Effect.fail(toolCallFailedError(toolId))
                   : Effect.succeed(result.output),
               ),
             ),
@@ -119,3 +122,15 @@ export const executeJavaScriptWithTools = (
 
     return yield* runJavaScript(input.code, toolsObject);
   });
+
+export const makeLocalInProcessRuntimeAdapter = (): RuntimeAdapter => ({
+  kind: runtimeKind,
+  isAvailable: () => Effect.succeed(true),
+  execute: (input) =>
+    executeJavaScriptWithTools({
+      code: input.code,
+      tools: input.tools as ReadonlyArray<RunnableTool>,
+    }),
+});
+
+export type { RuntimeRunnableTool };

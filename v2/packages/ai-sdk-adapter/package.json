@@ -17,6 +17,8 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@executor-v2/engine": "workspace:*",
+    "@executor-v2/runtime-deno-subprocess": "workspace:*",
+    "@executor-v2/runtime-local-inproc": "workspace:*",
     "ai": "^6.0.0",
     "effect": "catalog:",
     "vitest": "catalog:"

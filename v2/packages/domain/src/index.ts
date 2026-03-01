@@ -24,6 +24,29 @@ export {
 } from "./credential-resolver";
 
 export {
+  RuntimeExecutionPortError,
+  RuntimeExecutionPortService,
+  type RuntimeExecutionPort,
+} from "./runtime-execution-port";
+
+export {
+  RunExecutionService,
+  RunExecutionServiceLive,
+  makeRunExecutionService,
+  type RunExecutionServiceOptions,
+  type RunExecutionServiceShape,
+} from "./run-execution-service";
+
+export {
+  RuntimeToolInvoker,
+  RuntimeToolInvokerError,
+  RuntimeToolInvokerUnimplementedLive,
+  makeRuntimeToolInvoker,
+  type RuntimeToolInvokerInput,
+  type RuntimeToolInvokerShape,
+} from "./runtime-tool-invoker";
+
+export {
   ToolInvocationService,
   ToolInvocationServiceError,
   ToolInvocationServiceLive,
