@@ -1,5 +1,5 @@
 import { Atom, Result } from "@effect-atom/atom";
-import type { UpsertSourcePayload } from "@executor-v2/control-plane";
+import type { UpsertSourcePayload } from "@executor-v2/management-api";
 import type { Source, SourceId, WorkspaceId } from "@executor-v2/schema";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";

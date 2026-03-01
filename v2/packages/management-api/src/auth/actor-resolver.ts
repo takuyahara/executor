@@ -19,5 +19,5 @@ export type ControlPlaneActorResolverShape = {
 };
 
 export class ControlPlaneActorResolver extends Context.Tag(
-  "@executor-v2/control-plane/ControlPlaneActorResolver",
+  "@executor-v2/management-api/ControlPlaneActorResolver",
 )<ControlPlaneActorResolver, ControlPlaneActorResolverShape>() {}

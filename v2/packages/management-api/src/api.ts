@@ -20,8 +20,8 @@ export class ControlPlaneApi extends HttpApi.make("controlPlane")
   .add(SourcesApi)
   .annotateContext(
     OpenApi.annotations({
-      title: "Executor v2 Control Plane API",
-      description: "Backend-agnostic control plane API",
+      title: "Executor v2 Management API",
+      description: "Backend-agnostic management API",
     }),
   ) {}
 

@@ -2,7 +2,7 @@ import {
   ControlPlaneService,
   controlPlaneOpenApiSpec,
   makeControlPlaneWebHandler,
-} from "@executor-v2/control-plane";
+} from "@executor-v2/management-api";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 

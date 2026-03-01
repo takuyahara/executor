@@ -1,7 +1,7 @@
 "use client";
 
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect-atom/atom-react";
-import type { UpsertSourcePayload } from "@executor-v2/control-plane";
+import type { UpsertSourcePayload } from "@executor-v2/management-api";
 import type { SourceId, SourceKind, WorkspaceId } from "@executor-v2/schema";
 import { useState, type FormEvent } from "react";
 

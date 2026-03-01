@@ -1,4 +1,4 @@
-import { controlPlaneOpenApiSpec } from "@executor-v2/control-plane";
+import { controlPlaneOpenApiSpec } from "@executor-v2/management-api";
 
 export type StartPmHttpServerOptions = {
   port: number;

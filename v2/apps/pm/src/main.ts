@@ -4,7 +4,7 @@ import {
   makeControlPlaneService,
   makeControlPlaneSourcesService,
   makeControlPlaneWebHandler,
-} from "@executor-v2/control-plane";
+} from "@executor-v2/management-api";
 import {
   createRunExecutor,
   createRuntimeToolCallHandler,

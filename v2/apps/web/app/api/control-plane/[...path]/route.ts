@@ -1,4 +1,4 @@
-import { ControlPlaneAuthHeaders } from "@executor-v2/control-plane";
+import { ControlPlaneAuthHeaders } from "@executor-v2/management-api";
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import { type NextRequest } from "next/server";
 

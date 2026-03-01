@@ -10,7 +10,7 @@ import {
 
 export type ControlPlaneServiceShape = ControlPlaneSourcesServiceShape;
 
-export class ControlPlaneService extends Context.Tag("@executor-v2/control-plane/ControlPlaneService")<
+export class ControlPlaneService extends Context.Tag("@executor-v2/management-api/ControlPlaneService")<
   ControlPlaneService,
   ControlPlaneServiceShape
 >() {}

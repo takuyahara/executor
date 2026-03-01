@@ -2,7 +2,7 @@ import {
   ControlPlaneActorResolverLive,
   deriveWorkspaceMembershipsForPrincipal,
   requirePrincipalFromHeaders,
-} from "@executor-v2/control-plane";
+} from "@executor-v2/management-api";
 import { ActorUnauthenticatedError, makeActor } from "@executor-v2/domain";
 import {
   OrganizationMembershipSchema,

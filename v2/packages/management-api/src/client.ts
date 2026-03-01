@@ -46,7 +46,7 @@ export const makeControlPlaneClient = (options: ControlPlaneClientOptions) =>
   });
 
 export const createControlPlaneAtomClient = (options: ControlPlaneClientOptions) =>
-  AtomHttpApi.Tag<unknown>()("@executor-v2/control-plane/AtomClient", {
+  AtomHttpApi.Tag<unknown>()("@executor-v2/management-api/AtomClient", {
     api: ControlPlaneApi,
     httpClient: FetchHttpClient.layer,
     baseUrl: options.baseUrl,

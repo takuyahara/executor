@@ -1,4 +1,4 @@
-import { type UpsertSourcePayload } from "@executor-v2/control-plane";
+import { type UpsertSourcePayload } from "@executor-v2/management-api";
 import { SourceSchema, type Source } from "@executor-v2/schema";
 import { v } from "convex/values";
 import * as Schema from "effect/Schema";

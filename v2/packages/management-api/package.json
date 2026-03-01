@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v2/control-plane",
+  "name": "@executor-v2/management-api",
   "private": true,
   "type": "module",
   "exports": {

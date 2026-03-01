@@ -22,9 +22,9 @@
       "name": "@executor-v2/app-convex",
       "dependencies": {
         "@executor-v2/confect": "workspace:*",
-        "@executor-v2/control-plane": "workspace:*",
         "@executor-v2/domain": "workspace:*",
         "@executor-v2/engine": "workspace:*",
+        "@executor-v2/management-api": "workspace:*",
         "@executor-v2/mcp-gateway": "workspace:*",
         "@executor-v2/persistence-ports": "workspace:*",
         "@executor-v2/runtime-local-inproc": "workspace:*",
@@ -44,9 +44,9 @@
       "dependencies": {
         "@effect/platform": "catalog:",
         "@effect/platform-bun": "^0.86.0",
-        "@executor-v2/control-plane": "workspace:*",
         "@executor-v2/domain": "workspace:*",
         "@executor-v2/engine": "workspace:*",
+        "@executor-v2/management-api": "workspace:*",
         "@executor-v2/mcp-gateway": "workspace:*",
         "@executor-v2/persistence-local": "workspace:*",
         "@executor-v2/runtime-cloudflare-worker-loader": "workspace:*",
@@ -66,7 +66,7 @@
       "dependencies": {
         "@effect-atom/atom": "^0.4.11",
         "@effect-atom/atom-react": "^0.4.6",
-        "@executor-v2/control-plane": "workspace:*",
+        "@executor-v2/management-api": "workspace:*",
         "@executor-v2/schema": "workspace:*",
         "@workos-inc/authkit-nextjs": "^2.13.0",
         "effect": "catalog:",
@@ -116,18 +116,6 @@
         "vitest": "catalog:",
       },
     },
-    "packages/control-plane": {
-      "name": "@executor-v2/control-plane",
-      "dependencies": {
-        "@effect-atom/atom": "^0.4.11",
-        "@effect/platform": "catalog:",
-        "@executor-v2/domain": "workspace:*",
-        "@executor-v2/persistence-ports": "workspace:*",
-        "@executor-v2/schema": "workspace:*",
-        "@executor-v2/source-manager": "workspace:*",
-        "effect": "catalog:",
-      },
-    },
     "packages/domain": {
       "name": "@executor-v2/domain",
       "dependencies": {
@@ -151,6 +139,18 @@
         "@effect/vitest": "catalog:",
         "@executor-v2/source-manager": "workspace:*",
         "vitest": "catalog:",
+      },
+    },
+    "packages/management-api": {
+      "name": "@executor-v2/management-api",
+      "dependencies": {
+        "@effect-atom/atom": "^0.4.11",
+        "@effect/platform": "catalog:",
+        "@executor-v2/domain": "workspace:*",
+        "@executor-v2/persistence-ports": "workspace:*",
+        "@executor-v2/schema": "workspace:*",
+        "@executor-v2/source-manager": "workspace:*",
+        "effect": "catalog:",
       },
     },
     "packages/mcp-gateway": {
@@ -359,11 +359,11 @@
 
     "@executor-v2/confect": ["@executor-v2/confect@workspace:packages/confect"],
 
-    "@executor-v2/control-plane": ["@executor-v2/control-plane@workspace:packages/control-plane"],
-
     "@executor-v2/domain": ["@executor-v2/domain@workspace:packages/domain"],
 
     "@executor-v2/engine": ["@executor-v2/engine@workspace:packages/engine"],
+
+    "@executor-v2/management-api": ["@executor-v2/management-api@workspace:packages/management-api"],
 
     "@executor-v2/mcp-gateway": ["@executor-v2/mcp-gateway@workspace:packages/mcp-gateway"],
 

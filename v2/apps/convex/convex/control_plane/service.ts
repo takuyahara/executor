@@ -1,7 +1,7 @@
 import {
   ControlPlaneService,
   type ControlPlaneServiceShape,
-} from "@executor-v2/control-plane";
+} from "@executor-v2/management-api";
 import * as Effect from "effect/Effect";
 
 import { api } from "../_generated/api";
