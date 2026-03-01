@@ -148,6 +148,17 @@ const toWorkspaceToolMethod = (
   return "get";
 };
 
+const tokenizeSearchQuery = (query: string): Array<string> =>
+  Array.from(
+    new Set(
+      query
+        .toLowerCase()
+        .split(/[\s._:/-]+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0),
+    ),
+  );
+
 const scoreSearchRow = (row: Record<string, unknown>, queryLower: string): number => {
   const path = String(row.path ?? "").toLowerCase();
   const name = String(row.name ?? "").toLowerCase();
@@ -183,7 +194,64 @@ const scoreSearchRow = (row: Record<string, unknown>, queryLower: string): numbe
     return 40;
   }
 
-  return 0;
+  const tokens = tokenizeSearchQuery(queryLower);
+  if (tokens.length === 0) {
+    return 0;
+  }
+
+  let pathMatches = 0;
+  let nameMatches = 0;
+  let sourceMatches = 0;
+  let descriptionMatches = 0;
+  let searchTextMatches = 0;
+
+  for (const token of tokens) {
+    if (path.includes(token)) {
+      pathMatches += 1;
+      continue;
+    }
+
+    if (name.includes(token)) {
+      nameMatches += 1;
+      continue;
+    }
+
+    if (sourceName.includes(token)) {
+      sourceMatches += 1;
+      continue;
+    }
+
+    if (description.includes(token)) {
+      descriptionMatches += 1;
+      continue;
+    }
+
+    if (searchText.includes(token)) {
+      searchTextMatches += 1;
+    }
+  }
+
+  const matchedTokens =
+    pathMatches +
+    nameMatches +
+    sourceMatches +
+    descriptionMatches +
+    searchTextMatches;
+
+  if (matchedTokens === 0) {
+    return 0;
+  }
+
+  let score =
+    pathMatches * 20 +
+    nameMatches * 16 +
+    sourceMatches * 12 +
+    descriptionMatches * 8 +
+    searchTextMatches * 6;
+
+  score += matchedTokens === tokens.length ? 20 : 5;
+
+  return score;
 };
 
 const chunkArray = <A>(values: ReadonlyArray<A>, size: number): Array<Array<A>> => {

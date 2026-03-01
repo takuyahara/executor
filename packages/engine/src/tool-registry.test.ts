@@ -45,9 +45,23 @@ describe("tool registry", () => {
       expect(discovered.results.some((entry) => entry.path === "github.repos.get")).toBe(
         true,
       );
+      expect(discovered.perQuery).toHaveLength(1);
+      expect(discovered.perQuery[0]?.text).toBe("github");
+      expect(discovered.perQuery[0]?.bestPath).toBe("github.repos.get");
       expect(discovered.results[0]?.typing).toBeUndefined();
       expect(discovered.results[0]?.inputHint).toBe("GetRepoInput");
       expect(discovered.refHintTable).toBeUndefined();
+
+      const discoveredMulti = yield* registry.discover({
+        queries: [
+          { text: "github repos", depth: 1 },
+          { text: "search docs", depth: 2 },
+        ],
+        limit: 5,
+      });
+      expect(discoveredMulti.perQuery).toHaveLength(2);
+      expect(discoveredMulti.perQuery[0]?.bestPath).toBe("github.repos.get");
+      expect(discoveredMulti.perQuery[1]?.bestPath).toBe("search_docs");
 
       const discoveredWithSchemas = yield* registry.discover({
         query: "github",

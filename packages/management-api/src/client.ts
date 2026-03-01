@@ -19,7 +19,9 @@ import {
 
 export type ControlPlaneClientOptions = {
   baseUrl: string;
-  headers?: Readonly<Record<string, string>>;
+  headers?:
+    | Readonly<Record<string, string>>
+    | (() => Readonly<Record<string, string>> | undefined);
 };
 
 export type ControlPlaneClientError =
@@ -35,9 +37,14 @@ const makeTransformClient = (headers: ControlPlaneClientOptions["headers"]) =>
   headers === undefined
     ? undefined
     : (client: HttpClient.HttpClient) =>
-        HttpClient.mapRequest(client, (request) =>
-          HttpClientRequest.setHeaders(request, headers),
-        );
+        HttpClient.mapRequest(client, (request) => {
+          const resolvedHeaders =
+            typeof headers === "function" ? headers() : headers;
+
+          return resolvedHeaders
+            ? HttpClientRequest.setHeaders(request, resolvedHeaders)
+            : request;
+        });
 
 export const makeControlPlaneClient = (options: ControlPlaneClientOptions) =>
   HttpApiClient.make(ControlPlaneApi, {

@@ -6,6 +6,12 @@ const trim = (value: string | undefined): string | undefined => {
   return candidate && candidate.length > 0 ? candidate : undefined;
 };
 
+const browserAccountIdKey = "__EXECUTOR_ACCOUNT_ID__";
+
+type ExecutorWindow = Window & {
+  [browserAccountIdKey]?: string;
+};
+
 const defaultControlPlaneBaseUrl = "http://127.0.0.1:8788";
 
 const controlPlaneBaseUrl =
@@ -13,20 +19,38 @@ const controlPlaneBaseUrl =
     ? trim(process.env.CONTROL_PLANE_SERVER_BASE_URL)
       ?? trim(process.env.CONTROL_PLANE_UPSTREAM_URL)
       ?? trim(process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL)
+      ?? trim(process.env.NEXT_PUBLIC_CONVEX_URL)
+      ?? trim(process.env.CONVEX_URL)
       ?? defaultControlPlaneBaseUrl
     : trim(process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL)
+      ?? trim(process.env.NEXT_PUBLIC_CONVEX_URL)
       ?? defaultControlPlaneBaseUrl;
 
-const controlPlaneAccountId = process.env.NEXT_PUBLIC_CONTROL_PLANE_ACCOUNT_ID;
+const configuredControlPlaneAccountId = trim(process.env.NEXT_PUBLIC_CONTROL_PLANE_ACCOUNT_ID);
 
-const controlPlaneHeaders =
-  controlPlaneAccountId === undefined || controlPlaneAccountId.trim().length === 0
-    ? undefined
-    : {
-        [ControlPlaneAuthHeaders.accountId]: controlPlaneAccountId,
-      };
+const resolveControlPlaneAccountId = (): string | undefined => {
+  if (configuredControlPlaneAccountId) {
+    return configuredControlPlaneAccountId;
+  }
+
+  if (typeof window !== "undefined") {
+    const browserAccountId = trim((window as ExecutorWindow)[browserAccountIdKey]);
+    if (browserAccountId) {
+      return browserAccountId;
+    }
+  }
+
+  return undefined;
+};
 
 export const controlPlaneClient = createControlPlaneAtomClient({
   baseUrl: controlPlaneBaseUrl,
-  headers: controlPlaneHeaders,
+  headers: () => {
+    const accountId = resolveControlPlaneAccountId();
+    return accountId
+      ? {
+          [ControlPlaneAuthHeaders.accountId]: accountId,
+        }
+      : undefined;
+  },
 });

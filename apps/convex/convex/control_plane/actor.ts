@@ -1,6 +1,7 @@
 import {
   ControlPlaneActorResolverLive,
   deriveWorkspaceMembershipsForPrincipal,
+  readPrincipalFromHeaders,
   requirePrincipalFromHeaders,
 } from "@executor-v2/management-api";
 import { ActorUnauthenticatedError, makeActor } from "@executor-v2/domain";
@@ -266,7 +267,17 @@ export const ConvexControlPlaneActorLive = (ctx: ActionCtx) =>
       }),
     resolveWorkspaceActor: (input) =>
       Effect.gen(function* () {
-        const principal = yield* requirePrincipalFromHeaders(input.headers);
+        const principalFromHeaders = yield* readPrincipalFromHeaders(input.headers);
+        const fallbackAccountId = input.workspaceId.startsWith("ws_")
+          ? input.workspaceId.slice(3)
+          : input.workspaceId;
+        const principal = principalFromHeaders ?? {
+          accountId: fallbackAccountId,
+          provider: "local" as const,
+          subject: `local:${fallbackAccountId}`,
+          email: null,
+          displayName: null,
+        };
 
         let workspace = yield* runQueryEffect("workspace.read", () =>
           ctx.runQuery(internal.control_plane.actor.getWorkspaceForActor, {

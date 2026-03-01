@@ -18,6 +18,7 @@ const runtimeInternal = internal as any;
 const graphqlExtractorVersion = "graphql_v1";
 const mcpExtractorVersion = "mcp_v1";
 const writeBatchSize = 500;
+const stagedArtifactBatchSize = 500;
 
 const graphqlSchemaRootsQuery = `query SchemaRoots {
   __schema {
@@ -115,6 +116,24 @@ const normalizeString = (value: unknown): string | null => {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeHttpUrl = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 };
 
 const stableStringify = (value: unknown): string => {
@@ -925,6 +944,7 @@ const openApiParserToken = process.env.OPENAPI_PARSE_API_TOKEN?.trim() ?? "";
 type OpenApiParserIngestedPayload = {
   ok?: boolean;
   mode?: string;
+  openApiSpec?: unknown;
   artifactId?: string;
   sourceHash?: string;
   toolCount?: number;
@@ -934,16 +954,9 @@ type OpenApiParserIngestedPayload = {
   error?: string;
 };
 
-const fetchOpenApiDocumentForIngest = async (
-  source: Source,
-): Promise<{
-  artifactId: string;
-  sourceHash: string;
-  toolCount: number;
-  namespace: string;
-  refHintTableJson: string | null;
-  artifactBatchCount: number;
-}> => {
+const requestOpenApiParser = async (
+  payload: Record<string, unknown>,
+): Promise<OpenApiParserIngestedPayload> => {
   if (openApiParserUrl.length === 0) {
     throw new Error("OPENAPI_PARSE_API_URL is required for OpenAPI ingestion");
   }
@@ -956,13 +969,7 @@ const fetchOpenApiDocumentForIngest = async (
         ? { "x-openapi-parse-token": openApiParserToken }
         : {}),
     },
-    body: JSON.stringify({
-      specUrl: source.endpoint,
-      workspaceId: source.workspaceId,
-      sourceId: source.id,
-      sourceName: source.name,
-      sourceEnabled: source.enabled,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -974,7 +981,128 @@ const fetchOpenApiDocumentForIngest = async (
     );
   }
 
-  const payload = (await response.json()) as OpenApiParserIngestedPayload;
+  return (await response.json()) as OpenApiParserIngestedPayload;
+};
+
+const withOpenApiServerVariables = (
+  template: string,
+  variables: unknown,
+): string => {
+  if (!isUnknownRecord(variables)) {
+    return template;
+  }
+
+  return template.replaceAll(/\{([^}]+)\}/g, (_token, name: string) => {
+    const variable = variables[name];
+    if (!isUnknownRecord(variable)) {
+      return `{${name}}`;
+    }
+
+    return normalizeString(variable.default) ?? `{${name}}`;
+  });
+};
+
+const resolveOpenApiServerUrl = (
+  rawServerUrl: string,
+  variables: unknown,
+  specUrl: string,
+): string | null => {
+  const resolvedTemplate = withOpenApiServerVariables(rawServerUrl, variables);
+  if (resolvedTemplate.includes("{")) {
+    return null;
+  }
+
+  try {
+    const resolved = new URL(resolvedTemplate, specUrl).toString();
+    return normalizeHttpUrl(resolved);
+  } catch {
+    return null;
+  }
+};
+
+const deriveOpenApiBaseUrlFromSpec = (
+  openApiSpec: unknown,
+  specUrl: string,
+): string | null => {
+  if (!isUnknownRecord(openApiSpec)) {
+    return null;
+  }
+
+  const servers = openApiSpec.servers;
+  if (Array.isArray(servers)) {
+    for (const server of servers) {
+      if (!isUnknownRecord(server)) {
+        continue;
+      }
+
+      const rawServerUrl = normalizeString(server.url);
+      if (!rawServerUrl) {
+        continue;
+      }
+
+      const resolved = resolveOpenApiServerUrl(rawServerUrl, server.variables, specUrl);
+      if (resolved) {
+        return resolved;
+      }
+    }
+  }
+
+  const host = normalizeString(openApiSpec.host);
+  if (host) {
+    const schemes = Array.isArray(openApiSpec.schemes) ? openApiSpec.schemes : [];
+    const firstScheme = normalizeString(schemes[0])?.toLowerCase();
+    const scheme = firstScheme === "http" || firstScheme === "https" ? firstScheme : "https";
+    const basePath = normalizeString(openApiSpec.basePath) ?? "";
+    const normalizedPath = basePath.length === 0
+      ? ""
+      : basePath.startsWith("/")
+        ? basePath
+        : `/${basePath}`;
+    return normalizeHttpUrl(`${scheme}://${host}${normalizedPath}`);
+  }
+
+  return null;
+};
+
+const fetchOpenApiBaseUrlFromSpec = async (specUrl: string): Promise<string> => {
+  const payload = await requestOpenApiParser({ specUrl });
+  if (payload.ok !== true) {
+    throw new Error(
+      payload.error && payload.error.trim().length > 0
+        ? payload.error
+        : "Parser endpoint returned an invalid payload",
+    );
+  }
+
+  if (payload.mode !== "parsed") {
+    throw new Error("Parser endpoint must return mode='parsed' when deriving OpenAPI baseUrl");
+  }
+
+  const baseUrl = deriveOpenApiBaseUrlFromSpec(payload.openApiSpec, specUrl);
+  if (!baseUrl) {
+    throw new Error("OpenAPI source requires spec.servers (or Swagger host/schemes) to derive baseUrl");
+  }
+
+  return baseUrl;
+};
+
+const fetchOpenApiDocumentForIngest = async (
+  source: Source,
+): Promise<{
+  artifactId: string;
+  sourceHash: string;
+  toolCount: number;
+  namespace: string;
+  refHintTableJson: string | null;
+  artifactBatchCount: number;
+}> => {
+  const payload = await requestOpenApiParser({
+    specUrl: source.endpoint,
+    workspaceId: source.workspaceId,
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceEnabled: source.enabled,
+  });
 
   if (payload.ok !== true) {
     throw new Error(
@@ -1012,6 +1140,21 @@ const fetchOpenApiDocumentForIngest = async (
     artifactBatchCount,
   };
 };
+
+export const deriveOpenApiBaseUrl = internalAction({
+  args: {
+    specUrl: v.string(),
+  },
+  handler: async (_ctx, args): Promise<{ baseUrl: string }> => {
+    const specUrl = args.specUrl.trim();
+    if (specUrl.length === 0) {
+      throw new Error("specUrl is required");
+    }
+
+    const baseUrl = await fetchOpenApiBaseUrlFromSpec(specUrl);
+    return { baseUrl };
+  },
+});
 
 type IngestOptions = {
   rebuildIndex: boolean;

@@ -63,6 +63,64 @@ const argsValueToString = (value: unknown): string => {
   return String(value);
 };
 
+const normalizeHttpUrl = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+const parseSourceConfig = (source: Source): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(source.configJson) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+};
+
+const getConfiguredBaseUrl = (source: Source): string | null => {
+  const config = parseSourceConfig(source);
+  const baseUrl = config.baseUrl;
+  if (typeof baseUrl !== "string") {
+    return null;
+  }
+
+  return normalizeHttpUrl(baseUrl);
+};
+
+const resolveBaseUrl = (
+  source: Source,
+): Effect.Effect<string, ToolProviderError> =>
+  Effect.gen(function* () {
+    const configured = getConfiguredBaseUrl(source);
+    if (configured) {
+      return configured;
+    }
+
+    return yield* new ToolProviderError({
+      operation: "invoke.validate_source",
+      providerKind: "openapi",
+      message: "OpenAPI source requires configJson.baseUrl",
+      details: source.id,
+    });
+  });
+
 const replacePathTemplate = (
   pathTemplate: string,
   args: OpenApiToolArgs,
@@ -115,7 +173,8 @@ const buildFetchRequest = (
 ): Effect.Effect<BuiltFetchRequest, ToolProviderError> =>
   Effect.gen(function* () {
     const resolvedPath = yield* replacePathTemplate(payload.pathTemplate, args, payload);
-    const url = new URL(resolvedPath, source.endpoint);
+    const baseUrl = yield* resolveBaseUrl(source);
+    const url = new URL(resolvedPath, baseUrl);
 
     const headers = new Headers();
     const cookieParts: Array<string> = [];

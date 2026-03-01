@@ -5,6 +5,8 @@ const resolveMcpBaseUrl = (): string | null => {
     process.env.CONTROL_PLANE_UPSTREAM_URL,
     process.env.CONTROL_PLANE_SERVER_BASE_URL,
     process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL,
+    process.env.NEXT_PUBLIC_CONVEX_URL,
+    process.env.CONVEX_URL,
   ];
 
   for (const candidate of candidates) {

@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as ParseResult from "effect/ParseResult";
 import * as Schema from "effect/Schema";
 
+import { internal } from "./_generated/api";
 import { httpAction, type ActionCtx } from "./_generated/server";
 import { createConvexSourceToolRegistry } from "./source_tool_registry";
 
@@ -90,15 +91,49 @@ const decodeToolCallRequest = (request: Request): Effect.Effect<RuntimeToolCallR
     );
   });
 
+const readWorkspaceIdFromCallbackUrl = (request: Request): string | null => {
+  const value = new URL(request.url).searchParams.get("workspaceId")?.trim();
+  return value && value.length > 0 ? value : null;
+};
+
+const resolveWorkspaceIdForToolCall = (
+  ctx: ActionCtx,
+  request: Request,
+  input: RuntimeToolCallRequest,
+): Effect.Effect<string, never> =>
+  Effect.gen(function* () {
+    const contextWorkspaceId = input.credentialContext?.workspaceId?.trim();
+    if (contextWorkspaceId) {
+      return contextWorkspaceId;
+    }
+
+    const callbackWorkspaceId = readWorkspaceIdFromCallbackUrl(request);
+    if (callbackWorkspaceId) {
+      return callbackWorkspaceId;
+    }
+
+    const runWorkspaceId = yield* Effect.tryPromise({
+      try: () =>
+        ctx.runQuery(internal.task_runs.getTaskRunWorkspaceId, {
+          runId: input.runId,
+        }),
+      catch: () => null,
+    }).pipe(Effect.orElseSucceed(() => null));
+
+    if (typeof runWorkspaceId === "string" && runWorkspaceId.trim().length > 0) {
+      return runWorkspaceId.trim();
+    }
+
+    return fallbackWorkspaceId;
+  });
+
 const handleToolCallHttpEffect = (
   ctx: ActionCtx,
   request: Request,
 ): Effect.Effect<Response, never> =>
   Effect.gen(function* () {
     const input = yield* decodeToolCallRequest(request);
-
-    const workspaceId =
-      input.credentialContext?.workspaceId?.trim() || fallbackWorkspaceId;
+    const workspaceId = yield* resolveWorkspaceIdForToolCall(ctx, request, input);
 
     const toolRegistry = createConvexSourceToolRegistry(ctx, workspaceId);
 

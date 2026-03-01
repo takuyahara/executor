@@ -80,10 +80,13 @@ describe("engine public API", () => {
 
       expect(sourcesOnly).toContain("Mode: sources_only");
       expect(sourcesOnly).toContain("Discovery workflow:");
+      expect(sourcesOnly).toContain("Use discover/catalog for external APIs; do not use fetch.");
+      expect(sourcesOnly).toContain("HTTP/OpenAPI tool calls return { status, headers, body }");
       expect(sourcesOnly).not.toContain("github.repos.get");
 
       expect(allTools).toContain("Mode: all_tools");
       expect(allTools).toContain("Tool paths:");
+      expect(allTools).toContain("do not use fetch for external APIs");
       expect(allTools).toContain("github.repos.get");
       expect(allTools).toContain("slack.messages.send");
     }),
@@ -138,7 +141,7 @@ describe("engine public API", () => {
         endpoint: "https://api.vercel.com",
         status: "connected",
         enabled: true,
-        configJson: "{}",
+        configJson: JSON.stringify({ baseUrl: "https://api.vercel.com" }),
         sourceHash: null,
         lastError: null,
         createdAt: Date.now(),

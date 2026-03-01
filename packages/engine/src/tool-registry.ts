@@ -17,8 +17,16 @@ export type ToolRegistryCallInput = {
   input?: Record<string, unknown>;
 };
 
+export type ToolRegistryDiscoverDepth = 0 | 1 | 2;
+
+export type ToolRegistryDiscoverQueryInput = {
+  text: string;
+  depth?: ToolRegistryDiscoverDepth;
+};
+
 export type ToolRegistryDiscoverInput = {
   query?: string;
+  queries?: Array<ToolRegistryDiscoverQueryInput>;
   limit?: number;
   compact?: boolean;
   includeSchemas?: boolean;
@@ -46,10 +54,19 @@ export type ToolRegistryToolSummary = {
   typing?: DiscoveryTypingPayload;
 };
 
+export type ToolRegistryDiscoverQueryResult = {
+  text: string;
+  depth: ToolRegistryDiscoverDepth;
+  bestPath: string | null;
+  results: Array<ToolRegistryToolSummary>;
+  total: number;
+};
+
 export type ToolRegistryDiscoverOutput = {
   bestPath: string | null;
   results: Array<ToolRegistryToolSummary>;
   total: number;
+  perQuery: Array<ToolRegistryDiscoverQueryResult>;
   refHintTable?: Record<string, string>;
 };
 
@@ -247,10 +264,67 @@ const normalizeObjectInput = (input: unknown): Record<string, unknown> => {
   return input as Record<string, unknown>;
 };
 
+const normalizeDiscoverDepth = (value: unknown): ToolRegistryDiscoverDepth => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 1;
+  }
+
+  if (value <= 0) {
+    return 0;
+  }
+
+  if (value >= 2) {
+    return 2;
+  }
+
+  return 1;
+};
+
+const normalizeDiscoverQueryInput = (
+  input: unknown,
+): ToolRegistryDiscoverQueryInput | null => {
+  if (typeof input === "string") {
+    return {
+      text: input,
+      depth: 1,
+    };
+  }
+
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+
+  const value = input as Record<string, unknown>;
+  const rawText =
+    typeof value.text === "string"
+      ? value.text
+      : typeof value.query === "string"
+        ? value.query
+        : typeof value.string === "string"
+          ? value.string
+          : null;
+
+  if (rawText === null) {
+    return null;
+  }
+
+  return {
+    text: rawText,
+    depth: normalizeDiscoverDepth(value.depth),
+  };
+};
+
 const normalizeDiscoverInput = (input: unknown): ToolRegistryDiscoverInput => {
   const value = normalizeObjectInput(input);
+  const queries = Array.isArray(value.queries)
+    ? value.queries
+        .map((entry) => normalizeDiscoverQueryInput(entry))
+        .filter((entry): entry is ToolRegistryDiscoverQueryInput => entry !== null)
+    : undefined;
+
   return {
     query: typeof value.query === "string" ? value.query : undefined,
+    queries,
     limit: typeof value.limit === "number" ? value.limit : undefined,
     compact: typeof value.compact === "boolean" ? value.compact : undefined,
     includeSchemas:
@@ -418,6 +492,38 @@ const asStaticEntries = (tools: InMemorySandboxToolMap): Array<StaticToolEntry> 
       typing: tool.typing,
     }));
 
+type NormalizedDiscoverQuery = {
+  text: string;
+  lowerText: string;
+  depth: ToolRegistryDiscoverDepth;
+};
+
+const normalizeDiscoverQueries = (
+  input: ToolRegistryDiscoverInput,
+): Array<NormalizedDiscoverQuery> => {
+  const normalized = (input.queries ?? []).map((query) => {
+    const text = query.text.trim();
+    return {
+      text,
+      lowerText: text.toLowerCase(),
+      depth: normalizeDiscoverDepth(query.depth),
+    };
+  });
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const fallbackText = (input.query ?? "").trim();
+  return [
+    {
+      text: fallbackText,
+      lowerText: fallbackText.toLowerCase(),
+      depth: 1,
+    },
+  ];
+};
+
 const scorePath = (
   entry: { path: string; description?: string },
   query: string,
@@ -449,40 +555,182 @@ const scorePath = (
   return 0;
 };
 
+const tokenizeSearchQuery = (query: string): Array<string> =>
+  Array.from(
+    new Set(
+      query
+        .toLowerCase()
+        .split(/[\s._:/-]+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0),
+    ),
+  );
+
+const scoreDiscoverSummary = (
+  summary: ToolRegistryToolSummary,
+  query: NormalizedDiscoverQuery,
+): number => {
+  if (query.lowerText.length === 0) {
+    return 1;
+  }
+
+  const lowerPath = summary.path.toLowerCase();
+  const lowerSource = (summary.source ?? "").toLowerCase();
+  const lowerDescription = (summary.description ?? "").toLowerCase();
+  const lowerInputHint = (summary.inputHint ?? "").toLowerCase();
+  const lowerOutputHint = (summary.outputHint ?? "").toLowerCase();
+
+  if (lowerPath === query.lowerText) {
+    return 100;
+  }
+
+  if (lowerPath.startsWith(query.lowerText)) {
+    return 80;
+  }
+
+  if (lowerPath.includes(query.lowerText)) {
+    return 60;
+  }
+
+  if (lowerSource.includes(query.lowerText)) {
+    return 40;
+  }
+
+  if (lowerDescription.includes(query.lowerText)) {
+    return 30;
+  }
+
+  if (query.depth >= 2) {
+    if (
+      lowerInputHint.includes(query.lowerText) ||
+      lowerOutputHint.includes(query.lowerText)
+    ) {
+      return 20;
+    }
+  }
+
+  if (query.depth === 0) {
+    return 0;
+  }
+
+  const tokens = tokenizeSearchQuery(query.lowerText);
+  if (tokens.length === 0) {
+    return 0;
+  }
+
+  let pathMatches = 0;
+  let sourceMatches = 0;
+  let descriptionMatches = 0;
+  let ioMatches = 0;
+
+  for (const token of tokens) {
+    if (lowerPath.includes(token)) {
+      pathMatches += 1;
+      continue;
+    }
+
+    if (lowerSource.includes(token)) {
+      sourceMatches += 1;
+      continue;
+    }
+
+    if (query.depth >= 2 && lowerDescription.includes(token)) {
+      descriptionMatches += 1;
+      continue;
+    }
+
+    if (
+      query.depth >= 2 &&
+      (lowerInputHint.includes(token) || lowerOutputHint.includes(token))
+    ) {
+      ioMatches += 1;
+    }
+  }
+
+  const matchedTokens = pathMatches + sourceMatches + descriptionMatches + ioMatches;
+  if (matchedTokens === 0) {
+    return 0;
+  }
+
+  let score =
+    pathMatches * 18 +
+    sourceMatches * 12 +
+    descriptionMatches * 8 +
+    ioMatches * 6;
+
+  score += matchedTokens === tokens.length ? 20 : 5;
+
+  return score;
+};
+
+const dedupeSummariesByPath = (
+  summaries: ReadonlyArray<ToolRegistryToolSummary>,
+): Array<ToolRegistryToolSummary> => {
+  const byPath = new Map<string, ToolRegistryToolSummary>();
+  for (const summary of summaries) {
+    if (!byPath.has(summary.path)) {
+      byPath.set(summary.path, summary);
+    }
+  }
+
+  return [...byPath.values()];
+};
+
 const inMemoryDiscover = (
   tools: InMemorySandboxToolMap,
   refHintTable: Record<string, string> | undefined,
   input: ToolRegistryDiscoverInput,
 ): ToolRegistryDiscoverOutput => {
   const limit = Math.max(1, Math.min(50, input.limit ?? 8));
-  const query = (input.query ?? "").trim().toLowerCase();
   const includeSchemas = input.includeSchemas === true;
   const compact = input.compact === true;
+  const queries = normalizeDiscoverQueries(input);
+  const summaries = asStaticEntries(tools).map((entry) =>
+    summarizeTool(
+      entry.path,
+      "in-memory",
+      entry.description,
+      entry.typing,
+      includeSchemas,
+      compact,
+    ),
+  );
 
-  const ranked = asStaticEntries(tools)
-    .map((entry) => ({
-      entry,
-      score: scorePath(entry, query),
-    }))
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, limit)
-    .map((item) =>
-      summarizeTool(
-        item.entry.path,
-        "in-memory",
-        item.entry.description,
-        item.entry.typing,
-        includeSchemas,
-        compact,
-      ),
-    );
+  const perQuery = queries.map((query) => {
+    const ranked = summaries
+      .map((summary) => ({
+        summary,
+        score: scoreDiscoverSummary(summary, query),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map((item) => item.summary);
+
+    return {
+      text: query.text,
+      depth: query.depth,
+      bestPath: ranked[0]?.path ?? null,
+      results: ranked,
+      total: ranked.length,
+    } satisfies ToolRegistryDiscoverQueryResult;
+  });
+
+  const primary = perQuery[0] ?? {
+    text: "",
+    depth: 1 as const,
+    bestPath: null,
+    results: [] as Array<ToolRegistryToolSummary>,
+    total: 0,
+  };
+  const flattened = dedupeSummariesByPath(perQuery.flatMap((query) => query.results));
 
   return {
-    bestPath: ranked[0]?.path ?? null,
-    results: ranked,
-    total: ranked.length,
-    refHintTable: selectRefHintTable(refHintTable, ranked, includeSchemas),
+    bestPath: primary.bestPath,
+    results: primary.results,
+    total: primary.total,
+    perQuery,
+    refHintTable: selectRefHintTable(refHintTable, flattened, includeSchemas),
   };
 };
 
