@@ -37,7 +37,10 @@ export {
   type ToolRegistryCatalogToolsInput,
   type ToolRegistryCatalogToolsOutput,
   type ToolRegistryDiscoverInput,
+  type ToolRegistryDiscoverDepth,
   type ToolRegistryDiscoverOutput,
+  type ToolRegistryDiscoverQueryInput,
+  type ToolRegistryDiscoverQueryResult,
   type ToolRegistryNamespaceSummary,
   type ToolRegistryToolSummary,
 } from "./tool-registry";

@@ -919,7 +919,7 @@ globalThis.process = process_default;
 
 // src/index.ts
 import { RpcTarget } from "cloudflare:workers";
-import HARNESS_CODE from "./4ee7f16d990518b04642acba35a710043684a1d7-harness.isolate.js";
+import HARNESS_CODE from "./61f783ce8adbc6fed3842c6828ff2e4660585772-harness.isolate.js";
 var DEFAULT_TIMEOUT_MS = 3e4;
 var MAX_TIMEOUT_MS = 12e4;
 var json = /* @__PURE__ */ __name((value, status = 200) => new Response(JSON.stringify(value), {

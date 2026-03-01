@@ -145,7 +145,7 @@ describe("source tool registry", () => {
         endpoint: server.baseUrl,
         status: "connected",
         enabled: true,
-        configJson: "{}",
+        configJson: JSON.stringify({ baseUrl: server.baseUrl }),
         sourceHash: null,
         lastError: null,
         createdAt: Date.now(),
@@ -230,6 +230,9 @@ describe("source tool registry", () => {
 
       expect(discovered.bestPath).not.toBeNull();
       expect(discovered.results.length).toBeGreaterThan(0);
+      expect(discovered.perQuery).toHaveLength(1);
+      expect(discovered.perQuery[0]?.text).toBe("repo");
+      expect(discovered.perQuery[0]?.bestPath).toBe(discovered.bestPath);
       expect(discovered.results[0]?.typing).toBeUndefined();
 
       const discoveredWithSchemas = yield* toolRegistry.discover({
@@ -328,7 +331,7 @@ describe("source tool registry", () => {
         endpoint: server.baseUrl,
         status: "connected",
         enabled: true,
-        configJson: "{}",
+        configJson: JSON.stringify({ baseUrl: server.baseUrl }),
         sourceHash: null,
         lastError: null,
         createdAt: Date.now(),
@@ -420,7 +423,7 @@ describe("source tool registry", () => {
         endpoint: "https://example.test",
         status: "connected",
         enabled: true,
-        configJson: "{}",
+        configJson: JSON.stringify({ baseUrl: "https://example.test" }),
         sourceHash: null,
         lastError: null,
         createdAt: Date.now(),
@@ -481,7 +484,7 @@ describe("source tool registry", () => {
         endpoint: "https://api.vercel.com",
         status: "connected",
         enabled: true,
-        configJson: "{}",
+        configJson: JSON.stringify({ baseUrl: "https://api.vercel.com" }),
         sourceHash: null,
         lastError: null,
         createdAt: Date.now(),

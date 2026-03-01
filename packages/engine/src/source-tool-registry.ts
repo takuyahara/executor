@@ -35,9 +35,11 @@ import type {
   ToolRegistryCatalogNamespacesOutput,
   ToolRegistryCatalogToolsInput,
   ToolRegistryCatalogToolsOutput,
+  ToolRegistryDiscoverDepth,
   ToolRegistryCallInput,
   ToolRegistryDiscoverInput,
   ToolRegistryDiscoverOutput,
+  ToolRegistryDiscoverQueryResult,
   ToolRegistryToolSummary,
 } from "./tool-registry";
 
@@ -308,9 +310,69 @@ const deriveHintFromSchemaJson = (
   return fallback;
 };
 
+const tokenizeSearchQuery = (query: string): Array<string> =>
+  Array.from(
+    new Set(
+      query
+        .toLowerCase()
+        .split(/[\s._:/-]+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0),
+    ),
+  );
+
+const normalizeDiscoverDepth = (value: unknown): ToolRegistryDiscoverDepth => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 1;
+  }
+
+  if (value <= 0) {
+    return 0;
+  }
+
+  if (value >= 2) {
+    return 2;
+  }
+
+  return 1;
+};
+
+type NormalizedDiscoverQuery = {
+  text: string;
+  lowerText: string;
+  depth: ToolRegistryDiscoverDepth;
+};
+
+const normalizeDiscoverQueries = (
+  input: ToolRegistryDiscoverInput,
+): Array<NormalizedDiscoverQuery> => {
+  const normalized = (input.queries ?? []).map((query) => {
+    const text = query.text.trim();
+    return {
+      text,
+      lowerText: text.toLowerCase(),
+      depth: normalizeDiscoverDepth(query.depth),
+    };
+  });
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const fallbackText = (input.query ?? "").trim();
+  return [
+    {
+      text: fallbackText,
+      lowerText: fallbackText.toLowerCase(),
+      depth: 1,
+    },
+  ];
+};
+
 const scoreSummary = (
   summary: ToolRegistryToolSummary,
   query: string,
+  depth: ToolRegistryDiscoverDepth = 1,
 ): number => {
   if (query.length === 0) {
     return 1;
@@ -343,11 +405,79 @@ const scoreSummary = (
     return 30;
   }
 
-  if (lowerInputHint.includes(lowerQuery) || lowerOutputHint.includes(lowerQuery)) {
+  if (
+    depth >= 2 &&
+    (lowerInputHint.includes(lowerQuery) || lowerOutputHint.includes(lowerQuery))
+  ) {
     return 20;
   }
 
-  return 0;
+  if (depth === 0) {
+    return 0;
+  }
+
+  const tokens = tokenizeSearchQuery(lowerQuery);
+  if (tokens.length === 0) {
+    return 0;
+  }
+
+  let pathMatches = 0;
+  let sourceMatches = 0;
+  let descriptionMatches = 0;
+  let ioMatches = 0;
+
+  for (const token of tokens) {
+    if (lowerPath.includes(token)) {
+      pathMatches += 1;
+      continue;
+    }
+
+    if (lowerSource.includes(token)) {
+      sourceMatches += 1;
+      continue;
+    }
+
+    if (depth >= 2 && lowerDescription.includes(token)) {
+      descriptionMatches += 1;
+      continue;
+    }
+
+    if (
+      depth >= 2 &&
+      (lowerInputHint.includes(token) || lowerOutputHint.includes(token))
+    ) {
+      ioMatches += 1;
+    }
+  }
+
+  const matchedTokens =
+    pathMatches + sourceMatches + descriptionMatches + ioMatches;
+  if (matchedTokens === 0) {
+    return 0;
+  }
+
+  let score =
+    pathMatches * 18 +
+    sourceMatches * 12 +
+    descriptionMatches * 8 +
+    ioMatches * 6;
+
+  score += matchedTokens === tokens.length ? 20 : 5;
+
+  return score;
+};
+
+const dedupeSummariesByPath = (
+  summaries: ReadonlyArray<ToolRegistryToolSummary>,
+): Array<ToolRegistryToolSummary> => {
+  const byPath = new Map<string, ToolRegistryToolSummary>();
+  for (const summary of summaries) {
+    if (!byPath.has(summary.path)) {
+      byPath.set(summary.path, summary);
+    }
+  }
+
+  return [...byPath.values()];
 };
 
 const summarizeEntry = (
@@ -592,9 +722,11 @@ const unknownToolPathErrorMessage = (
       ? ` Did you mean: ${suggestions.join(", ")}.`
       : "";
 
-  return `Unknown tool path: ${requestedPath}.${suggestionText} Use tools.discover({ query: ${JSON.stringify(
+  return `Unknown tool path: ${requestedPath}.${suggestionText} Use tools.discover({ queries: [{ text: ${JSON.stringify(
     hintQuery,
-  )} }) or tools.catalog.tools({ query: ${JSON.stringify(hintQuery)} }) to find available tool paths.`;
+  )}, depth: 1 }] }) or tools.catalog.tools({ query: ${JSON.stringify(
+    hintQuery,
+  )} }) to find available tool paths.`;
 };
 
 const loadSourceEntries = (
@@ -740,26 +872,48 @@ const discoverTools = (
   input: ToolRegistryDiscoverInput,
 ): ToolRegistryDiscoverOutput => {
   const limit = Math.max(1, Math.min(50, input.limit ?? 8));
-  const query = (input.query ?? "").trim().toLowerCase();
   const includeSchemas = input.includeSchemas === true;
   const compact = input.compact === true;
+  const queries = normalizeDiscoverQueries(input);
+  const summaries = snapshot.entries.map((entry) =>
+    summarizeEntry(entry, includeSchemas, compact),
+  );
 
-  const ranked = snapshot.entries
-    .map((entry) => summarizeEntry(entry, includeSchemas, compact))
-    .map((summary) => ({
-      summary,
-      score: scoreSummary(summary, query),
-    }))
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, limit)
-    .map((item) => item.summary);
+  const perQuery = queries.map((query) => {
+    const ranked = summaries
+      .map((summary) => ({
+        summary,
+        score: scoreSummary(summary, query.lowerText, query.depth),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map((item) => item.summary);
+
+    return {
+      text: query.text,
+      depth: query.depth,
+      bestPath: ranked[0]?.path ?? null,
+      results: ranked,
+      total: ranked.length,
+    } satisfies ToolRegistryDiscoverQueryResult;
+  });
+
+  const primary = perQuery[0] ?? {
+    text: "",
+    depth: 1 as const,
+    bestPath: null,
+    results: [] as Array<ToolRegistryToolSummary>,
+    total: 0,
+  };
+  const flattened = dedupeSummariesByPath(perQuery.flatMap((query) => query.results));
 
   return {
-    bestPath: ranked[0]?.path ?? null,
-    results: ranked,
-    total: ranked.length,
-    refHintTable: pickRefHintTable(snapshot, ranked, includeSchemas),
+    bestPath: primary.bestPath,
+    results: primary.results,
+    total: primary.total,
+    perQuery,
+    refHintTable: pickRefHintTable(snapshot, flattened, includeSchemas),
   };
 };
 

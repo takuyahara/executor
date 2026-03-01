@@ -12,6 +12,68 @@ const decodeSource = Schema.decodeUnknownSync(SourceSchema);
 
 const sourceStoreKey = (source: Source): string => `${source.workspaceId}:${source.id}`;
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const parseConfigJson = (configJson: string | undefined): Record<string, unknown> => {
+  if (typeof configJson !== "string") {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(configJson) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const normalizeHttpUrl = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+const requireHttpUrl = (value: unknown, errorMessage: string): string => {
+  if (typeof value !== "string") {
+    throw new Error(errorMessage);
+  }
+
+  const normalized = normalizeHttpUrl(value);
+  if (!normalized) {
+    throw new Error(errorMessage);
+  }
+
+  return normalized;
+};
+
+const buildOpenApiConfigJson = (
+  payload: UpsertSourcePayload,
+  baseUrl: string,
+): string => {
+  const config = parseConfigJson(payload.configJson);
+  config.baseUrl = baseUrl;
+
+  const specUrl = typeof config.specUrl === "string" ? config.specUrl.trim() : "";
+  if (specUrl.length === 0) {
+    config.specUrl = payload.endpoint;
+  }
+
+  return JSON.stringify(config);
+};
+
 const sortSources = (sources: ReadonlyArray<Source>): Array<Source> =>
   [...sources].sort((left, right) => {
     const leftName = left.name.toLowerCase();
@@ -91,6 +153,19 @@ export const upsertSourceRecord = internalMutation({
 
     const payload = args.payload as UpsertSourcePayload;
 
+    const configJson = (() => {
+      if (payload.kind !== "openapi") {
+        return payload.configJson ?? "{}";
+      }
+
+      const configuredBaseUrl = requireHttpUrl(
+        parseConfigJson(payload.configJson).baseUrl,
+        "OpenAPI source requires configJson.baseUrl",
+      );
+
+      return buildOpenApiConfigJson(payload, configuredBaseUrl);
+    })();
+
     const source = decodeSource({
       id: sourceId,
       workspaceId: args.workspaceId,
@@ -99,7 +174,7 @@ export const upsertSourceRecord = internalMutation({
       endpoint: payload.endpoint,
       status: payload.status ?? "draft",
       enabled: payload.enabled ?? true,
-      configJson: payload.configJson ?? "{}",
+      configJson,
       sourceHash: payload.sourceHash ?? null,
       lastError: payload.lastError ?? null,
       createdAt: existingInWorkspace?.createdAt ?? now,
@@ -133,11 +208,42 @@ export const upsertSource = action({
   },
   handler: async (ctx, args): Promise<Source> => {
     const shouldIngest = args.payload.status !== "draft";
+    let payload = args.payload as UpsertSourcePayload;
+
+    if (payload.kind === "openapi") {
+      const config = parseConfigJson(payload.configJson);
+      let resolvedBaseUrl = typeof config.baseUrl === "string"
+        ? normalizeHttpUrl(config.baseUrl)
+        : null;
+
+      if (!resolvedBaseUrl) {
+        const derived = await ctx.runAction(
+          runtimeInternal.control_plane.openapi_ingest.deriveOpenApiBaseUrl,
+          {
+            specUrl: payload.endpoint,
+          },
+        );
+        resolvedBaseUrl = requireHttpUrl(
+          derived?.baseUrl,
+          "OpenAPI source requires configJson.baseUrl",
+        );
+      }
+      const baseUrl = requireHttpUrl(
+        resolvedBaseUrl,
+        "OpenAPI source requires configJson.baseUrl",
+      );
+
+      payload = {
+        ...payload,
+        configJson: buildOpenApiConfigJson(payload, baseUrl),
+      };
+    }
+
     const source = await ctx.runMutation(runtimeInternal.control_plane.sources.upsertSourceRecord, {
       workspaceId: args.workspaceId,
       payload: {
-        ...args.payload,
-        status: args.payload.status ?? (shouldIngest ? "probing" : "draft"),
+        ...payload,
+        status: payload.status ?? (shouldIngest ? "probing" : "draft"),
       },
     });
 

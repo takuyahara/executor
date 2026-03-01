@@ -152,7 +152,7 @@ describe("OpenAPI execution vertical slice", () => {
         endpoint: testServer.baseUrl,
         status: "connected",
         enabled: true,
-        configJson: "{}",
+        configJson: JSON.stringify({ baseUrl: testServer.baseUrl }),
         sourceHash: null,
         lastError: null,
         createdAt: Date.now(),

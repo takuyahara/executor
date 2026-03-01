@@ -98,9 +98,13 @@ const dedupeToolsByPath = (
 
 const discoveryGuide = [
   "Discovery workflow:",
+  "0) Use discover/catalog for external APIs; do not use fetch.",
   `1) const namespaces = await tools.catalog.namespaces({ limit: ${defaultDiscoveryNamespaceLimit} });`,
-  `2) const matches = await tools.discover({ query: "<intent>", limit: 12 });`,
+  "   (Object.keys(tools) exposes only helper roots like discover/catalog.)",
+  `2) const matches = await tools.discover({ queries: [{ text: "<intent>", depth: 1 }], limit: 12 });`,
+  "   (Use includeSchemas: true when you need full input/output schema JSON.)",
   "3) call the selected tool path via tools.<namespace>.<...>(input)",
+  "4) HTTP/OpenAPI tool calls return { status, headers, body }. Read res.body for payload data.",
 ].join("\n");
 
 const formatSourcesOnlyDescription = (
@@ -147,7 +151,9 @@ const formatAllToolsDescription = (
     "Tool paths:",
     toolLines,
     "",
-    `Tip: if a path fails, run tools.discover({ query: ${quote("<intent>")} }) for correction hints.`,
+    "Use tool paths above; do not use fetch for external APIs.",
+    "",
+    `Tip: if a path fails, run tools.discover({ queries: [{ text: ${quote("<intent>")}, depth: 1 }] }) for correction hints.`,
   ].join("\n");
 };
 

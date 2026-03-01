@@ -1,7 +1,7 @@
 import { type TaskRun } from "@executor-v2/schema";
 import { v } from "convex/values";
 
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 
 const taskRunTerminalStatusValidator = v.union(
   v.literal("completed"),
@@ -74,5 +74,19 @@ export const finishTaskRun = internalMutation({
       completedAt: Date.now(),
       error: args.error ?? null,
     });
+  },
+});
+
+export const getTaskRunWorkspaceId = internalQuery({
+  args: {
+    runId: v.string(),
+  },
+  handler: async (ctx, args): Promise<string | null> => {
+    const existing = await ctx.db
+      .query("taskRuns")
+      .withIndex("by_domainId", (q) => q.eq("id", args.runId))
+      .unique();
+
+    return existing?.workspaceId ?? null;
   },
 });

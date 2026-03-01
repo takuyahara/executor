@@ -10,8 +10,9 @@ Run:
 - `bun run --cwd apps/web dev`
 - Open `http://127.0.0.1:3000`
 
-By default, control-plane API calls go directly to `http://127.0.0.1:8788`.
-Override with `NEXT_PUBLIC_CONTROL_PLANE_BASE_URL` (and optionally `CONTROL_PLANE_SERVER_BASE_URL` for SSR).
+By default, control-plane API calls derive from the first available value in:
+`NEXT_PUBLIC_CONTROL_PLANE_BASE_URL`, `CONTROL_PLANE_SERVER_BASE_URL`, `CONTROL_PLANE_UPSTREAM_URL`, `NEXT_PUBLIC_CONVEX_URL`, `CONVEX_URL`.
+If none are set, fallback is `http://127.0.0.1:8788`.
 
 MCP install URL generation:
 

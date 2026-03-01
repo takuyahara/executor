@@ -22,6 +22,7 @@ const ConsoleLayout = async ({ children }: ConsoleLayoutProps) => {
     return (
       <ConsoleShell
         authEnabled
+        initialAccountId={user.id}
         initialWorkspaceId={`ws_${user.id}`}
       >
         {children}
@@ -32,6 +33,7 @@ const ConsoleLayout = async ({ children }: ConsoleLayoutProps) => {
   return (
     <ConsoleShell
       authEnabled={false}
+      initialAccountId={null}
       initialWorkspaceId="ws_demo"
     >
       {children}

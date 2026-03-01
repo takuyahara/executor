@@ -95,6 +95,11 @@ function describeExecutionError(error) {
 
 function createToolsProxy(bridge, path = []) {
   const callable = () => {};
+  const inspectableKeys = path.length === 0
+    ? ["discover", "catalog"]
+    : path.length === 1 && path[0] === "catalog"
+      ? ["namespaces", "tools"]
+      : [];
 
   return new Proxy(callable, {
     get(_target, prop) {
@@ -107,6 +112,27 @@ function createToolsProxy(bridge, path = []) {
       }
 
       return createToolsProxy(bridge, [...path, prop]);
+    },
+
+    ownKeys() {
+      return inspectableKeys;
+    },
+
+    has(_target, prop) {
+      return typeof prop === "string" && inspectableKeys.includes(prop);
+    },
+
+    getOwnPropertyDescriptor(_target, prop) {
+      if (typeof prop !== "string" || !inspectableKeys.includes(prop)) {
+        return undefined;
+      }
+
+      return {
+        configurable: true,
+        enumerable: true,
+        writable: false,
+        value: createToolsProxy(bridge, [...path, prop]),
+      };
     },
 
     async apply(_target, _thisArg, args) {
