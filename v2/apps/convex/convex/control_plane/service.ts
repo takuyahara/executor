@@ -38,6 +38,184 @@ export const makeConvexControlPlaneService = (
           }),
         catch: (cause) => toSourceStoreError("controlPlane.removeSource", cause),
       }),
+    listCredentialBindings: (workspaceId) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.listCredentialBindings, {
+            workspaceId,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.listCredentialBindings", cause),
+      }),
+    upsertCredentialBinding: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.upsertCredentialBinding, {
+            workspaceId: input.workspaceId,
+            payload: input.payload,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.upsertCredentialBinding", cause),
+      }),
+    removeCredentialBinding: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.removeCredentialBinding, {
+            workspaceId: input.workspaceId,
+            credentialBindingId: input.credentialBindingId,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.removeCredentialBinding", cause),
+      }),
+    listPolicies: (workspaceId) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.listPolicies, {
+            workspaceId,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.listPolicies", cause),
+      }),
+    upsertPolicy: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.upsertPolicy, {
+            workspaceId: input.workspaceId,
+            payload: input.payload,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.upsertPolicy", cause),
+      }),
+    removePolicy: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.removePolicy, {
+            workspaceId: input.workspaceId,
+            policyId: input.policyId,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.removePolicy", cause),
+      }),
+    listOrganizations: () =>
+      Effect.tryPromise({
+        try: () => ctx.runQuery(api.controlPlane.listOrganizations, {}),
+        catch: (cause) => toSourceStoreError("controlPlane.listOrganizations", cause),
+      }),
+    upsertOrganization: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.upsertOrganization, {
+            payload: input.payload,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.upsertOrganization", cause),
+      }),
+    listWorkspaces: () =>
+      Effect.tryPromise({
+        try: () => ctx.runQuery(api.controlPlane.listWorkspaces, {}),
+        catch: (cause) => toSourceStoreError("controlPlane.listWorkspaces", cause),
+      }),
+    upsertWorkspace: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.upsertWorkspace, {
+            payload: input.payload,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.upsertWorkspace", cause),
+      }),
+    listWorkspaceTools: (workspaceId) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.listWorkspaceTools, {
+            workspaceId,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.listWorkspaceTools", cause),
+      }),
+    listSourceTools: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.listSourceTools, {
+            workspaceId: input.workspaceId,
+            sourceId: input.sourceId,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.listSourceTools", cause),
+      }),
+    listStorageInstances: (workspaceId) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.listStorageInstances, {
+            workspaceId,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.listStorageInstances", cause),
+      }),
+    openStorageInstance: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.openStorageInstance, {
+            workspaceId: input.workspaceId,
+            payload: input.payload,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.openStorageInstance", cause),
+      }),
+    closeStorageInstance: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.closeStorageInstance, {
+            workspaceId: input.workspaceId,
+            storageInstanceId: input.storageInstanceId,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.closeStorageInstance", cause),
+      }),
+    removeStorageInstance: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.removeStorageInstance, {
+            workspaceId: input.workspaceId,
+            storageInstanceId: input.storageInstanceId,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.removeStorageInstance", cause),
+      }),
+    listStorageDirectory: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.listStorageDirectory, {
+            workspaceId: input.workspaceId,
+            storageInstanceId: input.storageInstanceId,
+            payload: input.payload,
+          }),
+        catch: (cause) =>
+          toSourceStoreError("controlPlane.listStorageDirectory", cause),
+      }),
+    readStorageFile: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.readStorageFile, {
+            workspaceId: input.workspaceId,
+            storageInstanceId: input.storageInstanceId,
+            payload: input.payload,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.readStorageFile", cause),
+      }),
+    listStorageKv: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runQuery(api.controlPlane.listStorageKv, {
+            workspaceId: input.workspaceId,
+            storageInstanceId: input.storageInstanceId,
+            payload: input.payload,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.listStorageKv", cause),
+      }),
+    queryStorageSql: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          ctx.runMutation(api.controlPlane.queryStorageSql, {
+            workspaceId: input.workspaceId,
+            storageInstanceId: input.storageInstanceId,
+            payload: input.payload,
+          }),
+        catch: (cause) => toSourceStoreError("controlPlane.queryStorageSql", cause),
+      }),
     listApprovals: (workspaceId) =>
       Effect.tryPromise({
         try: () =>

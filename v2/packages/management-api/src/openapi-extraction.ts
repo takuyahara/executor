@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import {
   ToolArtifactStoreError,
   type ToolArtifactStore,
@@ -473,8 +471,20 @@ const toStableValue = (value: unknown): unknown => {
   return value;
 };
 
+const hashString = (value: string): string => {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= BigInt(value.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * prime);
+  }
+
+  return hash.toString(16).padStart(16, "0");
+};
+
 const hashUnknown = (value: unknown): string =>
-  createHash("sha256").update(JSON.stringify(toStableValue(value))).digest("hex");
+  hashString(JSON.stringify(toStableValue(value)));
 
 const normalizePathForToolId = (pathValue: string): string =>
   pathValue

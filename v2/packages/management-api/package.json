@@ -3,7 +3,18 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": "./src/api.ts",
+    "./approvals/api": "./src/approvals/api.ts",
+    "./auth/principal": "./src/auth/principal.ts",
+    "./client": "./src/client.ts",
+    "./credentials/api": "./src/credentials/api.ts",
+    "./organizations/api": "./src/organizations/api.ts",
+    "./policies/api": "./src/policies/api.ts",
+    "./storage/api": "./src/storage/api.ts",
+    "./sources/api": "./src/sources/api.ts",
+    "./tools/api": "./src/tools/api.ts",
+    "./workspaces/api": "./src/workspaces/api.ts"
   },
   "scripts": {
     "typecheck": "bunx tsc --noEmit -p tsconfig.json"
@@ -14,7 +25,8 @@
     "@executor-v2/domain": "workspace:*",
     "@executor-v2/persistence-ports": "workspace:*",
     "@executor-v2/schema": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

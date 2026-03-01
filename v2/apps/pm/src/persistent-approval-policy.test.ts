@@ -33,6 +33,7 @@ const createTestSnapshot = (): LocalStateSnapshot =>
     policies: [],
     approvals: [],
     taskRuns: [],
+    storageInstances: [],
     syncStates: [],
   }) as unknown as LocalStateSnapshot;
 

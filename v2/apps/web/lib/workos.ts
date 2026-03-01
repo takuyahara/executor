@@ -3,8 +3,39 @@ const trim = (value: string | undefined): string | undefined => {
   return candidate && candidate.length > 0 ? candidate : undefined;
 };
 
-export const isWorkosEnabled = (): boolean =>
-  Boolean(trim(process.env.WORKOS_CLIENT_ID) && trim(process.env.WORKOS_API_KEY));
+const isTruthy = (value: string | undefined): boolean => {
+  const normalized = trim(value)?.toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+};
+
+export const isLocalControlPlaneUpstream = (): boolean => {
+  const upstream = trim(process.env.CONTROL_PLANE_UPSTREAM_URL) ?? "http://127.0.0.1:8787";
+
+  try {
+    const url = new URL(upstream);
+    return (
+      url.hostname === "127.0.0.1"
+      || url.hostname === "localhost"
+      || url.hostname === "0.0.0.0"
+      || url.hostname === "::1"
+      || url.hostname === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const isWorkosEnabled = (): boolean => {
+  if (isTruthy(process.env.WORKOS_FORCE_ENABLED)) {
+    return Boolean(trim(process.env.WORKOS_CLIENT_ID) && trim(process.env.WORKOS_API_KEY));
+  }
+
+  if (isLocalControlPlaneUpstream()) {
+    return false;
+  }
+
+  return Boolean(trim(process.env.WORKOS_CLIENT_ID) && trim(process.env.WORKOS_API_KEY));
+};
 
 export const externalOriginFromRequest = (request: Request): string => {
   const forwardedHost = trim(request.headers.get("x-forwarded-host") ?? undefined);

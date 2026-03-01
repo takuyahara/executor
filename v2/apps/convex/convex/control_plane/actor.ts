@@ -71,6 +71,34 @@ export const listOrganizationMembershipsForActor = internalQuery({
   },
 });
 
+export const listWorkspacesForActor = internalQuery({
+  args: {
+    accountId: v.string(),
+    organizationIds: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<ReadonlyArray<Workspace>> => {
+    const ownRows = await ctx.db
+      .query("workspaces")
+      .withIndex("by_createdByAccountId", (q) => q.eq("createdByAccountId", args.accountId))
+      .collect();
+
+    const organizationRows = await Promise.all(
+      args.organizationIds.map((organizationId) =>
+        ctx.db
+          .query("workspaces")
+          .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+          .collect(),
+      ),
+    );
+
+    const workspaces = [...ownRows, ...organizationRows.flat()].map((row) =>
+      decodeWorkspace(stripConvexSystemFields(row as unknown as Record<string, unknown>)),
+    );
+
+    return Array.from(new Map(workspaces.map((workspace) => [workspace.id, workspace])).values());
+  },
+});
+
 export const ensureWorkspaceForActor = internalMutation({
   args: {
     workspaceId: v.string(),
@@ -139,6 +167,44 @@ const runQueryEffect = <A>(
 
 export const ConvexControlPlaneActorLive = (ctx: ActionCtx) =>
   ControlPlaneActorResolverLive({
+    resolveActor: (input) =>
+      Effect.gen(function* () {
+        const principal = yield* requirePrincipalFromHeaders(input.headers);
+
+        const organizationMemberships = yield* runQueryEffect(
+          "organizationMembership.list",
+          () =>
+            ctx.runQuery(internal.control_plane.actor.listOrganizationMembershipsForActor, {
+              accountId: principal.accountId,
+            }),
+        );
+
+        const organizationIds = organizationMemberships.map(
+          (membership) => membership.organizationId,
+        );
+
+        const workspaces = yield* runQueryEffect("workspace.list", () =>
+          ctx.runQuery(internal.control_plane.actor.listWorkspacesForActor, {
+            accountId: principal.accountId,
+            organizationIds,
+          }),
+        );
+
+        const workspaceMemberships = workspaces.flatMap((workspace) =>
+          deriveWorkspaceMembershipsForPrincipal({
+            principalAccountId: principal.accountId,
+            workspaceId: workspace.id,
+            workspace,
+            organizationMemberships,
+          }),
+        );
+
+        return yield* makeActor({
+          principal,
+          workspaceMemberships,
+          organizationMemberships,
+        });
+      }),
     resolveWorkspaceActor: (input) =>
       Effect.gen(function* () {
         const principal = yield* requirePrincipalFromHeaders(input.headers);

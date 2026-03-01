@@ -18,6 +18,15 @@ export const CredentialScopeTypeSchema = Schema.Literal(
   "organization",
   "account",
 );
+export const StorageScopeTypeSchema = Schema.Literal(
+  "scratch",
+  "account",
+  "workspace",
+  "organization",
+);
+export const StorageDurabilitySchema = Schema.Literal("ephemeral", "durable");
+export const StorageInstanceStatusSchema = Schema.Literal("active", "closed", "deleted");
+export const StorageProviderSchema = Schema.Literal("agentfs-local", "agentfs-cloudflare");
 export const OrganizationStatusSchema = Schema.Literal("active", "suspended", "archived");
 export const OrganizationMemberStatusSchema = Schema.Literal(
   "invited",
@@ -36,6 +45,10 @@ export type TaskRunStatus = typeof TaskRunStatusSchema.Type;
 export type CredentialMode = typeof CredentialModeSchema.Type;
 export type CredentialProvider = typeof CredentialProviderSchema.Type;
 export type CredentialScopeType = typeof CredentialScopeTypeSchema.Type;
+export type StorageScopeType = typeof StorageScopeTypeSchema.Type;
+export type StorageDurability = typeof StorageDurabilitySchema.Type;
+export type StorageInstanceStatus = typeof StorageInstanceStatusSchema.Type;
+export type StorageProvider = typeof StorageProviderSchema.Type;
 export type OrganizationStatus = typeof OrganizationStatusSchema.Type;
 export type OrganizationMemberStatus = typeof OrganizationMemberStatusSchema.Type;
 export type SyncTarget = typeof SyncTargetSchema.Type;

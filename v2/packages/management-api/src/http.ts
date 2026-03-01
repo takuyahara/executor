@@ -8,10 +8,22 @@ import {
 } from "./auth/actor-resolver";
 import { ControlPlaneService } from "./service";
 import { ControlPlaneApprovalsLive } from "./approvals/http";
+import { ControlPlaneCredentialsLive } from "./credentials/http";
+import { ControlPlaneOrganizationsLive } from "./organizations/http";
+import { ControlPlanePoliciesLive } from "./policies/http";
+import { ControlPlaneStorageLive } from "./storage/http";
 import { ControlPlaneSourcesLive } from "./sources/http";
+import { ControlPlaneToolsLive } from "./tools/http";
+import { ControlPlaneWorkspacesLive } from "./workspaces/http";
 
 export const ControlPlaneApiLive = HttpApiBuilder.api(ControlPlaneApi).pipe(
   Layer.provide(ControlPlaneSourcesLive),
+  Layer.provide(ControlPlaneCredentialsLive),
+  Layer.provide(ControlPlanePoliciesLive),
+  Layer.provide(ControlPlaneOrganizationsLive),
+  Layer.provide(ControlPlaneWorkspacesLive),
+  Layer.provide(ControlPlaneToolsLive),
+  Layer.provide(ControlPlaneStorageLive),
   Layer.provide(ControlPlaneApprovalsLive),
 );
 

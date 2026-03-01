@@ -16,6 +16,7 @@ import {
 } from "@executor-v2/persistence-ports";
 import {
   ApprovalSchema,
+  OpenApiToolManifestSchema,
   SourceSchema,
   ToolArtifactSchema,
   type Approval,
@@ -37,9 +38,14 @@ const runtimeInternal = internal as any;
 
 const decodeSource = Schema.decodeUnknownSync(SourceSchema);
 const decodeToolArtifact = Schema.decodeUnknownSync(ToolArtifactSchema);
+const decodeOpenApiToolManifest = Schema.decodeUnknownSync(OpenApiToolManifestSchema);
+const encodeOpenApiToolManifestJson = Schema.encodeSync(
+  Schema.parseJson(OpenApiToolManifestSchema),
+);
 const decodeApproval = Schema.decodeUnknownSync(ApprovalSchema);
 
 const defaultPendingRetryAfterMs = 1_000;
+const openApiExtractorVersion = "openapi_v2";
 
 const readBooleanFlag = (value: string | undefined): boolean => {
   const normalized = value?.trim().toLowerCase();
@@ -100,16 +106,6 @@ const unsupportedSourceStoreMutation = (
     details: null,
   });
 
-const unsupportedToolArtifactMutation = (): ToolArtifactStoreError =>
-  new ToolArtifactStoreError({
-    operation: "upsert",
-    backend: "convex",
-    location: "source-tool-registry",
-    message: "ToolArtifactStore.upsert is not supported in source tool registry runtime",
-    reason: "unsupported_operation",
-    details: null,
-  });
-
 const sourceStoreQueryError = (
   operation: string,
   cause: unknown,
@@ -136,6 +132,19 @@ const toolArtifactStoreQueryError = (
     details: String(cause),
   });
 
+const toolArtifactStoreMutationError = (
+  operation: string,
+  cause: unknown,
+): ToolArtifactStoreError =>
+  new ToolArtifactStoreError({
+    operation,
+    backend: "convex",
+    location: "source-tool-registry",
+    message: "ToolArtifactStore mutation failed",
+    reason: "convex_mutation_error",
+    details: String(cause),
+  });
+
 export const listSourcesForWorkspace = query({
   args: {
     workspaceId: v.string(),
@@ -158,19 +167,130 @@ export const getToolArtifactBySource = query({
     sourceId: v.string(),
   },
   handler: async (ctx, args): Promise<ToolArtifact | null> => {
-    const rows = await ctx.db
-      .query("toolArtifacts")
-      .withIndex("by_sourceId", (q) => q.eq("sourceId", args.sourceId))
-      .collect();
+    const binding = await ctx.db
+      .query("openApiSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
+      )
+      .unique();
 
-    const record = rows.find((row) => row.workspaceId === args.workspaceId) ?? null;
-    if (!record) {
+    if (!binding) {
       return null;
     }
 
-    return decodeToolArtifact(
-      stripConvexSystemFields(record as unknown as Record<string, unknown>),
-    );
+    const toolRows = await ctx.db
+      .query("openApiArtifactTools")
+      .withIndex("by_artifactId", (q) => q.eq("artifactId", binding.artifactId))
+      .collect();
+
+    const manifest = {
+      version: 1 as const,
+      sourceHash: binding.sourceHash,
+      tools: toolRows
+        .map((toolRow) => ({
+          toolId: toolRow.toolId,
+          name: toolRow.name,
+          description: toolRow.description,
+          method: toolRow.method,
+          path: toolRow.path,
+          invocation: JSON.parse(toolRow.invocationJson) as unknown,
+          operationHash: toolRow.operationHash,
+        }))
+        .sort((left, right) => left.toolId.localeCompare(right.toolId)),
+    };
+
+    const normalizedManifest = decodeOpenApiToolManifest(manifest);
+
+    return decodeToolArtifact({
+      id: `tool_artifact_${args.sourceId}`,
+      workspaceId: args.workspaceId,
+      sourceId: args.sourceId,
+      sourceHash: binding.sourceHash,
+      toolCount: normalizedManifest.tools.length,
+      manifestJson: encodeOpenApiToolManifestJson(normalizedManifest),
+      createdAt: binding.updatedAt,
+      updatedAt: binding.updatedAt,
+    });
+  },
+});
+
+export const upsertToolArtifactForSource = internalMutation({
+  args: {
+    artifact: v.object({
+      id: v.string(),
+      workspaceId: v.string(),
+      sourceId: v.string(),
+      sourceHash: v.string(),
+      toolCount: v.number(),
+      manifestJson: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+  },
+  handler: async (ctx, args): Promise<ToolArtifact> => {
+    const artifact = decodeToolArtifact(args.artifact as unknown as Record<string, unknown>);
+    const manifest = decodeOpenApiToolManifest(JSON.parse(artifact.manifestJson) as unknown);
+
+    const artifactId = `oa_${artifact.sourceHash}_${openApiExtractorVersion}`;
+    const existingArtifact = await ctx.db
+      .query("openApiArtifacts")
+      .withIndex("by_sourceHash_extractorVersion", (q) =>
+        q.eq("sourceHash", artifact.sourceHash).eq("extractorVersion", openApiExtractorVersion)
+      )
+      .unique();
+
+    if (!existingArtifact) {
+      const now = Date.now();
+      await ctx.db.insert("openApiArtifacts", {
+        id: artifactId,
+        sourceHash: artifact.sourceHash,
+        extractorVersion: openApiExtractorVersion,
+        toolCount: manifest.tools.length,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      for (const tool of manifest.tools) {
+        await ctx.db.insert("openApiArtifactTools", {
+          id: `${artifactId}:${tool.toolId}`,
+          artifactId,
+          toolId: tool.toolId,
+          name: tool.name,
+          description: tool.description,
+          method: tool.method,
+          path: tool.path,
+          operationHash: tool.operationHash,
+          invocationJson: JSON.stringify(tool.invocation),
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    const existingBinding = await ctx.db
+      .query("openApiSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", artifact.workspaceId).eq("sourceId", artifact.sourceId)
+      )
+      .unique();
+
+    const bindingRow = {
+      id: existingBinding?.id ?? `oab_${artifact.workspaceId}_${artifact.sourceId}`,
+      workspaceId: artifact.workspaceId,
+      sourceId: artifact.sourceId,
+      artifactId: existingArtifact?.id ?? artifactId,
+      sourceHash: artifact.sourceHash,
+      extractorVersion: openApiExtractorVersion,
+      updatedAt: Date.now(),
+    };
+
+    if (existingBinding) {
+      await ctx.db.patch(existingBinding._id, bindingRow);
+    } else {
+      await ctx.db.insert("openApiSourceArtifactBindings", bindingRow);
+    }
+
+    return artifact;
   },
 });
 
@@ -342,7 +462,14 @@ const createConvexToolArtifactStore = (ctx: ActionCtx): ToolArtifactStore => ({
       catch: (cause) => toolArtifactStoreQueryError("getBySource", cause),
     }),
 
-  upsert: () => Effect.fail(unsupportedToolArtifactMutation()),
+  upsert: (artifact: ToolArtifact) =>
+    Effect.tryPromise({
+      try: () =>
+        ctx.runMutation(runtimeInternal.source_tool_registry.upsertToolArtifactForSource, {
+          artifact,
+        }),
+      catch: (cause) => toolArtifactStoreMutationError("upsert", cause),
+    }).pipe(Effect.asVoid),
 });
 
 const createConvexPersistentToolApprovalPolicy = (

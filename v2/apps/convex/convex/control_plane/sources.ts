@@ -3,7 +3,8 @@ import { SourceSchema, type Source } from "@executor-v2/schema";
 import { v } from "convex/values";
 import * as Schema from "effect/Schema";
 
-import { mutation, query } from "../_generated/server";
+import { api } from "../_generated/api";
+import { internalQuery, internalMutation, mutation, query } from "../_generated/server";
 
 const decodeSource = Schema.decodeUnknownSync(SourceSchema);
 
@@ -109,7 +110,60 @@ export const upsertSource = mutation({
       await ctx.db.insert("sources", source);
     }
 
+    await ctx.scheduler.runAfter(
+      0,
+      (api as any).control_plane.openapi_ingest.ingestSourceArtifact,
+      {
+        workspaceId: args.workspaceId,
+        sourceId,
+      },
+    );
+
     return source;
+  },
+});
+
+export const getSourceForIngest = internalQuery({
+  args: {
+    sourceId: v.string(),
+  },
+  handler: async (ctx, args): Promise<Source | null> => {
+    const sourceRow = await ctx.db
+      .query("sources")
+      .withIndex("by_domainId", (q) => q.eq("id", args.sourceId))
+      .unique();
+
+    if (!sourceRow) {
+      return null;
+    }
+
+    return toSource(sourceRow as unknown as Record<string, unknown>);
+  },
+});
+
+export const setSourceIngestState = internalMutation({
+  args: {
+    sourceId: v.string(),
+    status: sourceStatusValidator,
+    sourceHash: v.optional(v.union(v.string(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const sourceRow = await ctx.db
+      .query("sources")
+      .withIndex("by_domainId", (q) => q.eq("id", args.sourceId))
+      .unique();
+
+    if (!sourceRow) {
+      return;
+    }
+
+    await ctx.db.patch(sourceRow._id, {
+      status: args.status,
+      sourceHash: args.sourceHash ?? sourceRow.sourceHash,
+      lastError: args.lastError ?? sourceRow.lastError,
+      updatedAt: Date.now(),
+    });
   },
 });
 
@@ -131,6 +185,17 @@ export const removeSource = mutation({
 
     if (!existing || existing.workspaceId !== args.workspaceId) {
       return { removed: false };
+    }
+
+    const existingBinding = await ctx.db
+      .query("openApiSourceArtifactBindings")
+      .withIndex("by_workspaceId_sourceId", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId)
+      )
+      .unique();
+
+    if (existingBinding) {
+      await ctx.db.delete(existingBinding._id);
     }
 
     await ctx.db.delete(existing._id);

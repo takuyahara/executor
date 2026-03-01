@@ -74,6 +74,7 @@ describe("makeLocalStateStore", () => {
         policies: [],
         approvals: [],
         taskRuns: [],
+        storageInstances: [],
         syncStates: [],
       });
 

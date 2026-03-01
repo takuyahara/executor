@@ -12,6 +12,7 @@ export * from "./models/policy";
 export * from "./models/approval";
 export * from "./models/task-run";
 export * from "./models/sync-state";
+export * from "./models/storage-instance";
 export * from "./models/event-envelope";
 export * from "./models/runtime-tool";
 export * from "./models/auth";

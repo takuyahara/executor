@@ -1,0 +1,21 @@
+{
+  "name": "convex-test",
+  "version": "0.0.41-patched",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./compare": {
+      "types": "./compare.d.ts",
+      "default": "./compare.js"
+    }
+  },
+  "peerDependencies": {
+    "convex": "^1.32.0"
+  }
+}

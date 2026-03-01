@@ -3,6 +3,7 @@ import {
   ControlPlaneService,
   makeControlPlaneService,
   makeControlPlaneSourcesService,
+  fetchOpenApiDocument,
   makeControlPlaneWebHandler,
   makeSourceCatalogService,
   makeSourceManagerService,
@@ -34,6 +35,12 @@ import {
   createPmPersistentToolApprovalPolicy,
 } from "./approvals-service";
 import { startPmHttpServer } from "./http-server";
+import { createPmPoliciesService } from "./policies-service";
+import { createPmCredentialsService } from "./credentials-service";
+import { createPmOrganizationsService } from "./organizations-service";
+import { createPmStorageService } from "./storage-service";
+import { createPmToolsService } from "./tools-service";
+import { createPmWorkspacesService } from "./workspaces-service";
 import { createPmMcpHandler } from "./mcp-handler";
 import { createPmExecuteRuntimeRun } from "./runtime-execution-port";
 import { createPmToolCallHttpHandler } from "./tool-call-handler";
@@ -113,14 +120,7 @@ const sourcesService = {
       }
 
       const openApiSpecResult = yield* Effect.tryPromise({
-        try: async () => {
-          const response = await fetch(source.endpoint);
-          if (!response.ok) {
-            throw new Error(`Failed fetching OpenAPI spec (${response.status})`);
-          }
-
-          return await response.json();
-        },
+        try: () => fetchOpenApiDocument(source.endpoint),
         catch: (cause) => String(cause),
       }).pipe(Effect.either);
 
@@ -139,9 +139,23 @@ const sourcesService = {
     }),
 };
 
+const credentialsService = createPmCredentialsService(localStateStore);
+const policiesService = createPmPoliciesService(localStateStore);
+const organizationsService = createPmOrganizationsService(localStateStore);
+const workspacesService = createPmWorkspacesService(localStateStore);
+const toolsService = createPmToolsService(sourceStore, toolArtifactStore);
+const storageService = createPmStorageService(localStateStore, {
+  stateRootDir: pmStateRootDir,
+});
 const approvalsService = createPmApprovalsService(localStateStore);
 const controlPlaneService = makeControlPlaneService({
   sources: sourcesService,
+  credentials: credentialsService,
+  policies: policiesService,
+  organizations: organizationsService,
+  workspaces: workspacesService,
+  tools: toolsService,
+  storage: storageService,
   approvals: approvalsService,
 });
 

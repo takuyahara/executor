@@ -2,7 +2,7 @@ import { ControlPlaneAuthHeaders } from "@executor-v2/management-api";
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import { type NextRequest } from "next/server";
 
-import { isWorkosEnabled } from "../../../../lib/workos";
+import { isLocalControlPlaneUpstream, isWorkosEnabled } from "../../../../lib/workos";
 
 const controlPlaneUpstream =
   process.env.CONTROL_PLANE_UPSTREAM_URL ?? "http://127.0.0.1:8787";
@@ -217,12 +217,6 @@ const normalizeSuccessResponse = async (
   upstreamResponse: Response,
 ): Promise<Response> => {
   const contentType = upstreamResponse.headers.get("content-type")?.toLowerCase() ?? "";
-
-  if (contentType.includes("application/json")) {
-    const payload = await upstreamResponse.json();
-    return Response.json(payload, { status: upstreamResponse.status });
-  }
-
   const payload = await upstreamResponse.arrayBuffer();
 
   const headers = new Headers();
@@ -241,12 +235,20 @@ const proxyControlPlaneRequest = async (
   path: ReadonlyArray<string>,
 ): Promise<Response> => {
   try {
-    const { user } = await withAuth();
+    const workosEnabled = isWorkosEnabled();
+    const user = workosEnabled ? (await withAuth()).user : null;
 
-    const principalAccountId = resolvePrincipalAccountId(request, user?.id ?? null);
+    let principalAccountId = resolvePrincipalAccountId(request, user?.id ?? null);
 
-    if (isWorkosEnabled() && user === null) {
+    if (workosEnabled && user === null) {
       return unauthorizedResponse();
+    }
+
+    if (principalAccountId === null && !workosEnabled && isLocalControlPlaneUpstream()) {
+      const localAccountId = process.env.CONTROL_PLANE_LOCAL_ACCOUNT_ID?.trim();
+      principalAccountId = localAccountId && localAccountId.length > 0
+        ? localAccountId
+        : "local-dev";
     }
 
     if (principalAccountId === null) {

@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "convex-test": "^0.0.41",
+    "convex-test": "workspace:*",
     "vitest": "catalog:"
   }
 }

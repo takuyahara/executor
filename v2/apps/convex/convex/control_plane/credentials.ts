@@ -1,0 +1,231 @@
+import { type UpsertCredentialBindingPayload } from "@executor-v2/management-api";
+import {
+  SourceCredentialBindingSchema,
+  type SourceCredentialBinding,
+} from "@executor-v2/schema";
+import { v } from "convex/values";
+import * as Schema from "effect/Schema";
+
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "../_generated/server";
+
+const decodeSourceCredentialBinding = Schema.decodeUnknownSync(
+  SourceCredentialBindingSchema,
+);
+
+const stripConvexSystemFields = (
+  value: Record<string, unknown>,
+): Record<string, unknown> => {
+  const { _id: _ignoredId, _creationTime: _ignoredCreationTime, ...rest } = value;
+  return rest;
+};
+
+const toSourceCredentialBinding = (
+  document: Record<string, unknown>,
+): SourceCredentialBinding =>
+  decodeSourceCredentialBinding(stripConvexSystemFields(document));
+
+const credentialProviderValidator = v.union(
+  v.literal("api_key"),
+  v.literal("bearer"),
+  v.literal("oauth2"),
+  v.literal("custom"),
+);
+
+const credentialScopeTypeValidator = v.union(
+  v.literal("workspace"),
+  v.literal("organization"),
+  v.literal("account"),
+);
+
+const sortSourceCredentialBindings = (
+  bindings: ReadonlyArray<SourceCredentialBinding>,
+): Array<SourceCredentialBinding> =>
+  [...bindings].sort((left, right) => {
+    const leftKey = `${left.sourceKey}:${left.provider}`.toLowerCase();
+    const rightKey = `${right.sourceKey}:${right.provider}`.toLowerCase();
+
+    if (leftKey === rightKey) {
+      return left.id.localeCompare(right.id);
+    }
+
+    return leftKey.localeCompare(rightKey);
+  });
+
+const resolveWorkspaceOrganizationId = async (
+  ctx: QueryCtx | MutationCtx,
+  workspaceId: string,
+): Promise<string> => {
+  const workspace = await ctx.db
+    .query("workspaces")
+    .withIndex("by_domainId", (q) => q.eq("id", workspaceId))
+    .unique();
+
+  if (workspace?.organizationId !== null && workspace?.organizationId !== undefined) {
+    return workspace.organizationId;
+  }
+
+  return `org_${workspaceId}`;
+};
+
+const canAccessSourceCredentialBinding = (
+  binding: SourceCredentialBinding,
+  input: {
+    workspaceId: string;
+    organizationId: string;
+  },
+): boolean =>
+  binding.workspaceId === input.workspaceId
+  || (binding.workspaceId === null && binding.organizationId === input.organizationId);
+
+export const listCredentialBindings = query({
+  args: {
+    workspaceId: v.string(),
+  },
+  handler: async (ctx, args): Promise<Array<SourceCredentialBinding>> => {
+    const organizationId = await resolveWorkspaceOrganizationId(ctx, args.workspaceId);
+
+    const workspaceRows = await ctx.db
+      .query("sourceCredentialBindings")
+      .withIndex("by_workspaceId", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    const organizationRows = await ctx.db
+      .query("sourceCredentialBindings")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+      .collect();
+
+    const bindings = [...workspaceRows, ...organizationRows]
+      .map((row) =>
+        toSourceCredentialBinding(row as unknown as Record<string, unknown>),
+      )
+      .filter((binding) =>
+        canAccessSourceCredentialBinding(binding, {
+          workspaceId: args.workspaceId,
+          organizationId,
+        })
+      );
+
+    const uniqueBindings = Array.from(
+      new Map(bindings.map((binding) => [binding.id, binding])).values(),
+    );
+
+    return sortSourceCredentialBindings(uniqueBindings);
+  },
+});
+
+export const upsertCredentialBinding = mutation({
+  args: {
+    workspaceId: v.string(),
+    payload: v.object({
+      id: v.optional(v.string()),
+      credentialId: v.string(),
+      scopeType: credentialScopeTypeValidator,
+      sourceKey: v.string(),
+      provider: credentialProviderValidator,
+      secretRef: v.string(),
+      accountId: v.optional(v.union(v.string(), v.null())),
+      additionalHeadersJson: v.optional(v.union(v.string(), v.null())),
+      boundAuthFingerprint: v.optional(v.union(v.string(), v.null())),
+    }),
+  },
+  handler: async (ctx, args): Promise<SourceCredentialBinding> => {
+    const payload = args.payload as UpsertCredentialBindingPayload;
+
+    if (payload.scopeType === "account" && payload.accountId === null) {
+      throw new Error("Account scope credentials require accountId");
+    }
+
+    const organizationId = await resolveWorkspaceOrganizationId(ctx, args.workspaceId);
+    const now = Date.now();
+    const bindingId = payload.id ?? `credential_binding_${crypto.randomUUID()}`;
+
+    const existing = await ctx.db
+      .query("sourceCredentialBindings")
+      .withIndex("by_domainId", (q) => q.eq("id", bindingId))
+      .unique();
+
+    const existingBinding = existing
+      ? toSourceCredentialBinding(existing as unknown as Record<string, unknown>)
+      : null;
+
+    if (
+      existingBinding !== null
+      && !canAccessSourceCredentialBinding(existingBinding, {
+        workspaceId: args.workspaceId,
+        organizationId,
+      })
+    ) {
+      throw new Error(`Credential binding not found: ${bindingId}`);
+    }
+
+    const nextBinding = decodeSourceCredentialBinding({
+      id: bindingId,
+      credentialId: payload.credentialId,
+      organizationId,
+      workspaceId: payload.scopeType === "workspace" ? args.workspaceId : null,
+      accountId: payload.scopeType === "account" ? (payload.accountId ?? null) : null,
+      scopeType: payload.scopeType,
+      sourceKey: payload.sourceKey,
+      provider: payload.provider,
+      secretRef: payload.secretRef,
+      additionalHeadersJson: payload.additionalHeadersJson ?? null,
+      boundAuthFingerprint: payload.boundAuthFingerprint ?? null,
+      createdAt: existingBinding?.createdAt ?? now,
+      updatedAt: now,
+    });
+
+    if (existing) {
+      await ctx.db.patch(existing._id, nextBinding);
+    } else {
+      await ctx.db.insert("sourceCredentialBindings", nextBinding);
+    }
+
+    return nextBinding;
+  },
+});
+
+export const removeCredentialBinding = mutation({
+  args: {
+    workspaceId: v.string(),
+    credentialBindingId: v.string(),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    removed: boolean;
+  }> => {
+    const organizationId = await resolveWorkspaceOrganizationId(ctx, args.workspaceId);
+
+    const existing = await ctx.db
+      .query("sourceCredentialBindings")
+      .withIndex("by_domainId", (q) => q.eq("id", args.credentialBindingId))
+      .unique();
+
+    if (!existing) {
+      return { removed: false };
+    }
+
+    const existingBinding = toSourceCredentialBinding(
+      existing as unknown as Record<string, unknown>,
+    );
+
+    if (
+      !canAccessSourceCredentialBinding(existingBinding, {
+        workspaceId: args.workspaceId,
+        organizationId,
+      })
+    ) {
+      return { removed: false };
+    }
+
+    await ctx.db.delete(existing._id);
+
+    return { removed: true };
+  },
+});

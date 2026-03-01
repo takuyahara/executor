@@ -1,7 +1,5 @@
-import {
-  ControlPlaneAuthHeaders,
-  createControlPlaneAtomClient,
-} from "@executor-v2/management-api";
+import { createControlPlaneAtomClient } from "@executor-v2/management-api/client";
+import { ControlPlaneAuthHeaders } from "@executor-v2/management-api/auth/principal";
 
 const controlPlaneBaseUrl =
   typeof window === "undefined"

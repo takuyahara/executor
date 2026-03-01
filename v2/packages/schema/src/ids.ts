@@ -18,6 +18,9 @@ export const PolicyIdSchema = Schema.String.pipe(Schema.brand("PolicyId"));
 export const ApprovalIdSchema = Schema.String.pipe(Schema.brand("ApprovalId"));
 export const TaskRunIdSchema = Schema.String.pipe(Schema.brand("TaskRunId"));
 export const SyncStateIdSchema = Schema.String.pipe(Schema.brand("SyncStateId"));
+export const StorageInstanceIdSchema = Schema.String.pipe(
+  Schema.brand("StorageInstanceId"),
+);
 export const EventIdSchema = Schema.String.pipe(Schema.brand("EventId"));
 
 export type AccountId = typeof AccountIdSchema.Type;
@@ -34,4 +37,5 @@ export type PolicyId = typeof PolicyIdSchema.Type;
 export type ApprovalId = typeof ApprovalIdSchema.Type;
 export type TaskRunId = typeof TaskRunIdSchema.Type;
 export type SyncStateId = typeof SyncStateIdSchema.Type;
+export type StorageInstanceId = typeof StorageInstanceIdSchema.Type;
 export type EventId = typeof EventIdSchema.Type;

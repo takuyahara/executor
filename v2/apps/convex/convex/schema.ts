@@ -9,11 +9,70 @@ import {
   ProfileSchema,
   SourceCredentialBindingSchema,
   SourceSchema,
+  StorageInstanceSchema,
   SyncStateSchema,
   TaskRunSchema,
-  ToolArtifactSchema,
   WorkspaceSchema,
 } from "@executor-v2/schema";
+import * as Schema from "effect/Schema";
+
+const StorageFileEntrySchema = Schema.Struct({
+  id: Schema.String,
+  storageInstanceId: Schema.String,
+  path: Schema.String,
+  contentBase64: Schema.String,
+  sizeBytes: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+const StorageKvEntrySchema = Schema.Struct({
+  id: Schema.String,
+  storageInstanceId: Schema.String,
+  key: Schema.String,
+  valueJson: Schema.String,
+  updatedAt: Schema.Number,
+});
+
+const StorageSqlKvEntrySchema = Schema.Struct({
+  id: Schema.String,
+  storageInstanceId: Schema.String,
+  key: Schema.String,
+  value: Schema.String,
+  updatedAt: Schema.Number,
+});
+
+const OpenApiArtifactSchema = Schema.Struct({
+  id: Schema.String,
+  sourceHash: Schema.String,
+  extractorVersion: Schema.String,
+  toolCount: Schema.Number,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+const OpenApiArtifactToolSchema = Schema.Struct({
+  id: Schema.String,
+  artifactId: Schema.String,
+  toolId: Schema.String,
+  name: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  method: Schema.String,
+  path: Schema.String,
+  operationHash: Schema.String,
+  invocationJson: Schema.String,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+const OpenApiSourceArtifactBindingSchema = Schema.Struct({
+  id: Schema.String,
+  workspaceId: Schema.String,
+  sourceId: Schema.String,
+  artifactId: Schema.String,
+  sourceHash: Schema.String,
+  extractorVersion: Schema.String,
+  updatedAt: Schema.Number,
+});
 
 export const executorConfectSchema = defineSchema({
   profiles: defineTable(ProfileSchema).index("by_domainId", ["id"]),
@@ -27,14 +86,23 @@ export const executorConfectSchema = defineSchema({
     .index("by_organizationId_accountId", ["organizationId", "accountId"]),
   workspaces: defineTable(WorkspaceSchema)
     .index("by_domainId", ["id"])
-    .index("by_organizationId", ["organizationId"]),
+    .index("by_organizationId", ["organizationId"])
+    .index("by_createdByAccountId", ["createdByAccountId"]),
   sources: defineTable(SourceSchema)
     .index("by_domainId", ["id"])
     .index("by_workspaceId", ["workspaceId"]),
-  toolArtifacts: defineTable(ToolArtifactSchema)
+  openApiArtifacts: defineTable(OpenApiArtifactSchema)
+    .index("by_domainId", ["id"])
+    .index("by_sourceHash_extractorVersion", ["sourceHash", "extractorVersion"]),
+  openApiArtifactTools: defineTable(OpenApiArtifactToolSchema)
+    .index("by_domainId", ["id"])
+    .index("by_artifactId", ["artifactId"])
+    .index("by_artifactId_toolId", ["artifactId", "toolId"]),
+  openApiSourceArtifactBindings: defineTable(OpenApiSourceArtifactBindingSchema)
     .index("by_domainId", ["id"])
     .index("by_workspaceId", ["workspaceId"])
-    .index("by_sourceId", ["sourceId"]),
+    .index("by_workspaceId_sourceId", ["workspaceId", "sourceId"])
+    .index("by_artifactId", ["artifactId"]),
   sourceCredentialBindings: defineTable(SourceCredentialBindingSchema)
     .index("by_domainId", ["id"])
     .index("by_credentialId", ["credentialId"])
@@ -51,6 +119,22 @@ export const executorConfectSchema = defineSchema({
   policies: defineTable(PolicySchema)
     .index("by_domainId", ["id"])
     .index("by_workspaceId", ["workspaceId"]),
+  storageInstances: defineTable(StorageInstanceSchema)
+    .index("by_domainId", ["id"])
+    .index("by_workspaceId", ["workspaceId"])
+    .index("by_organizationId", ["organizationId"]),
+  storageFileEntries: defineTable(StorageFileEntrySchema)
+    .index("by_domainId", ["id"])
+    .index("by_storageInstanceId", ["storageInstanceId"])
+    .index("by_storageInstanceId_path", ["storageInstanceId", "path"]),
+  storageKvEntries: defineTable(StorageKvEntrySchema)
+    .index("by_domainId", ["id"])
+    .index("by_storageInstanceId", ["storageInstanceId"])
+    .index("by_storageInstanceId_key", ["storageInstanceId", "key"]),
+  storageSqlKvEntries: defineTable(StorageSqlKvEntrySchema)
+    .index("by_domainId", ["id"])
+    .index("by_storageInstanceId", ["storageInstanceId"])
+    .index("by_storageInstanceId_key", ["storageInstanceId", "key"]),
   approvals: defineTable(ApprovalSchema)
     .index("by_domainId", ["id"])
     .index("by_workspaceId", ["workspaceId"])

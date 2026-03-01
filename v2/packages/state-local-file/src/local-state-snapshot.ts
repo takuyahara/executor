@@ -9,6 +9,7 @@ import {
   SchemaVersionSchema,
   SourceCredentialBindingSchema,
   SourceSchema,
+  StorageInstanceSchema,
   SyncStateSchema,
   TaskRunSchema,
   TimestampMsSchema,
@@ -31,6 +32,7 @@ export const LocalStateSnapshotSchema = Schema.Struct({
   policies: Schema.Array(PolicySchema),
   approvals: Schema.Array(ApprovalSchema),
   taskRuns: Schema.Array(TaskRunSchema),
+  storageInstances: Schema.Array(StorageInstanceSchema),
   syncStates: Schema.Array(SyncStateSchema),
 });
 

@@ -6,6 +6,7 @@ const permissionDomainActions = {
   approvals: ["read", "resolve", "manage"],
   runs: ["read", "cancel", "manage"],
   credentials: ["read", "write", "manage"],
+  storage: ["read", "write", "manage"],
   organizations: ["read", "manage"],
   memberships: ["read", "write", "manage"],
   workspace: ["read", "manage"],
