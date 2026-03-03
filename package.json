@@ -22,8 +22,8 @@
     "env:pull:development": "better-env pull --environment development",
     "env:pull:preview": "better-env pull --environment preview",
     "env:pull:production": "better-env pull --environment production",
-    "env:validate:development": "better-env validate --environment development",
-    "env:validate:production": "better-env validate --environment production",
+    "env:validate:development": "bun tools/validate-env-workspaces.ts development",
+    "env:validate:production": "bun tools/validate-env-workspaces.ts production",
     "knip": "bunx knip --config knip.json",
     "db:env:pull:prod": "bun run env:pull:production",
     "db:migrate:prod": "bun run env:pull:production && bun run --filter=@executor-v2/persistence-sql --env-file=.env.production db:migrate"

@@ -1,8 +1,3 @@
-import {
-  defaultExecuteToolExposureMode,
-  parseExecuteToolExposureMode,
-  type ExecuteToolExposureMode,
-} from "@executor-v2/engine";
 import { configSchema, server } from "better-env/config-schema";
 import { isTruthy, trim } from "./shared";
 
@@ -32,9 +27,6 @@ const webServerEnvConfig = configSchema("WebServerEnvironment", {
   }),
 });
 
-const resolveToolExposureMode = (value: string | undefined): ExecuteToolExposureMode =>
-  parseExecuteToolExposureMode(trim(value)) ?? defaultExecuteToolExposureMode;
-
 const env = webServerEnvConfig.server;
 
 export const webServerEnvironment = {
@@ -43,7 +35,7 @@ export const webServerEnvironment = {
   controlPlanePostgresConnectionTarget: trim(env.controlPlanePostgresConnectionTarget)?.toLowerCase(),
   pmRuntimeKind: trim(env.pmRuntimeKind),
   pmRequireToolApprovals: isTruthy(env.pmRequireToolApprovals),
-  pmToolExposureMode: resolveToolExposureMode(env.pmToolExposureMode),
+  pmToolExposureMode: trim(env.pmToolExposureMode),
   executorPublicOrigin: trim(env.executorPublicOrigin),
   vercelProjectProductionUrl: trim(env.vercelProjectProductionUrl),
   vercelUrl: trim(env.vercelUrl),

@@ -11,11 +11,13 @@ import {
 import {
   createRunExecutor,
   createSourceToolRegistry,
+  defaultExecuteToolExposureMode,
   makeGraphqlToolProvider,
   makeMcpToolProvider,
   makeOpenApiToolProvider,
   makeRuntimeAdapterRegistry,
   makeToolProviderRegistry,
+  parseExecuteToolExposureMode,
 } from "@executor-v2/engine";
 import {
   makeSqlControlPlanePersistence,
@@ -281,7 +283,9 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
     ?? runtimeAdapterList[0]?.kind
     ?? "local-inproc";
   const requireToolApprovals = webServerEnvironment.pmRequireToolApprovals;
-  const defaultToolExposureMode = webServerEnvironment.pmToolExposureMode;
+  const defaultToolExposureMode =
+    parseExecuteToolExposureMode(webServerEnvironment.pmToolExposureMode)
+    ?? defaultExecuteToolExposureMode;
   const toolProviderRegistry = makeToolProviderRegistry([
     makeOpenApiToolProvider(),
     makeMcpToolProvider(),
