@@ -31,64 +31,82 @@ const rewriteControlPlaneRequest = (
   return new Request(rewrittenUrl, request);
 };
 
+const storageErrorResponse = (operation: string, cause: unknown): Response => {
+  const details = cause instanceof Error ? cause.message : String(cause);
+
+  return Response.json(
+    {
+      _tag: "ControlPlaneStorageError",
+      operation,
+      message: "Control plane operation failed",
+      details,
+    },
+    { status: 500 },
+  );
+};
+
 const handle = async (request: NextRequest, context: RouteContext): Promise<Response> => {
-  const method = request.method.toUpperCase();
-  const { path = [] } = await context.params;
-
-  if (path.length === 0 || path[0] !== "v1") {
-    return Response.json({ error: "Not found" }, { status: 404 });
-  }
-
-  if (!isCsrfSafeMethod(method)) {
-    const origin = request.headers.get("origin");
-    if (origin && origin !== request.nextUrl.origin) {
-      return Response.json({ error: "Invalid origin" }, { status: 403 });
-    }
-  }
-
-  const runtime = await getControlPlaneRuntime();
-  const controlPlaneRequest = rewriteControlPlaneRequest(request, path);
-
-  if (!isWorkosEnabled()) {
-    const principal = createLocalPrincipal();
-    await provisionPrincipal(runtime, principal);
-    return runtime.handleControlPlane(applyPrincipalHeaders(controlPlaneRequest, principal));
-  }
-
-  let user:
-    | {
-        id: string;
-        email?: string | null;
-        firstName?: string | null;
-        lastName?: string | null;
-      }
-    | null
-    | undefined;
-
   try {
-    ({ user } = await withAuth());
-  } catch {
-    return Response.json({ error: "Authentication unavailable" }, { status: 503 });
+    const method = request.method.toUpperCase();
+    const { path = [] } = await context.params;
+
+    if (path.length === 0 || path[0] !== "v1") {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (!isCsrfSafeMethod(method)) {
+      const origin = request.headers.get("origin");
+      if (origin && origin !== request.nextUrl.origin) {
+        return Response.json({ error: "Invalid origin" }, { status: 403 });
+      }
+    }
+
+    const runtime = await getControlPlaneRuntime();
+    const controlPlaneRequest = rewriteControlPlaneRequest(request, path);
+
+    let principal: ReturnType<typeof createLocalPrincipal>;
+
+    if (!isWorkosEnabled()) {
+      principal = createLocalPrincipal();
+    } else {
+      let user:
+        | {
+            id: string;
+            email?: string | null;
+            firstName?: string | null;
+            lastName?: string | null;
+          }
+        | null
+        | undefined;
+
+      try {
+        ({ user } = await withAuth());
+      } catch {
+        return Response.json({ error: "Authentication unavailable" }, { status: 503 });
+      }
+
+      if (!user) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      const displayName = [user.firstName, user.lastName]
+        .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+        .join(" ")
+        || null;
+
+      principal = createWorkosPrincipal({
+        subject: user.id,
+        email: user.email ?? null,
+        displayName,
+      });
+    }
+
+    await provisionPrincipal(runtime, principal);
+
+    return runtime.handleControlPlane(applyPrincipalHeaders(controlPlaneRequest, principal));
+  } catch (cause) {
+    return storageErrorResponse("control-plane.request", cause);
   }
-
-  if (!user) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const displayName = [user.firstName, user.lastName]
-    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
-    .join(" ")
-    || null;
-
-  const principal = createWorkosPrincipal({
-    subject: user.id,
-    email: user.email ?? null,
-    displayName,
-  });
-
-  await provisionPrincipal(runtime, principal);
-
-  return runtime.handleControlPlane(applyPrincipalHeaders(controlPlaneRequest, principal));
 };
 
 export const GET = handle;
