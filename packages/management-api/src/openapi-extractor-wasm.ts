@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import initWasmExtractor, {
@@ -7,13 +8,41 @@ import initWasmExtractor, {
 
 let initPromise: Promise<void> | undefined;
 
+const readWasmBytes = async (): Promise<Uint8Array> => {
+  const candidates: string[] = [];
+
+  try {
+    candidates.push(
+      fileURLToPath(new URL("./openapi-extractor-wasm/openapi_extractor_bg.wasm", import.meta.url)),
+    );
+  } catch {
+    // Next.js serverless bundling can provide non-URL import.meta.url values.
+  }
+
+  candidates.push(
+    join(process.cwd(), "packages/management-api/src/openapi-extractor-wasm/openapi_extractor_bg.wasm"),
+    join(
+      process.cwd(),
+      "node_modules/@executor-v2/management-api/src/openapi-extractor-wasm/openapi_extractor_bg.wasm",
+    ),
+  );
+
+  const errors: string[] = [];
+
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate);
+    } catch (cause) {
+      errors.push(`${candidate}: ${String(cause)}`);
+    }
+  }
+
+  throw new Error(`Unable to load OpenAPI extractor wasm. Tried: ${errors.join(" | ")}`);
+};
+
 const ensureWasmReady = (): Promise<void> => {
   if (!initPromise) {
-    const wasmPath = fileURLToPath(
-      new URL("./openapi-extractor-wasm/openapi_extractor_bg.wasm", import.meta.url).toString(),
-    );
-
-    initPromise = readFile(wasmPath).then((wasmBytes) =>
+    initPromise = readWasmBytes().then((wasmBytes) =>
       initWasmExtractor({ module_or_path: wasmBytes }).then(() => undefined)
     );
   }
