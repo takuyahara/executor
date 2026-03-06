@@ -8,7 +8,9 @@ import {
   createOrganizationMembershipsRepo,
   createOrganizationsRepo,
   createPoliciesRepo,
+  createSecretMaterialsRepo,
   createSourceCredentialBindingsRepo,
+  createSourceAuthSessionsRepo,
   createSourcesRepo,
   createWorkspacesRepo,
 } from "./repos";
@@ -28,6 +30,8 @@ export const createControlPlaneRows = ({
   workspaces: createWorkspacesRepo(client, tables),
   sources: createSourcesRepo(client, tables),
   sourceCredentialBindings: createSourceCredentialBindingsRepo(client, tables),
+  secretMaterials: createSecretMaterialsRepo(client, tables),
+  sourceAuthSessions: createSourceAuthSessionsRepo(client, tables),
   policies: createPoliciesRepo(client, tables),
   localInstallations: createLocalInstallationsRepo(client, tables),
   executions: createExecutionsRepo(client, tables),

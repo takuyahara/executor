@@ -27,8 +27,11 @@ import {
 } from "./live-execution";
 import {
   makeWorkspaceExecutionEnvironmentResolver,
-  type ResolveSecretMaterial,
 } from "./workspace-execution-environment";
+import {
+  makeRuntimeSourceAuthService,
+  type ResolveSecretMaterial,
+} from "./source-auth-service";
 import { makeRuntimeControlPlaneService } from "./services";
 
 export {
@@ -40,6 +43,7 @@ export {
 export * from "./execution-state";
 export * from "./live-execution";
 export * from "./local-installation";
+export * from "./source-auth-service";
 export * from "./workspace-execution-environment";
 
 export type RuntimeControlPlaneInput = {
@@ -47,6 +51,7 @@ export type RuntimeControlPlaneInput = {
   actorResolver?: ControlPlaneActorResolverShape;
   executionResolver?: ResolveExecutionEnvironment;
   resolveSecretMaterial?: ResolveSecretMaterial;
+  getLocalServerBaseUrl?: () => string | undefined;
 };
 
 export const makeRuntimeControlPlane = (
@@ -56,15 +61,22 @@ export const makeRuntimeControlPlane = (
   actorResolver: ControlPlaneActorResolverShape;
 } => {
   const liveExecutionManager = makeLiveExecutionManager();
+  const sourceAuthService = makeRuntimeSourceAuthService({
+    rows: input.persistence.rows,
+    liveExecutionManager,
+    getLocalServerBaseUrl: input.getLocalServerBaseUrl,
+  });
   const executionResolver =
     input.executionResolver
     ?? makeWorkspaceExecutionEnvironmentResolver({
       rows: input.persistence.rows,
       resolveSecretMaterial: input.resolveSecretMaterial,
+      sourceAuthService,
     });
   const service = makeRuntimeControlPlaneService(input.persistence.rows, {
     executionResolver,
     liveExecutionManager,
+    sourceAuthService,
   });
   const actorResolver = input.actorResolver ?? makeHeaderActorResolver(input.persistence.rows);
 
@@ -86,6 +98,7 @@ export type CreateSqlControlPlaneRuntimeOptions = CreateSqlRuntimeOptions & {
   actorResolver?: ControlPlaneActorResolverShape;
   executionResolver?: ResolveExecutionEnvironment;
   resolveSecretMaterial?: ResolveSecretMaterial;
+  getLocalServerBaseUrl?: () => string | undefined;
 };
 
 export const makeSqlControlPlaneRuntime = (
@@ -98,6 +111,7 @@ export const makeSqlControlPlaneRuntime = (
         actorResolver: options.actorResolver,
         executionResolver: options.executionResolver,
         resolveSecretMaterial: options.resolveSecretMaterial,
+        getLocalServerBaseUrl: options.getLocalServerBaseUrl,
       });
       const localInstallation = yield* getOrProvisionLocalInstallation(persistence.rows).pipe(
         Effect.mapError((cause) =>

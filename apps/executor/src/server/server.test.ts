@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 
 import {
   HttpApi,
@@ -16,9 +17,14 @@ import { makeToolInvokerFromTools } from "@executor-v3/codemode-core";
 import {
   ControlPlaneStorageError,
   makeControlPlaneClient,
+  type ControlPlaneClient,
   type ResolveExecutionEnvironment,
 } from "@executor-v3/control-plane";
 import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
+import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod/v4";
 
 import {
   seedDemoMcpSourceInWorkspace,
@@ -121,6 +127,304 @@ const startOpenApiDemoServer = async () => {
       }),
   };
 };
+
+const DEMO_OAUTH_ACCESS_TOKEN = "demo-access-token";
+const DEMO_OAUTH_REFRESH_TOKEN = "demo-refresh-token";
+
+const startOAuthProtectedMcpServer = async () => {
+  const host = "127.0.0.1";
+  const app = createMcpExpressApp({ host });
+  const transports: Record<string, StreamableHTTPServerTransport> = {};
+  const servers: Record<string, McpServer> = {};
+
+  const createAuthorizedServer = () => {
+    const server = new McpServer(
+      {
+        name: "executor-oauth-mcp-demo",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      },
+    );
+
+    server.registerTool(
+      "whoami",
+      {
+        description: "Return the active identity for the OAuth demo source.",
+        inputSchema: {},
+      },
+      async () => ({
+        content: [{ type: "text", text: "oauth-demo" }],
+      }),
+    );
+
+    return server;
+  };
+
+  const listener = await new Promise<import("node:http").Server>((resolve, reject) => {
+    const server = app.listen(0, host);
+
+    const onListening = () => {
+      server.off("error", onError);
+      resolve(server);
+    };
+
+    const onError = (error: Error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+
+    server.once("listening", onListening);
+    server.once("error", onError);
+  });
+
+  const address = listener.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to bind OAuth MCP demo server");
+  }
+
+  const baseUrl = `http://${host}:${address.port}`;
+  const endpoint = `${baseUrl}/mcp`;
+  const resourceMetadataUrl = `${baseUrl}/.well-known/oauth-protected-resource/mcp`;
+
+  const requireBearerAuth = (req: IncomingMessage, res: ServerResponse) => {
+    const authorization = req.headers.authorization;
+    if (authorization === `Bearer ${DEMO_OAUTH_ACCESS_TOKEN}`) {
+      return true;
+    }
+
+    res.statusCode = 401;
+    res.setHeader(
+      "WWW-Authenticate",
+      `Bearer resource_metadata="${resourceMetadataUrl}"`,
+    );
+    res.setHeader("content-type", "application/json");
+    res.end(
+      JSON.stringify({
+        error: "unauthorized",
+      }),
+    );
+    return false;
+  };
+
+  app.get("/.well-known/oauth-protected-resource/mcp", (_req: any, res: any) => {
+    res.status(200).json({
+      resource: endpoint,
+      authorization_servers: [baseUrl],
+      scopes_supported: ["openid", "offline_access"],
+      bearer_methods_supported: ["header"],
+    });
+  });
+
+  app.get("/.well-known/oauth-authorization-server", (_req: any, res: any) => {
+    res.status(200).json({
+      issuer: baseUrl,
+      authorization_endpoint: `${baseUrl}/authorize`,
+      token_endpoint: `${baseUrl}/token`,
+      registration_endpoint: `${baseUrl}/register`,
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      code_challenge_methods_supported: ["S256"],
+      token_endpoint_auth_methods_supported: ["none"],
+    });
+  });
+
+  app.post("/register", (req: any, res: any) => {
+    res.status(201).json({
+      ...(req.body ?? {}),
+      client_id: `client_${randomUUID()}`,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+    });
+  });
+
+  app.get("/authorize", (req: any, res: any) => {
+    const redirectUri = new URL(String(req.query.redirect_uri));
+    redirectUri.searchParams.set("code", "demo-code");
+    if (typeof req.query.state === "string") {
+      redirectUri.searchParams.set("state", req.query.state);
+    }
+
+    res.redirect(302, redirectUri.toString());
+  });
+
+  app.post("/token", (_req: any, res: any) => {
+    res.status(200).json({
+      access_token: DEMO_OAUTH_ACCESS_TOKEN,
+      token_type: "Bearer",
+      expires_in: 3600,
+      refresh_token: DEMO_OAUTH_REFRESH_TOKEN,
+      scope: "openid offline_access",
+    });
+  });
+
+  app.post("/mcp", async (req: any, res: any) => {
+    if (!requireBearerAuth(req, res)) {
+      return;
+    }
+
+    const sessionIdHeader = req.headers["mcp-session-id"];
+    const sessionId =
+      typeof sessionIdHeader === "string"
+        ? sessionIdHeader
+        : Array.isArray(sessionIdHeader)
+          ? sessionIdHeader[0]
+          : undefined;
+
+    try {
+      let transport: StreamableHTTPServerTransport;
+
+      if (sessionId && transports[sessionId]) {
+        transport = transports[sessionId];
+      } else {
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (newSessionId) => {
+            transports[newSessionId] = transport;
+          },
+        });
+
+        transport.onclose = () => {
+          const closedSessionId = transport.sessionId;
+          if (closedSessionId && transports[closedSessionId]) {
+            delete transports[closedSessionId];
+          }
+          if (closedSessionId && servers[closedSessionId]) {
+            void servers[closedSessionId].close().catch(() => undefined);
+            delete servers[closedSessionId];
+          }
+        };
+
+        const server = createAuthorizedServer();
+        await server.connect(transport);
+        const newSessionId = transport.sessionId;
+        if (newSessionId) {
+          servers[newSessionId] = server;
+        }
+      }
+
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: {
+            code: -32603,
+            message: error instanceof Error ? error.message : "Internal server error",
+          },
+          id: null,
+        });
+      }
+    }
+  });
+
+  app.get("/mcp", async (req: any, res: any) => {
+    if (!requireBearerAuth(req, res)) {
+      return;
+    }
+
+    const sessionIdHeader = req.headers["mcp-session-id"];
+    const sessionId =
+      typeof sessionIdHeader === "string"
+        ? sessionIdHeader
+        : Array.isArray(sessionIdHeader)
+          ? sessionIdHeader[0]
+          : undefined;
+
+    if (!sessionId || !transports[sessionId]) {
+      res.status(400).send("Invalid or missing session ID");
+      return;
+    }
+
+    await transports[sessionId].handleRequest(req, res);
+  });
+
+  app.delete("/mcp", async (req: any, res: any) => {
+    if (!requireBearerAuth(req, res)) {
+      return;
+    }
+
+    const sessionIdHeader = req.headers["mcp-session-id"];
+    const sessionId =
+      typeof sessionIdHeader === "string"
+        ? sessionIdHeader
+        : Array.isArray(sessionIdHeader)
+          ? sessionIdHeader[0]
+          : undefined;
+
+    if (!sessionId || !transports[sessionId]) {
+      res.status(400).send("Invalid or missing session ID");
+      return;
+    }
+
+    const transport = transports[sessionId];
+    await transport.handleRequest(req, res, req.body);
+    await transport.close();
+    delete transports[sessionId];
+
+    if (servers[sessionId]) {
+      await servers[sessionId].close().catch(() => undefined);
+      delete servers[sessionId];
+    }
+  });
+
+  return {
+    baseUrl,
+    endpoint,
+    close: async () => {
+      for (const transport of Object.values(transports)) {
+        await transport.close().catch(() => undefined);
+      }
+
+      for (const server of Object.values(servers)) {
+        await server.close().catch(() => undefined);
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        listener.close((error) => (error ? reject(error) : resolve()));
+      });
+    },
+  };
+};
+
+const extractUrlInteractionUrl = (payloadJson: string): string => {
+  const parsed = JSON.parse(payloadJson) as {
+    elicitation?: {
+      url?: string;
+    };
+  };
+
+  const url = parsed.elicitation?.url;
+  if (typeof url !== "string" || url.trim().length === 0) {
+    throw new Error("Missing URL elicitation in payloadJson");
+  }
+
+  return url;
+};
+
+const waitForExecutionCompletion = (input: {
+  client: ControlPlaneClient;
+  workspaceId: string;
+  executionId: string;
+}) =>
+  Effect.gen(function* () {
+    while (true) {
+      const next = yield* input.client.executions.get({
+        path: {
+          workspaceId: input.workspaceId as never,
+          executionId: input.executionId as never,
+        },
+      });
+
+      if (next.execution.status !== "waiting_for_interaction") {
+        return next;
+      }
+
+      yield* Effect.sleep("100 millis");
+    }
+  });
 
 describe("local-executor-server", () => {
   it.scoped("serves the control-plane API and executes code", () =>
@@ -296,6 +600,7 @@ describe("local-executor-server", () => {
         expect(resumed.execution.resultJson).toContain(`approved:${value}`);
       }
     }),
+    15_000,
   );
 
   it.scoped("updates an existing demo MCP source instead of creating a duplicate", () =>
@@ -410,6 +715,89 @@ describe("local-executor-server", () => {
       expect(execution.pendingInteraction).toBeNull();
       expect(execution.execution.resultJson).toContain("\"full_name\":\"vercel/ai\"");
       expect(openApiServer.seenAuthHeaders).toEqual(["Bearer ghp_test_executor"]);
+    }),
+  );
+
+  it.scoped("adds an OAuth-protected MCP source via executor.sources.add and resumes after callback", () =>
+    Effect.gen(function* () {
+      const oauthServer = yield* Effect.acquireRelease(
+        Effect.promise(() => startOAuthProtectedMcpServer()),
+        (server) => Effect.promise(() => server.close()).pipe(Effect.orDie),
+      );
+
+      const server = yield* makeLocalExecutorServer({
+        port: 0,
+        localDataDir: ":memory:",
+      });
+
+      const bootstrapClient = yield* makeControlPlaneClient({
+        baseUrl: server.baseUrl,
+      });
+      const installation = yield* bootstrapClient.local.installation({});
+      const client = yield* makeControlPlaneClient({
+        baseUrl: server.baseUrl,
+        accountId: installation.accountId,
+      });
+
+      const added = yield* client.executions.create({
+        path: {
+          workspaceId: installation.workspaceId,
+        },
+        payload: {
+          code: `return await tools.executor.sources.add({ endpoint: ${JSON.stringify(oauthServer.endpoint)}, name: "Axiom", namespace: "axiom" });`,
+        },
+      });
+
+      expect(added.execution.status).toBe("waiting_for_interaction");
+      expect(added.pendingInteraction).not.toBeNull();
+      if (added.pendingInteraction === null) {
+        throw new Error("Expected pending OAuth interaction");
+      }
+      expect(added.pendingInteraction.kind).toBe("url");
+
+      const authorizationUrl = extractUrlInteractionUrl(added.pendingInteraction.payloadJson);
+      const callbackResponse = yield* Effect.promise(() =>
+        fetch(authorizationUrl, {
+          redirect: "follow",
+        }),
+      );
+      expect(callbackResponse.ok).toBe(true);
+      expect(yield* Effect.promise(() => callbackResponse.text())).toContain("Source connected:");
+
+      const completed = yield* waitForExecutionCompletion({
+        client,
+        workspaceId: installation.workspaceId,
+        executionId: added.execution.id,
+      });
+
+      expect(completed.execution.status).toBe("completed");
+      expect(completed.pendingInteraction).toBeNull();
+      expect(completed.execution.resultJson).toContain('"name":"Axiom"');
+      expect(completed.execution.resultJson).toContain('"status":"connected"');
+
+      const sources = yield* client.sources.list({
+        path: {
+          workspaceId: installation.workspaceId,
+        },
+      });
+
+      expect(sources).toHaveLength(1);
+      expect(sources[0]?.name).toBe("Axiom");
+      expect(sources[0]?.status).toBe("connected");
+      expect(sources[0]?.auth.kind).toBe("oauth2");
+
+      const toolCall = yield* client.executions.create({
+        path: {
+          workspaceId: installation.workspaceId,
+        },
+        payload: {
+          code: "return await tools.axiom.whoami({});",
+        },
+      });
+
+      expect(toolCall.execution.status).toBe("completed");
+      expect(toolCall.pendingInteraction).toBeNull();
+      expect(toolCall.execution.resultJson).toContain("oauth-demo");
     }),
   );
 

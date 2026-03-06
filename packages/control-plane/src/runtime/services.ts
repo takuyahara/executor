@@ -25,6 +25,7 @@ import { type ResolveExecutionEnvironment } from "./execution-state";
 import { type LiveExecutionManager } from "./live-execution";
 import { makeRuntimeExecutionsService } from "./execution-service";
 import { loadLocalInstallation } from "./local-installation";
+import { type RuntimeSourceAuthService } from "./source-auth-service";
 import {
   createSourceFromPayload,
   projectSourceFromStorage,
@@ -982,7 +983,8 @@ export const makeRuntimePoliciesService = (
 
 export const makeRuntimeLocalService = (
   rows: SqlControlPlaneRows,
-): Pick<ControlPlaneServiceShape, "getLocalInstallation"> => ({
+  sourceAuthService?: RuntimeSourceAuthService,
+): Pick<ControlPlaneServiceShape, "getLocalInstallation" | "completeSourceAuthCallback"> => ({
     getLocalInstallation: () =>
       Effect.gen(function* () {
         const installation = yield* loadLocalInstallation(rows).pipe(
@@ -1009,6 +1011,29 @@ export const makeRuntimeLocalService = (
 
         return installation;
       }),
+
+    completeSourceAuthCallback: (input) =>
+      Effect.gen(function* () {
+        if (!sourceAuthService) {
+          return yield* Effect.fail(
+            badRequest(
+              "local.oauth.callback",
+              "Source auth callback handling is unavailable",
+              "Runtime source auth service is not configured",
+            ),
+          );
+        }
+
+        return yield* sourceAuthService.completeSourceAuthCallback(input).pipe(
+          Effect.mapError((error) =>
+            new ControlPlaneStorageError({
+              operation: "local.oauth.callback",
+              message: error instanceof Error ? error.message : String(error),
+              details: "Failed completing source auth callback",
+            }),
+          ),
+        );
+      }),
   });
 
 export const makeRuntimeControlPlaneService = (
@@ -1016,9 +1041,10 @@ export const makeRuntimeControlPlaneService = (
   options: {
     executionResolver?: ResolveExecutionEnvironment;
     liveExecutionManager?: LiveExecutionManager;
+    sourceAuthService?: RuntimeSourceAuthService;
   } = {},
 ): ControlPlaneServiceShape => ({
-  ...makeRuntimeLocalService(rows),
+  ...makeRuntimeLocalService(rows, options.sourceAuthService),
   ...makeRuntimeOrganizationsService(rows),
   ...makeRuntimeMembershipsService(rows),
   ...makeRuntimeWorkspacesService(rows),

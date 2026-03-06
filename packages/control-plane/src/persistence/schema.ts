@@ -17,6 +17,8 @@ export const tableNames = {
   workspaces: "workspaces",
   sources: "sources",
   sourceCredentialBindings: "source_credential_bindings",
+  secretMaterials: "secret_materials",
+  sourceAuthSessions: "source_auth_sessions",
   policies: "policies",
   localInstallations: "local_installations",
   executions: "executions",
@@ -181,6 +183,68 @@ export const sourceCredentialBindingsTable = pgTable(
   ],
 );
 
+export const secretMaterialsTable = pgTable(
+  tableNames.secretMaterials,
+  {
+    id: text("id").notNull().primaryKey(),
+    purpose: text("purpose").notNull(),
+    value: text("value").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    index("secret_materials_updated_idx").on(table.updatedAt, table.id),
+    check(
+      "secret_materials_purpose_check",
+      sql`${table.purpose} in ('auth_material', 'oauth_access_token', 'oauth_refresh_token', 'oauth_client_info')`,
+    ),
+  ],
+);
+
+export const sourceAuthSessionsTable = pgTable(
+  tableNames.sourceAuthSessions,
+  {
+    id: text("id").notNull().primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    sourceId: text("source_id").notNull(),
+    executionId: text("execution_id"),
+    interactionId: text("interaction_id"),
+    strategy: text("strategy").notNull(),
+    status: text("status").notNull(),
+    endpoint: text("endpoint").notNull(),
+    state: text("state").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    scope: text("scope"),
+    resourceMetadataUrl: text("resource_metadata_url"),
+    authorizationServerUrl: text("authorization_server_url"),
+    resourceMetadataJson: text("resource_metadata_json"),
+    authorizationServerMetadataJson: text("authorization_server_metadata_json"),
+    clientInformationJson: text("client_information_json"),
+    codeVerifier: text("code_verifier"),
+    authorizationUrl: text("authorization_url"),
+    errorText: text("error_text"),
+    completedAt: bigint("completed_at", { mode: "number" }),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    index("source_auth_sessions_workspace_idx").on(
+      table.workspaceId,
+      table.updatedAt,
+      table.id,
+    ),
+    uniqueIndex("source_auth_sessions_state_idx").on(table.state),
+    check(
+      "source_auth_sessions_strategy_check",
+      sql`${table.strategy} in ('oauth2_authorization_code')`,
+    ),
+    check(
+      "source_auth_sessions_status_check",
+      sql`${table.status} in ('pending', 'completed', 'failed', 'cancelled')`,
+    ),
+  ],
+);
+
 export const policiesTable = pgTable(
   tableNames.policies,
   {
@@ -286,6 +350,8 @@ export const drizzleSchema = {
   workspacesTable,
   sourcesTable,
   sourceCredentialBindingsTable,
+  secretMaterialsTable,
+  sourceAuthSessionsTable,
   policiesTable,
   localInstallationsTable,
   executionsTable,

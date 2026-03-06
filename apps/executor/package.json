@@ -25,8 +25,10 @@
   "devDependencies": {
     "@executor-v3/mcp-elicitation-demo": "workspace:*",
     "@effect/vitest": "catalog:",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/node": "catalog:",
     "bun-types": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "zod": "catalog:"
   }
 }

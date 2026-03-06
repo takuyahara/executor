@@ -4,6 +4,7 @@ import {
   ControlPlaneNotFoundError,
   ControlPlaneStorageError,
 } from "#api";
+import type { ToolInvoker } from "@executor-v3/codemode-core";
 import {
   ControlPlanePersistenceError,
   type SqlControlPlaneRows,
@@ -108,6 +109,32 @@ const defaultExecutionResolver: ResolveExecutionEnvironment = () =>
   );
 
 const defaultLiveExecutionManager = makeLiveExecutionManager();
+
+const withExecutionInvocationContext = (input: {
+  executionId: Execution["id"];
+  toolInvoker: ToolInvoker;
+}): ToolInvoker => {
+  let sequence = 0;
+
+  return {
+    invoke: ({ path, args, context }) => {
+      sequence += 1;
+
+      return input.toolInvoker.invoke({
+        path,
+        args,
+        context: {
+          ...context,
+          runId: input.executionId,
+          callId:
+            typeof context?.callId === "string" && context.callId.length > 0
+              ? context.callId
+              : `call_${String(sequence)}`,
+        },
+      });
+    },
+  };
+};
 
 const fetchExecution = (
   rows: SqlControlPlaneRows,
@@ -229,10 +256,14 @@ export const makeRuntimeExecutionsService = (
         );
 
         const nextState = yield* liveExecutionManager.registerStateWaiter(execution.id);
+        const toolInvoker = withExecutionInvocationContext({
+          executionId: execution.id,
+          toolInvoker: environment.toolInvoker,
+        });
 
         yield* Effect.sync(() => {
           Effect.runFork(
-            environment.executor.execute(code, environment.toolInvoker).pipe(
+            environment.executor.execute(code, toolInvoker).pipe(
               Effect.flatMap((outcome) => {
                 const completedAt = Date.now();
                 return mapStorageError(

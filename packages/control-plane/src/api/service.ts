@@ -112,6 +112,13 @@ export type RemoveSourceInput = {
   sourceId: SourceId;
 };
 
+export type CompleteSourceAuthCallbackInput = {
+  state: string;
+  code?: string | null;
+  error?: string | null;
+  errorDescription?: string | null;
+};
+
 export type CreatePolicyInput = {
   workspaceId: WorkspaceId;
   payload: CreatePolicyPayload;
@@ -255,6 +262,9 @@ export type ControlPlaneServiceShape = {
     LocalInstallation,
     ControlPlaneNotFoundError | ControlPlaneStorageError
   >;
+  completeSourceAuthCallback: (
+    input: CompleteSourceAuthCallbackInput,
+  ) => Effect.Effect<Source, ControlPlaneBadRequestError | ControlPlaneNotFoundError | ControlPlaneStorageError>;
 
   listPolicies: (
     workspaceId: WorkspaceId,

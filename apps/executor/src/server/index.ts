@@ -80,11 +80,14 @@ export const makeLocalExecutorServer = (
       });
     }
 
+    let baseUrlRef: string | undefined;
+
     const runtime = yield* Effect.acquireRelease(
       makeSqlControlPlaneRuntime({
         localDataDir,
         executionResolver: options.executionResolver,
         resolveSecretMaterial: options.resolveSecretMaterial,
+        getLocalServerBaseUrl: () => baseUrlRef,
       }).pipe(
         Effect.mapError((cause) =>
           cause instanceof Error ? cause : new Error(String(cause)),
@@ -110,11 +113,13 @@ export const makeLocalExecutorServer = (
       return yield* Effect.fail(new Error("Local executor server did not bind to a TCP address"));
     }
 
+    baseUrlRef = `http://${server.address.hostname}:${server.address.port}`;
+
     return {
       runtime,
       host: server.address.hostname,
       port: server.address.port,
-      baseUrl: `http://${server.address.hostname}:${server.address.port}`,
+      baseUrl: baseUrlRef,
     } satisfies LocalExecutorServer;
   });
 

@@ -16,7 +16,6 @@ import {
 import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
 import { type SqlControlPlaneRows } from "#persistence";
 import type {
-  SecretRef,
   Source,
 } from "#schema";
 import * as Effect from "effect/Effect";
@@ -25,11 +24,13 @@ import type {
   ExecutionEnvironment,
   ResolveExecutionEnvironment,
 } from "./execution-state";
+import { createExecutorToolMap } from "./executor-tools";
 import { projectSourcesFromStorage } from "./source-definitions";
-
-export type ResolveSecretMaterial = (
-  ref: SecretRef,
-) => Effect.Effect<string, Error, never>;
+import {
+  makeDbBackedSecretMaterialResolver,
+  type ResolveSecretMaterial,
+  type RuntimeSourceAuthService,
+} from "./source-auth-service";
 
 export type ResolvedSourceAuthMaterial = {
   headers: Readonly<Record<string, string>>;
@@ -204,8 +205,14 @@ const loadSourceTools = (input: {
 export const makeWorkspaceExecutionEnvironmentResolver = (input: {
   rows: SqlControlPlaneRows;
   resolveSecretMaterial?: ResolveSecretMaterial;
+  sourceAuthService: RuntimeSourceAuthService;
 }): ResolveExecutionEnvironment => {
-  const resolveSecretMaterial = input.resolveSecretMaterial ?? makeEnvSecretMaterialResolver();
+  const resolveSecretMaterial =
+    input.resolveSecretMaterial
+    ?? makeDbBackedSecretMaterialResolver({
+      rows: input.rows,
+      fallback: makeEnvSecretMaterialResolver(),
+    });
 
   return ({ workspaceId, onElicitation }) =>
     Effect.gen(function* () {
@@ -226,7 +233,9 @@ export const makeWorkspaceExecutionEnvironmentResolver = (input: {
         sourceRecords,
         credentialBindings,
       });
-      const enabledSources = sources.filter((source) => source.enabled);
+      const enabledSources = sources.filter(
+        (source) => source.enabled && source.status === "connected",
+      );
 
       const discoveredToolMaps = yield* Effect.forEach(
         enabledSources,
@@ -244,9 +253,14 @@ export const makeWorkspaceExecutionEnvironmentResolver = (input: {
         { concurrency: "unbounded" },
       );
 
+      const executorTools = createExecutorToolMap({
+        workspaceId,
+        sourceAuthService: input.sourceAuthService,
+      });
+
       const sourceTools = yield* Effect.try({
         try: () =>
-          mergeToolMaps(discoveredToolMaps, {
+          mergeToolMaps([...discoveredToolMaps, executorTools], {
             conflictMode: "throw",
           }),
         catch: (cause) =>

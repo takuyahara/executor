@@ -205,8 +205,7 @@ const promptInteraction = (interaction: ExecutionInteraction) =>
       yield* Effect.sync(() => {
         process.stdout.write(`${parsed.message}\n${parsed.url ?? ""}\n`);
       });
-      yield* promptLine("Press enter when done. ");
-      return JSON.stringify({ action: "accept" });
+      return null;
     }
 
     const line = yield* promptLine(`${parsed.message} [y/N] `);
@@ -225,6 +224,33 @@ const promptInteraction = (interaction: ExecutionInteraction) =>
         approve: accepted,
       },
     });
+  });
+
+const waitForExecutionProgress = (input: {
+  client: ControlPlaneClient;
+  workspaceId: ExecutionEnvelope["execution"]["workspaceId"];
+  executionId: ExecutionEnvelope["execution"]["id"];
+  pendingInteractionId: ExecutionInteraction["id"];
+}) =>
+  Effect.gen(function* () {
+    while (true) {
+      yield* sleep(SERVER_POLL_INTERVAL_MS);
+
+      const next = yield* input.client.executions.get({
+        path: {
+          workspaceId: input.workspaceId,
+          executionId: input.executionId,
+        },
+      });
+
+      if (
+        next.execution.status !== "waiting_for_interaction"
+        || next.pendingInteraction === null
+        || next.pendingInteraction.id !== input.pendingInteractionId
+      ) {
+        return next;
+      }
+    }
   });
 
 const printExecution = (envelope: ExecutionEnvelope) =>
@@ -312,6 +338,25 @@ const driveExecution = (input: {
 
       if (pending === null) {
         return current;
+      }
+
+      const parsed = parseInteractionPayload(pending);
+      if (parsed?.mode === "url") {
+        yield* Effect.sync(() => {
+          process.stdout.write(`${parsed.message}\n${parsed.url ?? ""}\n`);
+        });
+
+        if (!process.stdin.isTTY || !process.stdout.isTTY) {
+          return current;
+        }
+
+        current = yield* waitForExecutionProgress({
+          client: input.client,
+          workspaceId: input.workspaceId,
+          executionId: current.execution.id,
+          pendingInteractionId: pending.id,
+        });
+        continue;
       }
 
       const responseJson = yield* promptInteraction(pending);
