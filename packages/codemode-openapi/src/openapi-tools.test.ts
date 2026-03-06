@@ -388,4 +388,53 @@ describe("openapi-tools", () => {
       expect(server.requests[0]?.query).toContain("include=all");
     }),
   );
+
+  it.scoped("falls back to path-template args when extracted path parameters are missing", () =>
+    Effect.gen(function* () {
+      const server = yield* makeTestServer;
+
+      const extracted = yield* createOpenApiToolsFromSpec({
+        sourceName: "generated",
+        openApiSpec: generatedOpenApiSpec,
+        baseUrl: server.baseUrl,
+        namespace: "source.generated",
+      });
+
+      const manifestWithoutPathParameters = {
+        ...extracted.manifest,
+        tools: extracted.manifest.tools.map((tool) =>
+          tool.toolId === "repos/getRepo"
+            ? {
+                ...tool,
+                invocation: {
+                  ...tool.invocation,
+                  parameters: [],
+                },
+              }
+            : tool),
+      };
+
+      const tools = createOpenApiToolsFromManifest({
+        manifest: manifestWithoutPathParameters,
+        baseUrl: server.baseUrl,
+        namespace: "source.generated",
+      });
+
+      const getRepo = resolveToolExecutor(tools, "source.generated.repos.getRepo");
+      const result = yield* Effect.promise(() =>
+        getRepo({ owner: "octocat", repo: "hello-world" }),
+      );
+
+      expect(result).toEqual({
+        status: 200,
+        headers: expect.any(Object),
+        body: {
+          full_name: "octocat/hello-world",
+          include: null,
+        },
+      });
+      expect(server.requests).toHaveLength(1);
+      expect(server.requests[0]?.path).toBe("/repos/octocat/hello-world");
+    }),
+  );
 });

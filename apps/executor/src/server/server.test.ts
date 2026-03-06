@@ -1,3 +1,12 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+
+import {
+  HttpApi,
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiSchema,
+  OpenApi,
+} from "@effect/platform";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -11,8 +20,11 @@ import {
 } from "@executor-v3/control-plane";
 import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
 
-import { seedDemoMcpSourceInWorkspace } from "./dev";
-import { makeLocalExecutorServer } from "./server";
+import {
+  seedDemoMcpSourceInWorkspace,
+  seedGithubOpenApiSourceInWorkspace,
+} from "../cli/dev";
+import { makeLocalExecutorServer } from ".";
 
 const executionResolver: ResolveExecutionEnvironment = () =>
   Effect.succeed({
@@ -38,6 +50,77 @@ const makeServer = makeLocalExecutorServer({
   localDataDir: ":memory:",
   executionResolver,
 });
+
+const ownerParam = HttpApiSchema.param("owner", Schema.String);
+const repoParam = HttpApiSchema.param("repo", Schema.String);
+
+class ExecutorDemoReposApi extends HttpApiGroup.make("repos")
+  .add(
+    HttpApiEndpoint.get("getRepo")`/repos/${ownerParam}/${repoParam}`
+      .addSuccess(
+        Schema.Struct({
+          full_name: Schema.String,
+          private: Schema.Boolean,
+        }),
+      ),
+  )
+{}
+
+class ExecutorDemoApi extends HttpApi.make("executorDemo").add(ExecutorDemoReposApi) {}
+
+const executorDemoOpenApiSpec = OpenApi.fromApi(ExecutorDemoApi);
+
+const startOpenApiDemoServer = async () => {
+  const seenAuthHeaders: Array<string | null> = [];
+
+  const handler = (req: IncomingMessage, res: ServerResponse) => {
+    if (req.url === "/openapi.json") {
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(executorDemoOpenApiSpec));
+      return;
+    }
+
+    const match = req.url?.match(/^\/repos\/([^/]+)\/([^/]+)$/);
+    if (req.method === "GET" && match) {
+      seenAuthHeaders.push(
+        typeof req.headers.authorization === "string" ? req.headers.authorization : null,
+      );
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          full_name: `${decodeURIComponent(match[1] ?? "")}/${decodeURIComponent(match[2] ?? "")}`,
+          private: false,
+        }),
+      );
+      return;
+    }
+
+    res.statusCode = 404;
+    res.end("not found");
+  };
+
+  const server = createServer(handler);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to bind OpenAPI demo server");
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    specUrl: `http://127.0.0.1:${address.port}/openapi.json`,
+    seenAuthHeaders,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  };
+};
 
 describe("local-executor-server", () => {
   it.scoped("serves the control-plane API and executes code", () =>
@@ -265,6 +348,65 @@ describe("local-executor-server", () => {
 
       expect(sources).toHaveLength(1);
       expect(sources[0]?.endpoint).toBe("http://127.0.0.1:58506/mcp");
+    }),
+  );
+
+  it.scoped("loads OpenAPI sources from control-plane state and calls them", () =>
+    Effect.gen(function* () {
+      const openApiServer = yield* Effect.acquireRelease(
+        Effect.promise(() => startOpenApiDemoServer()),
+        (server) => Effect.promise(() => server.close()).pipe(Effect.orDie),
+      );
+
+      const previousGithubToken = process.env.GITHUB_TOKEN;
+      process.env.GITHUB_TOKEN = "ghp_test_executor";
+
+      const server = yield* makeLocalExecutorServer({
+        port: 0,
+        localDataDir: ":memory:",
+      });
+
+      const bootstrapClient = yield* makeControlPlaneClient({
+        baseUrl: server.baseUrl,
+      });
+      const installation = yield* bootstrapClient.local.installation({});
+      const client = yield* makeControlPlaneClient({
+        baseUrl: server.baseUrl,
+        accountId: installation.accountId,
+      });
+
+      yield* seedGithubOpenApiSourceInWorkspace({
+        client,
+        workspaceId: installation.workspaceId,
+        endpoint: openApiServer.baseUrl,
+        specUrl: openApiServer.specUrl,
+        name: "GitHub",
+        namespace: "github",
+      });
+
+      const execution = yield* client.executions.create({
+        path: {
+          workspaceId: installation.workspaceId,
+        },
+        payload: {
+          code: 'return await tools.github.repos.getRepo({ owner: "vercel", repo: "ai" });',
+        },
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (previousGithubToken === undefined) {
+              delete process.env.GITHUB_TOKEN;
+            } else {
+              process.env.GITHUB_TOKEN = previousGithubToken;
+            }
+          }),
+        ),
+      );
+
+      expect(execution.execution.status).toBe("completed");
+      expect(execution.pendingInteraction).toBeNull();
+      expect(execution.execution.resultJson).toContain("\"full_name\":\"vercel/ai\"");
+      expect(openApiServer.seenAuthHeaders).toEqual(["Bearer ghp_test_executor"]);
     }),
   );
 

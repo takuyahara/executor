@@ -9,7 +9,7 @@
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "bun src/main.ts"
+    "start": "bun src/cli/main.ts"
   },
   "dependencies": {
     "@effect/cli": "catalog:",
@@ -17,6 +17,7 @@
     "@effect/platform-node": "catalog:",
     "@executor-v3/codemode-core": "workspace:*",
     "@executor-v3/codemode-mcp": "workspace:*",
+    "@executor-v3/codemode-openapi": "workspace:*",
     "@executor-v3/control-plane": "workspace:*",
     "@executor-v3/runtime-local-inproc": "workspace:*",
     "effect": "catalog:"

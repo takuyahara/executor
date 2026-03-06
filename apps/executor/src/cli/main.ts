@@ -25,9 +25,12 @@ import {
   DEFAULT_SERVER_PORT,
   SERVER_POLL_INTERVAL_MS,
   SERVER_START_TIMEOUT_MS,
-} from "./config";
-import { seedDemoMcpSourceInWorkspace } from "./dev";
-import { runLocalExecutorServer } from "./server";
+} from "../server/config";
+import {
+  seedDemoMcpSourceInWorkspace,
+  seedGithubOpenApiSourceInWorkspace,
+} from "./dev";
+import { runLocalExecutorServer } from "../server";
 
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
@@ -52,9 +55,23 @@ const promptLine = (prompt: string): Effect.Effect<string, Error, never> =>
     catch: toError,
   });
 
+const readStdin = (): Effect.Effect<string, Error, never> =>
+  Effect.tryPromise({
+    try: async () => {
+      let contents = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) {
+        contents += chunk;
+      }
+      return contents;
+    },
+    catch: toError,
+  });
+
 const readCode = (input: {
   code?: string;
   file?: string;
+  stdin?: boolean;
 }): Effect.Effect<string, Error, never> =>
   Effect.gen(function* () {
     if (input.code && input.code.trim().length > 0) {
@@ -71,7 +88,15 @@ const readCode = (input: {
       }
     }
 
-    return yield* Effect.fail(new Error("Provide --code or --file."));
+    const shouldReadStdin = input.stdin === true || !process.stdin.isTTY;
+    if (shouldReadStdin) {
+      const contents = yield* readStdin();
+      if (contents.trim().length > 0) {
+        return contents;
+      }
+    }
+
+    return yield* Effect.fail(new Error("Provide --code, --file, or pipe code over stdin."));
   });
 
 const getBootstrapClient = (baseUrl: string = DEFAULT_SERVER_BASE_URL) =>
@@ -248,6 +273,32 @@ const seedDemoMcpSource = (input: {
     });
   });
 
+const seedGithubOpenApiSource = (input: {
+  baseUrl: string;
+  endpoint: string;
+  specUrl: string;
+  name: string;
+  namespace: string;
+  credentialEnvVar?: string;
+}) =>
+  Effect.gen(function* () {
+    yield* ensureServer(input.baseUrl);
+    const { installation, client } = yield* getLocalAuthedClient(input.baseUrl);
+    const result = yield* seedGithubOpenApiSourceInWorkspace({
+      client,
+      workspaceId: installation.workspaceId,
+      endpoint: input.endpoint,
+      specUrl: input.specUrl,
+      name: input.name,
+      namespace: input.namespace,
+      credentialEnvVar: input.credentialEnvVar,
+    });
+
+    yield* Effect.sync(() => {
+      console.log(JSON.stringify(result));
+    });
+  });
+
 const driveExecution = (input: {
   client: ControlPlaneClient;
   workspaceId: ExecutionEnvelope["execution"]["workspaceId"];
@@ -310,13 +361,15 @@ const runCommand = Command.make(
   {
     code: Options.text("code").pipe(Options.optional),
     file: Options.text("file").pipe(Options.optional),
+    stdin: Options.boolean("stdin").pipe(Options.withDefault(false)),
     baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_SERVER_BASE_URL)),
   },
-  ({ code, file, baseUrl }) =>
+  ({ code, file, stdin, baseUrl }) =>
     Effect.gen(function* () {
       const resolvedCode = yield* readCode({
         code: Option.getOrUndefined(code),
         file: Option.getOrUndefined(file),
+        stdin,
       });
 
       yield* ensureServer(baseUrl);
@@ -393,8 +446,41 @@ const devSeedMcpDemoCommand = Command.make(
   ),
 );
 
+const devSeedGithubCommand = Command.make(
+  "seed-github",
+  {
+    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_SERVER_BASE_URL)),
+    endpoint: Options.text("endpoint").pipe(
+      Options.withDefault("https://api.github.com"),
+    ),
+    specUrl: Options.text("spec-url").pipe(
+      Options.withDefault(
+        "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+      ),
+    ),
+    name: Options.text("name").pipe(Options.withDefault("GitHub")),
+    namespace: Options.text("namespace").pipe(Options.withDefault("github")),
+    credentialEnvVar: Options.text("credential-env-var").pipe(
+      Options.withDefault("GITHUB_TOKEN"),
+    ),
+  },
+  ({ baseUrl, endpoint, specUrl, name, namespace, credentialEnvVar }) =>
+    seedGithubOpenApiSource({
+      baseUrl,
+      endpoint,
+      specUrl,
+      name,
+      namespace,
+      credentialEnvVar,
+    }),
+).pipe(
+  Command.withDescription(
+    "Seed a GitHub OpenAPI source into the default workspace",
+  ),
+);
+
 const devCommand = Command.make("dev").pipe(
-  Command.withSubcommands([devSeedMcpDemoCommand] as any),
+  Command.withSubcommands([devSeedMcpDemoCommand, devSeedGithubCommand] as any),
   Command.withDescription("Development helpers"),
 );
 

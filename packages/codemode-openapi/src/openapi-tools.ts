@@ -129,8 +129,28 @@ const replacePathTemplate = (
     .map((match) => match[1])
     .filter((value): value is string => typeof value === "string" && value.length > 0);
 
-  if (unresolvedPathParameters.length > 0) {
-    const names = [...new Set(unresolvedPathParameters)].sort().join(", ");
+  for (const parameterName of unresolvedPathParameters) {
+    const parameterValue = args[parameterName]
+      ?? (isRecord(args.path) ? args.path[parameterName] : undefined)
+      ?? (isRecord(args.pathParams) ? args.pathParams[parameterName] : undefined)
+      ?? (isRecord(args.params) ? args.params[parameterName] : undefined);
+
+    if (parameterValue === undefined || parameterValue === null) {
+      continue;
+    }
+
+    resolvedPath = resolvedPath.replaceAll(
+      `{${parameterName}}`,
+      encodeURIComponent(String(parameterValue)),
+    );
+  }
+
+  const stillUnresolvedPathParameters = [...resolvedPath.matchAll(/\{([^{}]+)\}/g)]
+    .map((match) => match[1])
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  if (stillUnresolvedPathParameters.length > 0) {
+    const names = [...new Set(stillUnresolvedPathParameters)].sort().join(", ");
     throw new OpenApiToolInvocationError({
       operation: "resolve_path",
       message: `Unresolved path parameters after substitution: ${names}`,
