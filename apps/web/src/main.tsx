@@ -15,6 +15,7 @@ import { HomePage } from "./views/home";
 import { EditSourcePage, NewSourcePage } from "./views/source-editor";
 import { SourceDetailPage } from "./views/source-detail";
 import { SecretsPage } from "./views/secrets";
+import { AddSourcePage } from "./views/add-source";
 
 // ---------------------------------------------------------------------------
 // Route search schema
@@ -46,6 +47,12 @@ const newSourceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sources/new",
   component: NewSourcePage,
+});
+
+const addSourceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sources/add",
+  component: AddSourcePage,
 });
 
 const sourceRoute = createRoute({
@@ -98,7 +105,7 @@ function EditSourcePageWrapper() {
 // Router
 // ---------------------------------------------------------------------------
 
-const routeTree = rootRoute.addChildren([homeRoute, newSourceRoute, sourceRoute, editSourceRoute, secretsRoute]);
+const routeTree = rootRoute.addChildren([homeRoute, newSourceRoute, addSourceRoute, sourceRoute, editSourceRoute, secretsRoute]);
 
 const router = createRouter({
   routeTree,

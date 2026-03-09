@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useSources, type Source } from "@executor-v3/react";
 import { LoadableBlock } from "../components/loadable";
+import { SourceFavicon } from "../components/source-favicon";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { IconSources, IconPlus } from "../components/icons";
@@ -21,7 +22,7 @@ export function HomePage() {
               Connected tool providers in this workspace.
             </p>
           </div>
-          <Link to="/sources/new">
+          <Link to="/sources/add">
             <Button size="sm">
               <IconPlus className="size-3.5" />
               Add source
@@ -43,7 +44,7 @@ export function HomePage() {
                 <p className="text-[13px] text-muted-foreground/60 mb-5">
                   Add a source to get started.
                 </p>
-                <Link to="/sources/new">
+                <Link to="/sources/add">
                   <Button size="sm">
                     <IconPlus className="size-3.5" />
                     Add source
@@ -74,7 +75,7 @@ function SourceCard({ source }: { source: Source }) {
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
-          <IconSources className="size-4" />
+          <SourceFavicon endpoint={source.endpoint} kind={source.kind} className="size-4.5" />
         </div>
         <Badge variant={source.status === "connected" ? "default" : source.status === "error" ? "destructive" : "muted"} className="shrink-0">
           {source.status}
