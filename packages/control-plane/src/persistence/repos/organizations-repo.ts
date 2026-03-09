@@ -200,6 +200,10 @@ export const createOrganizationsRepo = (
         .delete(tables.organizationMembershipsTable)
         .where(eq(tables.organizationMembershipsTable.organizationId, organizationId));
 
+      await tx
+        .delete(tables.policiesTable)
+        .where(eq(tables.policiesTable.organizationId, organizationId));
+
       const deleted = await tx
         .delete(tables.organizationsTable)
         .where(eq(tables.organizationsTable.id, organizationId))

@@ -1,7 +1,7 @@
 import { type Workspace, WorkspaceSchema } from "#schema";
 import * as Option from "effect/Option";
 import { Schema } from "effect";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { DrizzleClient } from "../client";
 import type { DrizzleTables } from "../schema";
@@ -109,7 +109,12 @@ export const createWorkspacesRepo = (
 
       await tx
         .delete(tables.policiesTable)
-        .where(eq(tables.policiesTable.workspaceId, workspaceId));
+        .where(
+          and(
+            eq(tables.policiesTable.scopeType, "workspace"),
+            eq(tables.policiesTable.workspaceId, workspaceId),
+          ),
+        );
 
       await tx
         .delete(tables.localInstallationsTable)

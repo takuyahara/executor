@@ -4,6 +4,7 @@ import type {
 } from "../api/policies/api";
 import {
   PolicyIdSchema,
+  type OrganizationId,
   type Policy,
   type PolicyId,
   type WorkspaceId,
@@ -17,9 +18,10 @@ import {
   type Mutable,
 } from "./operations-shared";
 import {
+  type OperationErrors,
   operationErrors,
 } from "./operation-errors";
-import { ControlPlaneStore } from "./store";
+import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
 
 const policyOps = {
   list: operationErrors("policies.list"),
@@ -29,24 +31,81 @@ const policyOps = {
   remove: operationErrors("policies.remove"),
 } as const;
 
-export const listPolicies = (workspaceId: WorkspaceId) =>
-  Effect.flatMap(ControlPlaneStore, (store) =>
-    policyOps.list.mapStorage(
-      store.policies.listByWorkspaceId(workspaceId),
-    )
-  );
+type PolicyScopeContext = {
+  scopeType: Policy["scopeType"];
+  organizationId: Policy["organizationId"];
+  workspaceId: Policy["workspaceId"];
+};
 
-export const createPolicy = (input: {
-  workspaceId: WorkspaceId;
+const loadWorkspacePolicyContext = (
+  store: ControlPlaneStoreShape,
+  operation: OperationErrors,
+  workspaceId: WorkspaceId,
+) =>
+  Effect.gen(function* () {
+    const workspace = yield* operation.child("workspace").mapStorage(
+      store.workspaces.getById(workspaceId),
+    );
+    if (Option.isNone(workspace)) {
+      return yield* Effect.fail(
+        operation.notFound(
+          "Workspace not found",
+          `workspaceId=${workspaceId}`,
+        ),
+      );
+    }
+
+    return {
+      scopeType: "workspace",
+      organizationId: workspace.value.organizationId,
+      workspaceId,
+    } satisfies PolicyScopeContext;
+  });
+
+const loadOrganizationPolicyContext = (
+  store: ControlPlaneStoreShape,
+  operation: OperationErrors,
+  organizationId: OrganizationId,
+) =>
+  Effect.gen(function* () {
+    const organization = yield* operation.child("organization").mapStorage(
+      store.organizations.getById(organizationId),
+    );
+    if (Option.isNone(organization)) {
+      return yield* Effect.fail(
+        operation.notFound(
+          "Organization not found",
+          `organizationId=${organizationId}`,
+        ),
+      );
+    }
+
+    return {
+      scopeType: "organization",
+      organizationId,
+      workspaceId: null,
+    } satisfies PolicyScopeContext;
+  });
+
+const policyMatchesScope = (policy: Policy, scope: PolicyScopeContext): boolean =>
+  policy.scopeType === scope.scopeType
+  && policy.organizationId === scope.organizationId
+  && policy.workspaceId === scope.workspaceId;
+
+const createScopedPolicy = (input: {
+  scope: PolicyScopeContext;
   payload: CreatePolicyPayload;
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
     Effect.gen(function* () {
       const now = Date.now();
+      const operation = policyOps.create;
 
       const policy: Policy = {
         id: PolicyIdSchema.make(`pol_${crypto.randomUUID()}`),
-        workspaceId: input.workspaceId,
+        scopeType: input.scope.scopeType,
+        organizationId: input.scope.organizationId,
+        workspaceId: input.scope.workspaceId,
         targetAccountId: input.payload.targetAccountId ?? null,
         clientId: input.payload.clientId ?? null,
         resourceType: input.payload.resourceType ?? "tool_path",
@@ -63,22 +122,22 @@ export const createPolicy = (input: {
 
       if (policy.argumentConditionsJson !== null) {
         yield* parseJsonString(
-          policyOps.create,
+          operation,
           "argumentConditionsJson",
           policy.argumentConditionsJson,
         );
       }
 
       yield* mapPersistenceError(
-        policyOps.create,
+        operation,
         store.policies.insert(policy),
       );
 
       return policy;
     }));
 
-export const getPolicy = (input: {
-  workspaceId: WorkspaceId;
+const getScopedPolicy = (input: {
+  scope: PolicyScopeContext;
   policyId: PolicyId;
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
@@ -87,11 +146,11 @@ export const getPolicy = (input: {
         store.policies.getById(input.policyId),
       );
 
-      if (Option.isNone(existing) || existing.value.workspaceId !== input.workspaceId) {
+      if (Option.isNone(existing) || !policyMatchesScope(existing.value, input.scope)) {
         return yield* Effect.fail(
           policyOps.get.notFound(
             "Policy not found",
-            `workspaceId=${input.workspaceId} policyId=${input.policyId}`,
+            `scopeType=${input.scope.scopeType} organizationId=${input.scope.organizationId} workspaceId=${input.scope.workspaceId} policyId=${input.policyId}`,
           ),
         );
       }
@@ -99,8 +158,8 @@ export const getPolicy = (input: {
       return existing.value;
     }));
 
-export const updatePolicy = (input: {
-  workspaceId: WorkspaceId;
+const updateScopedPolicy = (input: {
+  scope: PolicyScopeContext;
   policyId: PolicyId;
   payload: UpdatePolicyPayload;
 }) =>
@@ -109,16 +168,18 @@ export const updatePolicy = (input: {
       const existing = yield* policyOps.update.mapStorage(
         store.policies.getById(input.policyId),
       );
-      if (Option.isNone(existing) || existing.value.workspaceId !== input.workspaceId) {
+      if (Option.isNone(existing) || !policyMatchesScope(existing.value, input.scope)) {
         return yield* Effect.fail(
           policyOps.update.notFound(
             "Policy not found",
-            `workspaceId=${input.workspaceId} policyId=${input.policyId}`,
+            `scopeType=${input.scope.scopeType} organizationId=${input.scope.organizationId} workspaceId=${input.scope.workspaceId} policyId=${input.policyId}`,
           ),
         );
       }
 
-      const patch: Partial<Omit<Mutable<Policy>, "id" | "workspaceId" | "createdAt">> = {
+      const patch: Partial<
+        Omit<Mutable<Policy>, "id" | "scopeType" | "organizationId" | "workspaceId" | "createdAt">
+      > = {
         updatedAt: Date.now(),
       };
 
@@ -168,7 +229,7 @@ export const updatePolicy = (input: {
         return yield* Effect.fail(
           policyOps.update.notFound(
             "Policy not found",
-            `workspaceId=${input.workspaceId} policyId=${input.policyId}`,
+            `scopeType=${input.scope.scopeType} organizationId=${input.scope.organizationId} workspaceId=${input.scope.workspaceId} policyId=${input.policyId}`,
           ),
         );
       }
@@ -176,8 +237,8 @@ export const updatePolicy = (input: {
       return updated.value;
     }));
 
-export const removePolicy = (input: {
-  workspaceId: WorkspaceId;
+const removeScopedPolicy = (input: {
+  scope: PolicyScopeContext;
   policyId: PolicyId;
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
@@ -185,7 +246,7 @@ export const removePolicy = (input: {
       const existing = yield* policyOps.remove.mapStorage(
         store.policies.getById(input.policyId),
       );
-      if (Option.isNone(existing) || existing.value.workspaceId !== input.workspaceId) {
+      if (Option.isNone(existing) || !policyMatchesScope(existing.value, input.scope)) {
         return { removed: false };
       }
 
@@ -195,3 +256,111 @@ export const removePolicy = (input: {
 
       return { removed };
     }));
+
+export const listOrganizationPolicies = (organizationId: OrganizationId) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.gen(function* () {
+      yield* loadOrganizationPolicyContext(store, policyOps.list, organizationId);
+      return yield* policyOps.list.mapStorage(
+        store.policies.listByOrganizationId(organizationId),
+      );
+    }));
+
+export const listPolicies = (workspaceId: WorkspaceId) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.gen(function* () {
+      yield* loadWorkspacePolicyContext(store, policyOps.list, workspaceId);
+      return yield* policyOps.list.mapStorage(
+        store.policies.listByWorkspaceId(workspaceId),
+      );
+    }));
+
+export const createOrganizationPolicy = (input: {
+  organizationId: OrganizationId;
+  payload: CreatePolicyPayload;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadOrganizationPolicyContext(store, policyOps.create, input.organizationId),
+      (scope) => createScopedPolicy({ scope, payload: input.payload }),
+    ));
+
+export const createPolicy = (input: {
+  workspaceId: WorkspaceId;
+  payload: CreatePolicyPayload;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadWorkspacePolicyContext(store, policyOps.create, input.workspaceId),
+      (scope) => createScopedPolicy({ scope, payload: input.payload }),
+    ));
+
+export const getOrganizationPolicy = (input: {
+  organizationId: OrganizationId;
+  policyId: PolicyId;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadOrganizationPolicyContext(store, policyOps.get, input.organizationId),
+      (scope) => getScopedPolicy({ scope, policyId: input.policyId }),
+    ));
+
+export const getPolicy = (input: {
+  workspaceId: WorkspaceId;
+  policyId: PolicyId;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadWorkspacePolicyContext(store, policyOps.get, input.workspaceId),
+      (scope) => getScopedPolicy({ scope, policyId: input.policyId }),
+    ));
+
+export const updateOrganizationPolicy = (input: {
+  organizationId: OrganizationId;
+  policyId: PolicyId;
+  payload: UpdatePolicyPayload;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadOrganizationPolicyContext(store, policyOps.update, input.organizationId),
+      (scope) => updateScopedPolicy({
+        scope,
+        policyId: input.policyId,
+        payload: input.payload,
+      }),
+    ));
+
+export const updatePolicy = (input: {
+  workspaceId: WorkspaceId;
+  policyId: PolicyId;
+  payload: UpdatePolicyPayload;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadWorkspacePolicyContext(store, policyOps.update, input.workspaceId),
+      (scope) => updateScopedPolicy({
+        scope,
+        policyId: input.policyId,
+        payload: input.payload,
+      }),
+    ));
+
+export const removeOrganizationPolicy = (input: {
+  organizationId: OrganizationId;
+  policyId: PolicyId;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadOrganizationPolicyContext(store, policyOps.remove, input.organizationId),
+      (scope) => removeScopedPolicy({ scope, policyId: input.policyId }),
+    ));
+
+export const removePolicy = (input: {
+  workspaceId: WorkspaceId;
+  policyId: PolicyId;
+}) =>
+  Effect.flatMap(ControlPlaneStore, (store) =>
+    Effect.flatMap(
+      loadWorkspacePolicyContext(store, policyOps.remove, input.workspaceId),
+      (scope) => removeScopedPolicy({ scope, policyId: input.policyId }),
+    ));
