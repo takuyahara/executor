@@ -1,14 +1,17 @@
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform";
 import {
   ExecutionInteractionIdSchema,
+  SecretRefSchema,
   SourceAuthSchema,
   SourceAuthSessionIdSchema,
+  SourceDiscoveryResultSchema,
   SourceIdSchema,
   SourceInspectionDiscoverPayloadSchema,
   SourceInspectionDiscoverResultSchema,
   SourceInspectionSchema,
   SourceInspectionToolDetailSchema,
   SourceKindSchema,
+  SourceProbeAuthSchema,
   SourceSchema,
   SourceStatusSchema,
   SourceTransportSchema,
@@ -75,34 +78,6 @@ export const UpdateSourcePayloadSchema = Schema.Struct({
 
 export type UpdateSourcePayload = typeof UpdateSourcePayloadSchema.Type;
 
-export const ConnectMcpSourcePayloadSchema = Schema.Struct({
-  sourceId: Schema.optional(SourceIdSchema),
-  name: Schema.optional(Schema.NullOr(Schema.String)),
-  endpoint: TrimmedNonEmptyStringSchema,
-  namespace: Schema.optional(Schema.NullOr(Schema.String)),
-  enabled: Schema.optional(Schema.Boolean),
-  transport: Schema.optional(SourceTransportSchema),
-  queryParams: Schema.optional(Schema.NullOr(StringMapSchema)),
-  headers: Schema.optional(Schema.NullOr(StringMapSchema)),
-});
-
-export type ConnectMcpSourcePayload = typeof ConnectMcpSourcePayloadSchema.Type;
-
-export const ConnectMcpSourceResultSchema = Schema.Union(
-  Schema.Struct({
-    kind: Schema.Literal("connected"),
-    source: SourceSchema,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("oauth_required"),
-    source: SourceSchema,
-    sessionId: SourceAuthSessionIdSchema,
-    authorizationUrl: Schema.String,
-  }),
-);
-
-export type ConnectMcpSourceResult = typeof ConnectMcpSourceResultSchema.Type;
-
 const workspaceIdParam = HttpApiSchema.param("workspaceId", WorkspaceIdSchema);
 const sourceIdParam = HttpApiSchema.param("sourceId", SourceIdSchema);
 const toolPathParam = HttpApiSchema.param("toolPath", Schema.String);
@@ -123,11 +98,113 @@ const CredentialOauthCompleteUrlParamsSchema = Schema.Struct({
   error_description: Schema.optional(Schema.String),
 });
 
+const DiscoverSourcePayloadSchema = Schema.Struct({
+  url: TrimmedNonEmptyStringSchema,
+  probeAuth: Schema.optional(SourceProbeAuthSchema),
+});
+
+export type DiscoverSourcePayload = typeof DiscoverSourcePayloadSchema.Type;
+
+const ConnectBearerAuthSchema = Schema.Struct({
+  kind: Schema.Literal("bearer"),
+  headerName: Schema.optional(Schema.NullOr(Schema.String)),
+  prefix: Schema.optional(Schema.NullOr(Schema.String)),
+  token: Schema.optional(Schema.NullOr(Schema.String)),
+  tokenRef: Schema.optional(Schema.NullOr(SecretRefSchema)),
+});
+
+const ConnectOAuth2AuthSchema = Schema.Struct({
+  kind: Schema.Literal("oauth2"),
+  headerName: Schema.optional(Schema.NullOr(Schema.String)),
+  prefix: Schema.optional(Schema.NullOr(Schema.String)),
+  accessToken: Schema.optional(Schema.NullOr(Schema.String)),
+  accessTokenRef: Schema.optional(Schema.NullOr(SecretRefSchema)),
+  refreshToken: Schema.optional(Schema.NullOr(Schema.String)),
+  refreshTokenRef: Schema.optional(Schema.NullOr(SecretRefSchema)),
+});
+
+const ConnectHttpAuthSchema = Schema.Union(
+  Schema.Struct({ kind: Schema.Literal("none") }),
+  ConnectBearerAuthSchema,
+  ConnectOAuth2AuthSchema,
+);
+
+const ConnectSourcePayloadSchema = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("openapi"),
+    endpoint: TrimmedNonEmptyStringSchema,
+    specUrl: TrimmedNonEmptyStringSchema,
+    name: Schema.optional(Schema.NullOr(Schema.String)),
+    namespace: Schema.optional(Schema.NullOr(Schema.String)),
+    auth: Schema.optional(ConnectHttpAuthSchema),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("graphql"),
+    endpoint: TrimmedNonEmptyStringSchema,
+    name: Schema.optional(Schema.NullOr(Schema.String)),
+    namespace: Schema.optional(Schema.NullOr(Schema.String)),
+    auth: Schema.optional(ConnectHttpAuthSchema),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("mcp"),
+    endpoint: TrimmedNonEmptyStringSchema,
+    name: Schema.optional(Schema.NullOr(Schema.String)),
+    namespace: Schema.optional(Schema.NullOr(Schema.String)),
+    transport: Schema.optional(Schema.NullOr(SourceTransportSchema)),
+    queryParams: Schema.optional(Schema.NullOr(StringMapSchema)),
+    headers: Schema.optional(Schema.NullOr(StringMapSchema)),
+  }),
+);
+
+export type ConnectSourcePayload = typeof ConnectSourcePayloadSchema.Type;
+
+const ConnectSourceResultSchema = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("connected"),
+    source: SourceSchema,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("credential_required"),
+    source: SourceSchema,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("oauth_required"),
+    source: SourceSchema,
+    sessionId: SourceAuthSessionIdSchema,
+    authorizationUrl: Schema.String,
+  }),
+);
+
+export type ConnectSourceResult = typeof ConnectSourceResultSchema.Type;
+
+export {
+  ConnectSourcePayloadSchema,
+  ConnectSourceResultSchema,
+  DiscoverSourcePayloadSchema,
+};
+
 const HtmlSchema = HttpApiSchema.Text({
   contentType: "text/html",
 });
 
 export class SourcesApi extends HttpApiGroup.make("sources")
+  .add(
+    HttpApiEndpoint.post("discover")`/sources/discover`
+      .setPayload(DiscoverSourcePayloadSchema)
+      .addSuccess(SourceDiscoveryResultSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError),
+  )
+  .add(
+    HttpApiEndpoint.post("connect")`/workspaces/${workspaceIdParam}/sources/connect`
+      .setPayload(ConnectSourcePayloadSchema)
+      .addSuccess(ConnectSourceResultSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneStorageError),
+  )
   .add(
     HttpApiEndpoint.get("list")`/workspaces/${workspaceIdParam}/sources`
       .addSuccess(Schema.Array(SourceSchema))
@@ -158,16 +235,6 @@ export class SourcesApi extends HttpApiGroup.make("sources")
     HttpApiEndpoint.patch("update")`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}`
       .setPayload(UpdateSourcePayloadSchema)
       .addSuccess(SourceSchema)
-      .addError(ControlPlaneBadRequestError)
-      .addError(ControlPlaneUnauthorizedError)
-      .addError(ControlPlaneForbiddenError)
-      .addError(ControlPlaneNotFoundError)
-      .addError(ControlPlaneStorageError),
-  )
-  .add(
-    HttpApiEndpoint.post("connectMcp")`/workspaces/${workspaceIdParam}/sources/mcp/oauth/start`
-      .setPayload(ConnectMcpSourcePayloadSchema)
-      .addSuccess(ConnectMcpSourceResultSchema)
       .addError(ControlPlaneBadRequestError)
       .addError(ControlPlaneUnauthorizedError)
       .addError(ControlPlaneForbiddenError)
