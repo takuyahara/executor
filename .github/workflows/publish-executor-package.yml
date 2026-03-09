@@ -37,6 +37,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -117,8 +118,6 @@ jobs:
       - name: Publish to npm
         if: steps.state.outputs.package_published != 'true'
         working-directory: apps/executor
-        env:
-          NODE_AUTH_TOKEN: ""
         run: npm publish ./dist/npm --access public --provenance
 
       - name: Create GitHub release
