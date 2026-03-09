@@ -19,7 +19,7 @@ The current codebase lives in `apps/` and `packages/`. Older experiments stay in
 
 ## Attribution
 
-- The npm package name `executor` is used with attribution to [Crystian](https://www.linkedin.com/in/crystian/).
+- [Crystian](https://www.linkedin.com/in/crystian/) provided the npm package name `executor`.
 - The `codemode` concept in this project is inspired by Cloudflare's [Code Mode announcement](https://blog.cloudflare.com/code-mode/).
 
 ## Why this exists
