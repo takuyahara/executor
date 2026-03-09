@@ -1,5 +1,4 @@
 import type {
-  ConnectMcpSourcePayload,
   CreateSourcePayload,
   UpdateSourcePayload,
 } from "../api/sources/api";
@@ -24,7 +23,6 @@ import {
   operationErrors,
 } from "./operation-errors";
 import { createDefaultSecretMaterialResolver } from "./secret-material-providers";
-import { RuntimeSourceAuthServiceTag } from "./source-auth-service";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
 import { syncSourceToolArtifacts } from "./tool-artifacts";
 import {
@@ -39,9 +37,16 @@ const sourceOps = {
   create: operationErrors("sources.create"),
   get: operationErrors("sources.get"),
   update: operationErrors("sources.update"),
-  connectMcp: operationErrors("sources.connectMcp"),
   remove: operationErrors("sources.remove"),
 } as const;
+
+const shouldAutoProbeSource = (source: Source): boolean =>
+  source.enabled
+  && (
+    (source.kind === "openapi" && !!source.specUrl)
+    || source.kind === "graphql"
+  )
+  && (source.status === "draft" || source.status === "probing");
 
 const syncArtifactsForSource = (input: {
   store: ControlPlaneStoreShape;
@@ -55,19 +60,50 @@ const syncArtifactsForSource = (input: {
       rows: input.store,
     });
 
+    // For HTTP-backed source kinds that can validate themselves from a remote
+    // document, automatically attempt to probe and connect. This mirrors the
+    // addExecutorSource flow by overriding status to "connected" so the sync
+    // guard passes.
+    const autoProbe = shouldAutoProbeSource(input.source);
+    const sourceForSync = autoProbe
+      ? { ...input.source, status: "connected" as const }
+      : input.source;
+
     const synced = yield* Effect.either(
       syncSourceToolArtifacts({
         rows: input.store,
-        source: input.source,
+        source: sourceForSync,
         resolveSecretMaterial,
       }),
     );
 
     return yield* Either.match(synced, {
-      onRight: () => Effect.succeed(input.source),
+      onRight: () =>
+        Effect.gen(function* () {
+          if (autoProbe) {
+            const connectedSource = yield* updateSourceFromPayload({
+              source: input.source,
+              payload: { status: "connected", lastError: null },
+              now: Date.now(),
+            }).pipe(
+              Effect.mapError((cause) =>
+                input.operation.badRequest(
+                  "Failed updating source status",
+                  cause instanceof Error ? cause.message : String(cause),
+                ),
+              ),
+            );
+            yield* mapPersistenceError(
+              input.operation.child("source_connected"),
+              persistSource(input.store, connectedSource),
+            );
+            return connectedSource;
+          }
+          return input.source;
+        }),
       onLeft: (error) =>
         Effect.gen(function* () {
-          if (input.source.enabled && input.source.status === "connected") {
+          if (autoProbe || (input.source.enabled && input.source.status === "connected")) {
             const erroredSource = yield* updateSourceFromPayload({
               source: input.source,
               payload: {
@@ -212,40 +248,6 @@ export const updateSource = (input: {
         operation: sourceOps.update,
       });
     }));
-
-export const connectMcpSource = (input: {
-  workspaceId: WorkspaceId;
-  payload: ConnectMcpSourcePayload;
-}) =>
-  Effect.gen(function* () {
-    const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
-
-    return yield* sourceAuthService.connectMcpSource({
-      workspaceId: input.workspaceId,
-      sourceId: input.payload.sourceId,
-      endpoint: input.payload.endpoint,
-      name: input.payload.name,
-      namespace: input.payload.namespace,
-      enabled: input.payload.enabled,
-      transport: input.payload.transport,
-      queryParams: input.payload.queryParams,
-      headers: input.payload.headers,
-    }).pipe(
-      Effect.mapError((cause) => {
-        if (cause instanceof Error && cause.message.startsWith("Source not found:")) {
-          return sourceOps.connectMcp.notFound(
-            "Source not found",
-            `workspaceId=${input.workspaceId} sourceId=${input.payload.sourceId}`,
-          );
-        }
-
-        return sourceOps.connectMcp.unknownStorage(
-          cause,
-          "Failed preparing MCP source OAuth flow",
-        );
-      }),
-    );
-  });
 
 export const removeSource = (input: {
   workspaceId: WorkspaceId;

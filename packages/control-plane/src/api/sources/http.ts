@@ -1,5 +1,6 @@
 import {
   HttpApiBuilder,
+  HttpServerRequest,
   HttpServerResponse,
 } from "@effect/platform";
 import type {
@@ -11,7 +12,6 @@ import * as Effect from "effect/Effect";
 
 import { requirePermission, withPolicy } from "#domain";
 import {
-  connectMcpSource,
   createSource,
   getSource,
   listSources,
@@ -28,6 +28,8 @@ import {
   getSourceCredentialInteraction,
   submitSourceCredentialInteraction,
 } from "../../runtime/local-operations";
+import { discoverSource } from "../../runtime/source-discovery";
+import { RuntimeSourceAuthServiceTag } from "../../runtime/source-auth-service";
 
 import {
   ControlPlaneBadRequestError,
@@ -35,7 +37,7 @@ import {
   ControlPlaneStorageError,
 } from "../errors";
 import { ControlPlaneApi } from "../api";
-import { withWorkspaceRequestActor } from "../http-auth";
+import { withRequestActor, withWorkspaceRequestActor } from "../http-auth";
 
 const requireReadSources = (workspaceId: WorkspaceId) =>
   requirePermission({
@@ -48,6 +50,50 @@ const requireWriteSources = (workspaceId: WorkspaceId) =>
     permission: "sources:write",
     workspaceId,
   });
+
+const readHeader = (headers: unknown, name: string): string | null => {
+  if (headers == null || typeof headers !== "object") {
+    return null;
+  }
+
+  const record = headers as Record<string, unknown>;
+  const exact = record[name];
+  if (typeof exact === "string" && exact.length > 0) {
+    return exact;
+  }
+
+  const lower = record[name.toLowerCase()];
+  if (typeof lower === "string" && lower.length > 0) {
+    return lower;
+  }
+
+  return null;
+};
+
+const resolveRequestOrigin = (request: { url: string; headers: unknown }): string | null => {
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    const forwardedHost = readHeader(request.headers, "x-forwarded-host");
+    const host = forwardedHost ?? readHeader(request.headers, "host");
+    if (!host) {
+      return null;
+    }
+
+    const forwardedProto = readHeader(request.headers, "x-forwarded-proto");
+    const protocol = forwardedProto && forwardedProto.length > 0 ? forwardedProto : "http";
+    return `${protocol}://${host}`;
+  }
+};
+
+const toBadRequestError = (operation: string, cause: unknown) => {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return new ControlPlaneBadRequestError({
+    operation,
+    message,
+    details: message,
+  });
+};
 
 const escapeHtml = (value: string): string =>
   value
@@ -616,6 +662,77 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
   "sources",
   (handlers) =>
     handlers
+      .handle("discover", ({ payload }) =>
+        withRequestActor("sources.discover", () =>
+          discoverSource({
+            url: payload.url,
+            probeAuth: payload.probeAuth,
+          }).pipe(
+            Effect.catchAll((cause) =>
+              Effect.fail(toBadRequestError("sources.discover", cause)),
+            ),
+          ),
+        ),
+      )
+      .handle("connect", ({ path, payload }) =>
+        withWorkspaceRequestActor("sources.connect", path.workspaceId, () =>
+          withPolicy(requireWriteSources(path.workspaceId))(
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
+              const baseUrl = resolveRequestOrigin(request);
+
+              if (payload.kind === "mcp") {
+                return yield* sourceAuthService.connectMcpSource({
+                  workspaceId: path.workspaceId,
+                  endpoint: payload.endpoint,
+                  name: payload.name,
+                  namespace: payload.namespace,
+                  transport: payload.transport,
+                  queryParams: payload.queryParams,
+                  headers: payload.headers,
+                  baseUrl,
+                });
+              }
+
+              if (payload.kind === "openapi") {
+                return yield* sourceAuthService.addExecutorSource(
+                  {
+                    workspaceId: path.workspaceId,
+                    executionId: null,
+                    interactionId: null,
+                    kind: "openapi",
+                    endpoint: payload.endpoint,
+                    specUrl: payload.specUrl,
+                    name: payload.name,
+                    namespace: payload.namespace,
+                    auth: payload.auth,
+                  },
+                  { baseUrl },
+                );
+              }
+
+              return yield* sourceAuthService.addExecutorSource(
+                {
+                  workspaceId: path.workspaceId,
+                  executionId: null,
+                  interactionId: null,
+                  kind: "graphql",
+                  endpoint: payload.endpoint,
+                  name: payload.name,
+                  namespace: payload.namespace,
+                  auth: payload.auth,
+                },
+                { baseUrl },
+              );
+            }).pipe(
+              Effect.catchAll((cause) =>
+                Effect.fail(toBadRequestError("sources.connect", cause)),
+              ),
+            ),
+          ),
+        ),
+      )
       .handle("list", ({ path }) =>
         withWorkspaceRequestActor("sources.list", path.workspaceId, () =>
           withPolicy(requireReadSources(path.workspaceId))(
@@ -678,16 +795,6 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
             updateSource({
               workspaceId: path.workspaceId,
               sourceId: path.sourceId,
-              payload,
-            }),
-          ),
-        ),
-      )
-      .handle("connectMcp", ({ path, payload }) =>
-        withWorkspaceRequestActor("sources.connectMcp", path.workspaceId, () =>
-          withPolicy(requireWriteSources(path.workspaceId))(
-            connectMcpSource({
-              workspaceId: path.workspaceId,
               payload,
             }),
           ),
