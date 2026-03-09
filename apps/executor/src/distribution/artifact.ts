@@ -116,15 +116,14 @@ const createPackageJson = (input: {
     homepage: input.homepage,
     bugs: input.bugs,
     repository: input.repository,
-    license: input.license ?? "UNLICENSED",
+    license: input.license ?? "MIT",
     type: "module",
     private: false,
-    bin: {
-      executor: "./bin/executor.js",
-    },
+    bin: "bin/executor.js",
     files: [
       "bin",
       "resources",
+      "README.md",
       "package.json",
     ],
     engines: {
@@ -156,6 +155,7 @@ export const buildDistributionPackage = async (
   const pgliteDataPath = join(pgliteDistDir, "pglite.data");
   const pgliteWasmPath = join(pgliteDistDir, "pglite.wasm");
   const webDistDir = join(repoRoot, "apps/web/dist");
+  const readmePath = join(repoRoot, "apps/executor/README.md");
   const packageName = options.packageName ?? defaults.name;
   const packageVersion = options.packageVersion ?? defaults.version;
   await rm(packageDir, { recursive: true, force: true });
@@ -203,6 +203,7 @@ export const buildDistributionPackage = async (
     repository: defaults.repository,
     license: defaults.license,
   }));
+  await cp(readmePath, join(packageDir, "README.md"));
   await writeFile(launcherPath, createLauncherSource());
   await chmod(launcherPath, 0o755);
 

@@ -33,6 +33,6 @@ export const readDistributionPackageMetadata = async (): Promise<DistributionPac
     homepage: metadata.homepage,
     bugs: metadata.bugs,
     repository: metadata.repository,
-    license: metadata.license ?? "UNLICENSED",
+    license: metadata.license ?? "MIT",
   };
 };
