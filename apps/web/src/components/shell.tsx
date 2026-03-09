@@ -1,8 +1,9 @@
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { useSources, type Source } from "@executor-v3/react";
 import { cn } from "../lib/utils";
-import { IconPlus, IconSources } from "./icons";
+import { IconPlus } from "./icons";
 import { LoadableBlock } from "./loadable";
+import { SourceFavicon } from "./source-favicon";
 
 // ── Status dot color ─────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ export function AppShell() {
             <div className="flex items-center justify-between gap-2">
               <span>Sources</span>
               <Link
-                to="/sources/new"
+                to="/sources/add"
                 className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium normal-case tracking-normal text-primary transition-colors hover:bg-sidebar-active hover:text-foreground"
               >
                 <IconPlus className="size-3" />
@@ -113,7 +114,9 @@ function SourceItem(props: {
           : "text-sidebar-foreground hover:bg-sidebar-active/60 hover:text-foreground",
       )}
     >
-      <IconSources className="size-3 shrink-0 text-muted-foreground/40" />
+      <div className="flex size-3 shrink-0 items-center justify-center text-muted-foreground/50">
+        <SourceFavicon endpoint={source.endpoint} kind={source.kind} className="size-3" />
+      </div>
       <span className="flex-1 truncate">{source.name}</span>
       <span
         className={cn("size-1.5 shrink-0 rounded-full", statusColor[source.status] ?? "bg-muted-foreground/30")}

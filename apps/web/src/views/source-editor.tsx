@@ -1,26 +1,28 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-  type ConnectMcpSourcePayload,
+  type CompleteSourceOAuthResult,
   type CreateSourcePayload,
   type InstanceConfig,
   type Loadable,
+  type StartSourceOAuthPayload,
   type SecretListItem,
   type Source,
   type UpdateSourcePayload,
-  useConnectMcpSource,
   useCreateSecret,
   useCreateSource,
-  useInvalidateExecutorQueries,
   useInstanceConfig,
+  useRefreshSecrets,
   useRemoveSource,
   useSecrets,
+  useStartSourceOAuth,
   useSource,
   useUpdateSource,
 } from "@executor-v3/react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { LoadableBlock } from "../components/loadable";
+import { SourceFavicon } from "../components/source-favicon";
 import {
   IconArrowLeft,
   IconPencil,
@@ -29,6 +31,8 @@ import {
   IconTrash,
 } from "../components/icons";
 import { cn } from "../lib/utils";
+import { sourceTemplates, type SourceTemplate } from "./source-templates";
+import { getDomain } from "tldts";
 
 type StatusBannerState = {
   tone: "info" | "success" | "error";
@@ -37,27 +41,20 @@ type StatusBannerState = {
 
 type SourceOAuthPopupMessage =
   | {
-      type: "executor-v3:source-oauth-result";
+      type: "executor-v3:oauth-result";
       ok: true;
-      sourceId: string;
+      sessionId: string;
+      auth: CompleteSourceOAuthResult["auth"];
     }
   | {
-      type: "executor-v3:source-oauth-result";
+      type: "executor-v3:oauth-result";
       ok: false;
+      sessionId: string | null;
       error: string;
     };
 
 const SOURCE_OAUTH_POPUP_RESULT_TIMEOUT_MS = 2 * 60_000;
-
-type SourceTemplate = {
-  id: string;
-  name: string;
-  summary: string;
-  kind: Source["kind"];
-  endpoint: string;
-  specUrl?: string;
-  namespace?: string;
-};
+const SOURCE_OAUTH_POPUP_RESULT_STORAGE_KEY_PREFIX = "executor-v3:oauth-result:";
 
 type TransportValue = "" | NonNullable<Source["transport"]>;
 
@@ -83,62 +80,6 @@ type SourceFormState = {
   oauthRefreshHandle: string;
 };
 
-const sourceTemplates: ReadonlyArray<SourceTemplate> = [
-  {
-    id: "deepwiki-mcp",
-    name: "DeepWiki MCP",
-    summary: "Repository docs and knowledge graphs via MCP.",
-    kind: "mcp",
-    endpoint: "https://mcp.deepwiki.com/mcp",
-    namespace: "deepwiki",
-  },
-  {
-    id: "github-rest",
-    name: "GitHub REST API",
-    summary: "Repos, issues, pull requests, actions, and org settings.",
-    kind: "openapi",
-    endpoint: "https://api.github.com",
-    specUrl:
-      "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.yaml",
-    namespace: "github",
-  },
-  {
-    id: "openai-api",
-    name: "OpenAI API",
-    summary: "Models, files, responses, and fine-tuning.",
-    kind: "openapi",
-    endpoint: "https://api.openai.com/v1",
-    specUrl: "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml",
-    namespace: "openai",
-  },
-  {
-    id: "vercel-api",
-    name: "Vercel API",
-    summary: "Deployments, projects, domains, and environments.",
-    kind: "openapi",
-    endpoint: "https://api.vercel.com",
-    specUrl: "https://openapi.vercel.sh",
-    namespace: "vercel",
-  },
-  {
-    id: "stripe-api",
-    name: "Stripe API",
-    summary: "Payments, billing, subscriptions, and invoices.",
-    kind: "openapi",
-    endpoint: "https://api.stripe.com",
-    specUrl: "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
-    namespace: "stripe",
-  },
-  {
-    id: "linear-graphql",
-    name: "Linear GraphQL",
-    summary: "Issues, teams, cycles, and projects.",
-    kind: "graphql",
-    endpoint: "https://api.linear.app/graphql",
-    namespace: "linear",
-  },
-];
-
 const kindOptions: ReadonlyArray<Source["kind"]> = ["mcp", "openapi", "graphql", "internal"];
 
 const transportOptions: ReadonlyArray<NonNullable<Source["transport"]>> = [
@@ -154,13 +95,56 @@ const trimToNull = (value: string): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const startSourceOAuthPopup = async (authorizationUrl: string): Promise<void> => {
+const namespaceFromUrl = (url: string): string => {
+  try {
+    const domain = getDomain(url);
+    if (!domain) return "";
+    const dot = domain.indexOf(".");
+    return dot > 0 ? domain.slice(0, dot) : domain;
+  } catch {
+    return "";
+  }
+};
+
+const readStoredSourceOAuthPopupResult = (sessionId: string): SourceOAuthPopupMessage | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(
+    `${SOURCE_OAUTH_POPUP_RESULT_STORAGE_KEY_PREFIX}${sessionId}`,
+  );
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as SourceOAuthPopupMessage;
+  } catch {
+    return null;
+  }
+};
+
+const clearStoredSourceOAuthPopupResult = (sessionId: string): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(`${SOURCE_OAUTH_POPUP_RESULT_STORAGE_KEY_PREFIX}${sessionId}`);
+};
+
+const startSourceOAuthPopup = async (input: {
+  authorizationUrl: string;
+  sessionId: string;
+}): Promise<CompleteSourceOAuthResult["auth"]> => {
   if (typeof window === "undefined") {
     throw new Error("OAuth popup is only available in a browser context");
   }
 
+  clearStoredSourceOAuthPopupResult(input.sessionId);
+
   const popup = window.open(
-    authorizationUrl,
+    input.authorizationUrl,
     "executor-v3-source-oauth",
     "popup=yes,width=520,height=720",
   );
@@ -171,7 +155,7 @@ const startSourceOAuthPopup = async (authorizationUrl: string): Promise<void> =>
 
   popup.focus();
 
-  await new Promise<void>((resolve, reject) => {
+  return await new Promise<CompleteSourceOAuthResult["auth"]>((resolve, reject) => {
     let settled = false;
     let closedPoll = 0;
     let resultTimeout = 0;
@@ -187,6 +171,7 @@ const startSourceOAuthPopup = async (authorizationUrl: string): Promise<void> =>
       if (!popup.closed) {
         popup.close();
       }
+      clearStoredSourceOAuthPopupResult(input.sessionId);
     };
 
     const settleWithError = (message: string) => {
@@ -199,16 +184,7 @@ const startSourceOAuthPopup = async (authorizationUrl: string): Promise<void> =>
       reject(new Error(message));
     };
 
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) {
-        return;
-      }
-
-      const data = event.data as SourceOAuthPopupMessage | undefined;
-      if (!data || data.type !== "executor-v3:source-oauth-result") {
-        return;
-      }
-
+    const settleFromPayload = (data: SourceOAuthPopupMessage) => {
       if (!data.ok) {
         settleWithError(data.error || "OAuth failed");
         return;
@@ -220,7 +196,28 @@ const startSourceOAuthPopup = async (authorizationUrl: string): Promise<void> =>
 
       settled = true;
       cleanup();
-      resolve();
+      resolve(data.auth);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      const data = event.data as SourceOAuthPopupMessage | undefined;
+      if (!data || data.type !== "executor-v3:oauth-result") {
+        return;
+      }
+
+      if (data.ok && data.sessionId !== input.sessionId) {
+        return;
+      }
+
+      if (!data.ok && data.sessionId !== null && data.sessionId !== input.sessionId) {
+        return;
+      }
+
+      settleFromPayload(data);
     };
 
     window.addEventListener("message", onMessage);
@@ -230,8 +227,22 @@ const startSourceOAuthPopup = async (authorizationUrl: string): Promise<void> =>
     }, SOURCE_OAUTH_POPUP_RESULT_TIMEOUT_MS);
 
     closedPoll = window.setInterval(() => {
+      const stored = readStoredSourceOAuthPopupResult(input.sessionId);
+      if (stored) {
+        settleFromPayload(stored);
+        return;
+      }
+
       if (popup.closed) {
-        settleWithError("OAuth popup was closed before completion.");
+        window.setTimeout(() => {
+          const delayedStored = readStoredSourceOAuthPopupResult(input.sessionId);
+          if (delayedStored) {
+            settleFromPayload(delayedStored);
+            return;
+          }
+
+          settleWithError("OAuth popup was closed before completion.");
+        }, 400);
       }
     }, 300);
   });
@@ -244,12 +255,12 @@ const defaultFormState = (template?: SourceTemplate): SourceFormState => ({
   name: template?.name ?? "",
   kind: template?.kind ?? "openapi",
   endpoint: template?.endpoint ?? "",
-  namespace: template?.namespace ?? "",
+  namespace: template ? namespaceFromUrl(template.endpoint) : "",
   enabled: true,
   transport: template?.kind === "mcp" ? "auto" : "",
   queryParamsText: "",
   headersText: "",
-  specUrl: template?.specUrl ?? "",
+  specUrl: "",
   defaultHeadersText: "",
   authKind: "none",
   authHeaderName: "Authorization",
@@ -375,6 +386,14 @@ const buildAuthPayload = (state: SourceFormState): CreateSourcePayload["auth"] =
   };
 };
 
+const buildRequestedSourceStatus = (state: SourceFormState): CreateSourcePayload["status"] => {
+  if (state.kind !== "mcp" && state.kind !== "openapi" && state.kind !== "graphql") {
+    return undefined;
+  }
+
+  return state.enabled ? "connected" : "draft";
+};
+
 const buildSourcePayload = (state: SourceFormState): CreateSourcePayload => {
   const name = state.name.trim();
   const endpoint = state.endpoint.trim();
@@ -391,10 +410,11 @@ const buildSourcePayload = (state: SourceFormState): CreateSourcePayload => {
     name,
     kind: state.kind,
     endpoint,
+    status: buildRequestedSourceStatus(state),
     enabled: state.enabled,
     namespace: trimToNull(state.namespace),
     auth: buildAuthPayload(state),
-  } satisfies Pick<CreateSourcePayload, "name" | "kind" | "endpoint" | "enabled" | "namespace" | "auth">;
+  } satisfies Pick<CreateSourcePayload, "name" | "kind" | "endpoint" | "status" | "enabled" | "namespace" | "auth">;
 
   if (state.kind === "mcp") {
     return {
@@ -423,6 +443,17 @@ const buildSourcePayload = (state: SourceFormState): CreateSourcePayload => {
     };
   }
 
+  if (state.kind === "graphql") {
+    return {
+      ...shared,
+      transport: null,
+      queryParams: null,
+      headers: null,
+      specUrl: null,
+      defaultHeaders: parseJsonStringMap("Default headers", state.defaultHeadersText),
+    };
+  }
+
   return {
     ...shared,
     transport: null,
@@ -437,10 +468,7 @@ const buildUpdatePayload = (state: SourceFormState): UpdateSourcePayload => ({
   ...buildSourcePayload(state),
 });
 
-const buildMcpConnectPayload = (
-  state: SourceFormState,
-  sourceId?: Source["id"],
-): ConnectMcpSourcePayload => {
+const buildStartSourceOAuthPayload = (state: SourceFormState): StartSourceOAuthPayload => {
   if (state.kind !== "mcp") {
     throw new Error("OAuth sign-in is only available for MCP sources.");
   }
@@ -451,11 +479,9 @@ const buildMcpConnectPayload = (
   }
 
   return {
-    ...(sourceId ? { sourceId } : {}),
-    endpoint,
+    provider: "mcp",
     name: trimToNull(state.name),
-    namespace: trimToNull(state.namespace),
-    enabled: state.enabled,
+    endpoint,
     transport: state.transport === "" ? "auto" : state.transport,
     queryParams: parseJsonStringMap("Query params", state.queryParamsText),
     headers: parseJsonStringMap("Request headers", state.headersText),
@@ -463,7 +489,7 @@ const buildMcpConnectPayload = (
 };
 
 export function NewSourcePage() {
-  return <SourceEditor mode="create" />;
+  return <SourceEditor key="create" mode="create" />;
 }
 
 export function EditSourcePage(props: { sourceId: string }) {
@@ -471,7 +497,13 @@ export function EditSourcePage(props: { sourceId: string }) {
 
   return (
     <LoadableBlock loadable={source} loading="Loading source...">
-      {(loadedSource) => <SourceEditor mode="edit" source={loadedSource} />}
+      {(loadedSource) => (
+        <SourceEditor
+          key={`${loadedSource.id}:${loadedSource.updatedAt}`}
+          mode="edit"
+          source={loadedSource}
+        />
+      )}
     </LoadableBlock>
   );
 }
@@ -479,29 +511,29 @@ export function EditSourcePage(props: { sourceId: string }) {
 function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
   const navigate = useNavigate();
   const createSource = useCreateSource();
-  const connectMcpSource = useConnectMcpSource();
+  const startSourceOAuth = useStartSourceOAuth();
   const updateSource = useUpdateSource();
   const removeSource = useRemoveSource();
-  const invalidateQueries = useInvalidateExecutorQueries();
   const instanceConfig = useInstanceConfig();
   const secrets = useSecrets();
+  const refreshSecrets = useRefreshSecrets();
   const [formState, setFormState] = useState<SourceFormState>(() =>
     props.source ? formStateFromSource(props.source) : defaultFormState(),
   );
   const [statusBanner, setStatusBanner] = useState<StatusBannerState | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [oauthPopupBusy, setOauthPopupBusy] = useState(false);
-
-  useEffect(() => {
-    if (props.source) {
-      setFormState(formStateFromSource(props.source));
-      setStatusBanner(null);
-    }
-  }, [props.source]);
+  const [expandedOauthSecretRefTarget, setExpandedOauthSecretRefTarget] = useState<string | null>(null);
 
   const isSubmitting = createSource.status === "pending" || updateSource.status === "pending";
   const isDeleting = removeSource.status === "pending";
-  const isOAuthSubmitting = connectMcpSource.status === "pending" || oauthPopupBusy;
+  const isOAuthSubmitting = startSourceOAuth.status === "pending" || oauthPopupBusy;
+  const oauthSecretRefTarget =
+    formState.authKind === "oauth2" && formState.oauthAccessHandle.trim().length > 0
+      ? `${formState.oauthAccessProviderId}:${formState.oauthAccessHandle}:${formState.oauthRefreshProviderId}:${formState.oauthRefreshHandle}`
+      : null;
+  const showOauthSecretRefs =
+    oauthSecretRefTarget !== null && expandedOauthSecretRefTarget === oauthSecretRefTarget;
 
   const setField = <K extends keyof SourceFormState>(key: K, value: SourceFormState[K]) => {
     setFormState((current) => ({ ...current, [key]: value }));
@@ -513,15 +545,6 @@ function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
       ...defaultFormState(template),
       name: current.name.trim().length > 0 ? current.name : template.name,
       enabled: current.enabled,
-      authKind: current.authKind,
-      authHeaderName: current.authHeaderName,
-      authPrefix: current.authPrefix,
-      bearerProviderId: current.bearerProviderId,
-      bearerHandle: current.bearerHandle,
-      oauthAccessProviderId: current.oauthAccessProviderId,
-      oauthAccessHandle: current.oauthAccessHandle,
-      oauthRefreshProviderId: current.oauthRefreshProviderId,
-      oauthRefreshHandle: current.oauthRefreshHandle,
     }));
     setStatusBanner({
       tone: "info",
@@ -568,33 +591,34 @@ function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
     setStatusBanner(null);
 
     try {
-      const result = await connectMcpSource.mutateAsync(
-        buildMcpConnectPayload(formState, props.source?.id),
-      );
-
-      if (result.kind === "connected") {
-        invalidateQueries();
-        void navigate({
-          to: "/sources/$sourceId",
-          params: { sourceId: result.source.id },
-          search: { tab: "model" },
-        });
-        return;
-      }
+      const result = await startSourceOAuth.mutateAsync(buildStartSourceOAuthPayload(formState));
 
       setStatusBanner({
         tone: "info",
-        text: `Finish OAuth in the popup to connect ${result.source.name}.`,
+        text: "Finish OAuth in the popup. Saving will create the source and connect its tools.",
       });
 
       setOauthPopupBusy(true);
-      await startSourceOAuthPopup(result.authorizationUrl);
+      const auth = await startSourceOAuthPopup({
+        authorizationUrl: result.authorizationUrl,
+        sessionId: result.sessionId,
+      });
       setOauthPopupBusy(false);
-      invalidateQueries();
-      void navigate({
-        to: "/sources/$sourceId",
-        params: { sourceId: result.source.id },
-        search: { tab: "model" },
+      refreshSecrets();
+      setExpandedOauthSecretRefTarget(null);
+      setFormState((current) => ({
+        ...current,
+        authKind: "oauth2",
+        authHeaderName: auth.headerName,
+        authPrefix: auth.prefix,
+        oauthAccessProviderId: auth.accessToken.providerId,
+        oauthAccessHandle: auth.accessToken.handle,
+        oauthRefreshProviderId: auth.refreshToken?.providerId ?? "",
+        oauthRefreshHandle: auth.refreshToken?.handle ?? "",
+      }));
+      setStatusBanner({
+        tone: "success",
+        text: "OAuth credentials are ready. Save the source to connect and index tools.",
       });
     } catch (error) {
       setOauthPopupBusy(false);
@@ -677,8 +701,13 @@ function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
                       : "border-border bg-card/70 hover:bg-accent/50",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[13px] font-medium text-foreground">{template.name}</span>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+                        <SourceFavicon endpoint={template.endpoint} kind={template.kind} className="size-4" />
+                      </div>
+                      <span className="truncate text-[13px] font-medium text-foreground">{template.name}</span>
+                    </div>
                     <Badge variant="outline" className="text-[9px]">{template.kind}</Badge>
                   </div>
                   <span className="text-[11px] text-muted-foreground line-clamp-1">
@@ -715,7 +744,13 @@ function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
                 <TextInput
                   value={formState.endpoint}
                   onChange={(value) => setField("endpoint", value)}
-                  placeholder={formState.kind === "openapi" ? "https://api.github.com" : "https://mcp.deepwiki.com/mcp"}
+                  placeholder={
+                    formState.kind === "openapi"
+                      ? "https://api.github.com"
+                      : formState.kind === "graphql"
+                        ? "https://api.linear.app/graphql"
+                        : "https://mcp.deepwiki.com/mcp"
+                  }
                   mono
                 />
               </Field>
@@ -787,6 +822,20 @@ function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
             </Section>
           )}
 
+          {formState.kind === "graphql" && (
+            <Section title="GraphQL">
+              <div className="grid gap-4">
+                <Field label="Default headers (JSON)">
+                  <CodeEditor
+                    value={formState.defaultHeadersText}
+                    onChange={(value) => setField("defaultHeadersText", value)}
+                    placeholder={'{\n  "x-api-version": "2026-03-01"\n}'}
+                  />
+                </Field>
+              </div>
+            </Section>
+          )}
+
           <Section title="Authentication">
             <div className="grid gap-4 sm:grid-cols-2">
               {formState.kind === "mcp" && (
@@ -805,9 +854,28 @@ function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
                       disabled={isSubmitting || isDeleting || isOAuthSubmitting}
                     >
                       {isOAuthSubmitting ? <IconSpinner className="size-3.5" /> : null}
-                      {props.source?.auth.kind === "oauth2" ? "Reconnect with OAuth" : "Sign in with OAuth"}
+                      {formState.authKind === "oauth2" && formState.oauthAccessHandle.trim().length > 0
+                        ? "Reconnect with OAuth"
+                        : "Sign in with OAuth"}
                     </Button>
                   </div>
+                  {formState.authKind === "oauth2" && formState.oauthAccessHandle.trim().length > 0 && (
+                    <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+                      <p className="text-[12px] text-muted-foreground">
+                        OAuth tokens are attached to this draft and stay hidden unless you need the raw refs.
+                      </p>
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                        onClick={() =>
+                          setExpandedOauthSecretRefTarget((current) =>
+                            current === oauthSecretRefTarget ? null : oauthSecretRefTarget,
+                          )}
+                      >
+                        {showOauthSecretRefs ? "Hide token refs" : "Show token refs"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               <Field label="Auth mode">
@@ -850,7 +918,10 @@ function SourceEditor(props: { mode: "create" | "edit"; source?: Source }) {
                 </Field>
               )}
 
-              {formState.authKind === "oauth2" && (
+              {formState.authKind === "oauth2"
+                && (formState.kind !== "mcp"
+                  || formState.oauthAccessHandle.trim().length === 0
+                  || showOauthSecretRefs) && (
                 <>
                   <Field label="Access token" className="sm:col-span-2">
                     <SecretPicker
