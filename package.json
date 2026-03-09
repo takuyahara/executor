@@ -1,5 +1,5 @@
 {
-  "name": "executor-v3",
+  "name": "executor",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.2.22",
@@ -19,7 +19,7 @@
     "zod": "^4.3.6"
   },
   "scripts": {
-    "dev": "turbo run dev --filter=@executor-v3/web",
+    "dev": "turbo run dev --filter=@executor/web",
     "executor": "./apps/executor/bin/executor",
     "typecheck": "bun run --filter='*' typecheck",
     "knip": "knip"

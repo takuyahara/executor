@@ -6,7 +6,7 @@ import {
   allowAllToolInteractions,
   makeToolInvokerFromTools,
   toExecutorTool,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 import { isDenoAvailable, makeDenoSubprocessExecutor } from "./index";
 
 const numberPairInputSchema = Schema.standardSchemaV1(

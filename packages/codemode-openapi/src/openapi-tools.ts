@@ -12,7 +12,7 @@ import {
   toTool,
   type ToolMap,
   unknownInputSchema,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 
 import {
   compileOpenApiToolDefinitions,

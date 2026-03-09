@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/codemode-core",
+  "name": "@executor/codemode-core",
   "private": true,
   "type": "module",
   "exports": {

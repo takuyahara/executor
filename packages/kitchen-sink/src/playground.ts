@@ -4,8 +4,8 @@ import * as Schema from "effect/Schema";
 import {
   makeToolInvokerFromTools,
   toExecutorTool,
-} from "@executor-v3/codemode-core";
-import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
+} from "@executor/codemode-core";
+import { makeInProcessExecutor } from "@executor/runtime-local-inproc";
 
 const numberPairInputSchema = Schema.standardSchemaV1(
   Schema.Struct({

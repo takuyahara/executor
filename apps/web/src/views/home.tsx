@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useSources, type Source } from "@executor-v3/react";
+import { useSources, type Source } from "@executor/react";
 import { LoadableBlock } from "../components/loadable";
 import { LocalMcpInstallCard } from "../components/local-mcp-install-card";
 import { SourceFavicon } from "../components/source-favicon";

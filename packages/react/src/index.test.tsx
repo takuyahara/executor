@@ -11,7 +11,7 @@ import {
   type Source,
   SourceIdSchema,
   type SqlControlPlaneRuntime,
-} from "@executor-v3/control-plane";
+} from "@executor/control-plane";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

@@ -478,12 +478,12 @@ const sourceOAuthPopupResultDocument = (input: {
   state: "stored" | "cancelled";
   payload:
     | {
-        type: "executor-v3:source-oauth-result";
+        type: "executor:source-oauth-result";
         ok: true;
         sourceId: Source["id"];
       }
     | {
-        type: "executor-v3:source-oauth-result";
+        type: "executor:source-oauth-result";
         ok: false;
         error: string;
       };
@@ -934,7 +934,7 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
                 message: `Source connected: ${source.id}. You can close this window.`,
                 state: "stored",
                 payload: {
-                  type: "executor-v3:source-oauth-result",
+                  type: "executor:source-oauth-result",
                   ok: true,
                   sourceId: source.id,
                 },
@@ -949,7 +949,7 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
                   message: error instanceof Error ? error.message : "Failed completing OAuth",
                   state: "cancelled",
                   payload: {
-                    type: "executor-v3:source-oauth-result",
+                    type: "executor:source-oauth-result",
                     ok: false,
                     error: error instanceof Error ? error.message : "Failed completing OAuth",
                   },

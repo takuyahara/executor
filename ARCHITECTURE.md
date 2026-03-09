@@ -370,7 +370,7 @@ The web app lives in `apps/web` and is a React app built with Vite.
 At a high level:
 
 - routes are managed with TanStack Router
-- data access is wrapped by `@executor-v3/react`
+- data access is wrapped by `@executor/react`
 - the UI is focused on sources, source inspection, and secrets
 - production assets are served by the local server
 - development runs Vite separately while still embedding the same backend behavior

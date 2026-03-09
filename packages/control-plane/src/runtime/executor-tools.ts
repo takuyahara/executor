@@ -6,7 +6,7 @@ import {
   toTool,
   type ToolMap,
   type ToolPath,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 import {
   ExecutionIdSchema,
   ExecutionInteractionIdSchema,

@@ -18,7 +18,7 @@ import {
   useStartSourceOAuth,
   useSource,
   useUpdateSource,
-} from "@executor-v3/react";
+} from "@executor/react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { LoadableBlock } from "../components/loadable";
@@ -41,20 +41,20 @@ type StatusBannerState = {
 
 type SourceOAuthPopupMessage =
   | {
-      type: "executor-v3:oauth-result";
+      type: "executor:oauth-result";
       ok: true;
       sessionId: string;
       auth: CompleteSourceOAuthResult["auth"];
     }
   | {
-      type: "executor-v3:oauth-result";
+      type: "executor:oauth-result";
       ok: false;
       sessionId: string | null;
       error: string;
     };
 
 const SOURCE_OAUTH_POPUP_RESULT_TIMEOUT_MS = 2 * 60_000;
-const SOURCE_OAUTH_POPUP_RESULT_STORAGE_KEY_PREFIX = "executor-v3:oauth-result:";
+const SOURCE_OAUTH_POPUP_RESULT_STORAGE_KEY_PREFIX = "executor:oauth-result:";
 
 type TransportValue = "" | NonNullable<Source["transport"]>;
 
@@ -145,7 +145,7 @@ const startSourceOAuthPopup = async (input: {
 
   const popup = window.open(
     input.authorizationUrl,
-    "executor-v3-source-oauth",
+    "executor-source-oauth",
     "popup=yes,width=520,height=720",
   );
 
@@ -205,7 +205,7 @@ const startSourceOAuthPopup = async (input: {
       }
 
       const data = event.data as SourceOAuthPopupMessage | undefined;
-      if (!data || data.type !== "executor-v3:oauth-result") {
+      if (!data || data.type !== "executor:oauth-result") {
         return;
       }
 

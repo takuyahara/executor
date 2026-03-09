@@ -1,4 +1,4 @@
-import { OpenApiHttpMethodSchema } from "@executor-v3/codemode-openapi";
+import { OpenApiHttpMethodSchema } from "@executor/codemode-openapi";
 import { Schema } from "effect";
 
 import { SourceSchema } from "./source";

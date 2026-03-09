@@ -20,8 +20,8 @@ import {
   type ExecutionEnvelope,
   type ExecutionInteraction,
   type SqlControlPlaneRuntime,
-} from "@executor-v3/control-plane";
-import type { ToolCatalog } from "@executor-v3/codemode-core";
+} from "@executor/control-plane";
+import type { ToolCatalog } from "@executor/codemode-core";
 
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -38,7 +38,7 @@ import {
   SERVER_POLL_INTERVAL_MS,
   SERVER_START_TIMEOUT_MS,
   runLocalExecutorServer,
-} from "@executor-v3/server";
+} from "@executor/server";
 import {
   seedDemoMcpSourceInWorkspace,
   seedGithubOpenApiSourceInWorkspace,

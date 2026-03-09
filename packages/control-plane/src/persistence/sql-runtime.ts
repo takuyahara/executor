@@ -85,7 +85,7 @@ const cleanupStalePGliteLock = async (dataDir: string): Promise<void> => {
 };
 
 const createPGliteRuntime = async (localDataDir: string): Promise<SqlRuntime> => {
-  const normalized = trim(localDataDir) ?? ".executor-v3/control-plane-pgdata";
+  const normalized = trim(localDataDir) ?? ".executor/control-plane-pgdata";
 
   let client: PGlite;
   if (normalized === ":memory:") {
@@ -199,7 +199,7 @@ export const createSqlRuntime = async (
           trim(options.postgresApplicationName),
         )
       : await createPGliteRuntime(
-          options.localDataDir ?? ".executor-v3/control-plane-pgdata",
+          options.localDataDir ?? ".executor/control-plane-pgdata",
         );
 
   return runtime;

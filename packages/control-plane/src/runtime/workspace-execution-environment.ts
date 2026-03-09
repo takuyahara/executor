@@ -9,11 +9,11 @@ import {
   type ToolNamespace,
   type ToolPath,
   typeSignatureFromSchemaJson,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 import {
   createSdkMcpConnector,
   createMcpToolsFromManifest,
-} from "@executor-v3/codemode-mcp";
+} from "@executor/codemode-mcp";
 import {
   buildOpenApiToolPresentation,
   compileOpenApiToolDefinitions,
@@ -22,8 +22,8 @@ import {
   openApiOutputTypeSignatureFromSchemaJson,
   type OpenApiToolDefinition,
   type OpenApiToolManifest,
-} from "@executor-v3/codemode-openapi";
-import { makeDenoSubprocessExecutor } from "@executor-v3/runtime-deno-subprocess";
+} from "@executor/codemode-openapi";
+import { makeDenoSubprocessExecutor } from "@executor/runtime-deno-subprocess";
 import {
   SqlControlPlaneRowsService,
   type SqlControlPlaneRows,

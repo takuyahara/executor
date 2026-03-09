@@ -2,7 +2,7 @@ import type {
   ExecutionEnvelope,
   ExecutionInteraction,
   SqlControlPlaneRuntime,
-} from "@executor-v3/control-plane";
+} from "@executor/control-plane";
 import {
   EXECUTOR_SOURCES_ADD_HELP_LINES,
   ExecutionIdSchema,
@@ -10,7 +10,7 @@ import {
   createExecution,
   getExecution,
   resumeExecution,
-} from "@executor-v3/control-plane";
+} from "@executor/control-plane";
 import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";

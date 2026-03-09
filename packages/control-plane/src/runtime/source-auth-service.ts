@@ -2,7 +2,7 @@ import {
   createSdkMcpConnector,
   discoverMcpToolsFromConnector,
   type McpDiscoveryElicitationContext,
-} from "@executor-v3/codemode-mcp";
+} from "@executor/codemode-mcp";
 import {
   SqlControlPlaneRowsService,
   type SqlControlPlaneRows,

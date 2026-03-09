@@ -9,7 +9,7 @@ import {
   type SourceInspection,
   type SourceInspectionToolDetail,
   type SourceInspectionDiscoverResult,
-} from "@executor-v3/react";
+} from "@executor/react";
 import { cn } from "../lib/utils";
 import { Badge, MethodBadge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";

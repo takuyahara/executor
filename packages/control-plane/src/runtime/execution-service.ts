@@ -7,7 +7,7 @@ import type {
   CreateExecutionPayload,
   ResumeExecutionPayload,
 } from "../api/executions/api";
-import type { ToolInvoker } from "@executor-v3/codemode-core";
+import type { ToolInvoker } from "@executor/codemode-core";
 import {
   ExecutionIdSchema,
   type AccountId,

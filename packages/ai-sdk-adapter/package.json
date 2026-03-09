@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/ai-sdk-adapter",
+  "name": "@executor/ai-sdk-adapter",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,8 +14,8 @@
     "typecheck": "bunx tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@executor-v3/codemode-core": "workspace:*",
-    "@executor-v3/runtime-local-inproc": "workspace:*",
+    "@executor/codemode-core": "workspace:*",
+    "@executor/runtime-local-inproc": "workspace:*",
     "ai": "^6.0.0",
     "effect": "catalog:",
     "zod": "catalog:"

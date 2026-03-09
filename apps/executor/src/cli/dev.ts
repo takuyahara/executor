@@ -1,7 +1,7 @@
 import {
   type ControlPlaneClient,
   WorkspaceIdSchema,
-} from "@executor-v3/control-plane";
+} from "@executor/control-plane";
 import * as Effect from "effect/Effect";
 
 type SeedDemoMcpSourceInput = {

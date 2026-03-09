@@ -1,7 +1,7 @@
 import { Atom, Result } from "@effect-atom/atom";
 import type * as Registry from "@effect-atom/atom/Registry";
 import { RegistryContext, RegistryProvider, useAtomValue } from "@effect-atom/atom-react";
-import { createControlPlaneClient } from "@executor-v3/control-plane/client";
+import { createControlPlaneClient } from "@executor/control-plane/client";
 import type {
   CompleteSourceOAuthResult,
   ConnectSourcePayload,
@@ -25,7 +25,7 @@ import type {
   UpdateSecretPayload,
   UpdateSecretResult,
   UpdateSourcePayload,
-} from "@executor-v3/control-plane";
+} from "@executor/control-plane";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

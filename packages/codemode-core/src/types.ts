@@ -107,7 +107,7 @@ export type ExecutableTool = {
 export const unknownInputSchema: StandardSchema = {
   "~standard": {
     version: 1,
-    vendor: "@executor-v3/codemode-core",
+    vendor: "@executor/codemode-core",
     validate: (value: unknown) => ({
       value,
     }),

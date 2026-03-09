@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/codemode-openapi",
+  "name": "@executor/codemode-openapi",
   "private": true,
   "type": "module",
   "exports": {
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@effect/platform": "catalog:",
-    "@executor-v3/codemode-core": "workspace:*",
+    "@executor/codemode-core": "workspace:*",
     "effect": "catalog:",
     "yaml": "^2.8.1"
   },

@@ -11,7 +11,7 @@ import {
   type ExecutableTool,
   type ToolMap,
   type ToolInvoker,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 
 export type AiSdkToolMap = ToolSet;
 

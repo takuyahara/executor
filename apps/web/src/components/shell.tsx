@@ -1,5 +1,5 @@
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
-import { useSources, type Source } from "@executor-v3/react";
+import { useSources, type Source } from "@executor/react";
 import { cn } from "../lib/utils";
 import { IconPlus } from "./icons";
 import { LoadableBlock } from "./loadable";

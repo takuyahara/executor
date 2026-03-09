@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/kitchen-sink",
+  "name": "@executor/kitchen-sink",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,11 +10,11 @@
   },
   "dependencies": {
     "@effect/platform": "catalog:",
-    "@executor-v3/ai-sdk-adapter": "workspace:*",
-    "@executor-v3/codemode-core": "workspace:*",
-    "@executor-v3/codemode-openapi": "workspace:*",
-    "@executor-v3/control-plane": "workspace:*",
-    "@executor-v3/runtime-local-inproc": "workspace:*",
+    "@executor/ai-sdk-adapter": "workspace:*",
+    "@executor/codemode-core": "workspace:*",
+    "@executor/codemode-openapi": "workspace:*",
+    "@executor/control-plane": "workspace:*",
+    "@executor/runtime-local-inproc": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

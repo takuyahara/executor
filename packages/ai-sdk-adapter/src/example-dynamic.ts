@@ -4,7 +4,7 @@ import {
   type ToolCatalog,
   type ToolPath,
   createToolCatalogDiscovery,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 
 const asToolPath = (value: string): ToolPath => value as ToolPath;
 

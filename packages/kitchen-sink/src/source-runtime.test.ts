@@ -18,7 +18,7 @@ import {
   type SourceId,
   type StoredToolArtifactRecord,
   type WorkspaceId,
-} from "@executor-v3/control-plane";
+} from "@executor/control-plane";
 import {
   createToolCatalogDiscovery,
   createToolCatalogFromTools,
@@ -30,9 +30,9 @@ import {
   type ToolPath,
   type ToolInvocationContext,
   type ToolInvoker,
-} from "@executor-v3/codemode-core";
-import { createOpenApiToolsFromSpec } from "@executor-v3/codemode-openapi";
-import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
+} from "@executor/codemode-core";
+import { createOpenApiToolsFromSpec } from "@executor/codemode-openapi";
+import { makeInProcessExecutor } from "@executor/runtime-local-inproc";
 
 const asToolPath = (value: string): ToolPath => value as ToolPath;
 const asSourceId = (value: string): SourceId => value as SourceId;

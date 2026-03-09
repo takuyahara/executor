@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Loadable } from "@executor-v3/react";
+import type { Loadable } from "@executor/react";
 import { IconSpinner, IconEmpty } from "./icons";
 
 export function LoadableBlock<T>(props: {

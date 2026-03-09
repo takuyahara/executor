@@ -17,7 +17,7 @@ type CommandResult = {
 };
 
 export class DistributionHarness extends Context.Tag(
-  "@executor-v3/apps/executor/distribution/DistributionHarness",
+  "@executor/apps/executor/distribution/DistributionHarness",
 )<
   DistributionHarness,
   {

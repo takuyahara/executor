@@ -6,7 +6,7 @@ import {
   createRouter,
   useNavigate,
 } from "@tanstack/react-router";
-import { ExecutorReactProvider } from "@executor-v3/react";
+import { ExecutorReactProvider } from "@executor/react";
 
 import "./globals.css";
 

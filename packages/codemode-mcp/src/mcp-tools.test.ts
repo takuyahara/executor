@@ -13,7 +13,7 @@ import type {
   ToolInput,
   ToolMap,
   ToolPath,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 
 import { createSdkMcpConnector } from "./mcp-connection";
 import {

@@ -4,13 +4,13 @@ import * as Schema from "effect/Schema";
 
 import {
   createCodeTool,
-} from "@executor-v3/ai-sdk-adapter/ai";
+} from "@executor/ai-sdk-adapter/ai";
 import {
   allowAllToolInteractions,
   makeToolInvokerFromTools,
   toExecutorTool,
-} from "@executor-v3/codemode-core";
-import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
+} from "@executor/codemode-core";
+import { makeInProcessExecutor } from "@executor/runtime-local-inproc";
 
 const numberPairInputSchema = Schema.standardSchemaV1(
   Schema.Struct({

@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { makeToolInvokerFromTools } from "@executor-v3/codemode-core";
-import { makeDenoSubprocessExecutor } from "@executor-v3/runtime-deno-subprocess";
+import { makeToolInvokerFromTools } from "@executor/codemode-core";
+import { makeDenoSubprocessExecutor } from "@executor/runtime-deno-subprocess";
 
 import {
   createSqlControlPlaneRuntime,

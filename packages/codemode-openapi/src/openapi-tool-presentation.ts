@@ -1,4 +1,4 @@
-import { typeSignatureFromSchemaJson } from "@executor-v3/codemode-core";
+import { typeSignatureFromSchemaJson } from "@executor/codemode-core";
 
 import {
   resolveTypingSchemasWithRefHints,

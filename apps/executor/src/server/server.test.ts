@@ -13,15 +13,15 @@ import { assertTrue } from "@effect/vitest/utils";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { startMcpElicitationDemoServer } from "@executor-v3/mcp-elicitation-demo";
-import { makeToolInvokerFromTools, toTool } from "@executor-v3/codemode-core";
+import { startMcpElicitationDemoServer } from "@executor/mcp-elicitation-demo";
+import { makeToolInvokerFromTools, toTool } from "@executor/codemode-core";
 import {
   createControlPlaneClient,
   type ControlPlaneClient,
   type ResolveExecutionEnvironment,
   SourceIdSchema,
-} from "@executor-v3/control-plane";
-import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
+} from "@executor/control-plane";
+import { makeInProcessExecutor } from "@executor/runtime-local-inproc";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
@@ -34,7 +34,7 @@ import {
   seedDemoMcpSourceInWorkspace,
   seedGithubOpenApiSourceInWorkspace,
 } from "../cli/dev";
-import { createLocalExecutorServer } from "@executor-v3/server";
+import { createLocalExecutorServer } from "@executor/server";
 
 const executionResolver: ResolveExecutionEnvironment = () =>
   Effect.succeed({
@@ -1309,7 +1309,7 @@ describe("local-executor-server", () => {
       assertTrue(callbackResponse.ok);
       const callbackHtml = yield* Effect.promise(() => callbackResponse.text());
       expect(callbackHtml).toContain("OAuth connected");
-      expect(callbackHtml).toContain("executor-v3:oauth-result");
+      expect(callbackHtml).toContain("executor:oauth-result");
 
       const client = yield* createControlPlaneClient({
         baseUrl: server.baseUrl,

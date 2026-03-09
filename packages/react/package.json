@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/react",
+  "name": "@executor/react",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,7 +13,7 @@
   "dependencies": {
     "@effect-atom/atom": "0.5.3",
     "@effect-atom/atom-react": "0.5.0",
-    "@executor-v3/control-plane": "workspace:*",
+    "@executor/control-plane": "workspace:*",
     "effect": "catalog:"
   },
   "peerDependencies": {

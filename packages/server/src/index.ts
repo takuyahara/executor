@@ -15,8 +15,8 @@ import {
   type ResolveExecutionEnvironment,
   type ResolveSecretMaterial,
   type SqlControlPlaneRuntime,
-} from "@executor-v3/control-plane";
-import { createExecutorMcpRequestHandler } from "@executor-v3/executor-mcp";
+} from "@executor/control-plane";
+import { createExecutorMcpRequestHandler } from "@executor/executor-mcp";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";

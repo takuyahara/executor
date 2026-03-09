@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/runtime-local-inproc",
+  "name": "@executor/runtime-local-inproc",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,7 +9,7 @@
     "typecheck": "bunx tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@executor-v3/codemode-core": "workspace:*",
+    "@executor/codemode-core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

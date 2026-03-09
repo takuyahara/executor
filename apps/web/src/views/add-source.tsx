@@ -15,7 +15,7 @@ import {
   useRefreshSecrets,
   useSecrets,
   useStartSourceOAuth,
-} from "@executor-v3/react";
+} from "@executor/react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { LocalMcpInstallCard } from "../components/local-mcp-install-card";
@@ -96,7 +96,7 @@ const authOptions: ReadonlyArray<ConnectFormState["authKind"]> = ["none", "beare
 const probeAuthOptions: ReadonlyArray<ProbeAuthKind> = ["none", "bearer", "basic", "headers"];
 
 const SOURCE_OAUTH_POPUP_RESULT_TIMEOUT_MS = 2 * 60_000;
-const SOURCE_OAUTH_POPUP_RESULT_STORAGE_KEY_PREFIX = "executor-v3:oauth-result:";
+const SOURCE_OAUTH_POPUP_RESULT_STORAGE_KEY_PREFIX = "executor:oauth-result:";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -336,13 +336,13 @@ const buildHttpAuth = (
 
 type SourceOAuthPopupMessage =
   | {
-      type: "executor-v3:oauth-result";
+      type: "executor:oauth-result";
       ok: true;
       sessionId: string;
       auth: CompleteSourceOAuthResult["auth"];
     }
   | {
-      type: "executor-v3:oauth-result";
+      type: "executor:oauth-result";
       ok: false;
       sessionId: string | null;
       error: string;
@@ -378,7 +378,7 @@ const startSourceOAuthPopup = async (input: {
 
   const popup = window.open(
     input.authorizationUrl,
-    "executor-v3-source-oauth",
+    "executor-source-oauth",
     "popup=yes,width=520,height=720",
   );
 
@@ -422,7 +422,7 @@ const startSourceOAuthPopup = async (input: {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       const data = event.data as SourceOAuthPopupMessage | undefined;
-      if (!data || data.type !== "executor-v3:oauth-result") return;
+      if (!data || data.type !== "executor:oauth-result") return;
       if (data.ok && data.sessionId !== input.sessionId) return;
       if (!data.ok && data.sessionId !== null && data.sessionId !== input.sessionId) return;
       settleFromPayload(data);

@@ -6,11 +6,11 @@ import {
 import {
   createSdkMcpConnector,
   discoverMcpToolsFromConnector,
-} from "@executor-v3/codemode-mcp";
+} from "@executor/codemode-mcp";
 import {
   extractOpenApiManifest,
   parseOpenApiDocument,
-} from "@executor-v3/codemode-openapi";
+} from "@executor/codemode-openapi";
 import {
   type SourceAuthInference,
   type SourceDiscoveryResult,
@@ -803,7 +803,7 @@ const tryDetectMcp = (input: {
 
     const oauthProbe = yield* Effect.either(startMcpOAuthAuthorization({
       endpoint: input.normalizedUrl,
-      redirectUrl: "http://127.0.0.1/executor-v3/discovery/oauth/callback",
+      redirectUrl: "http://127.0.0.1/executor/discovery/oauth/callback",
       state: "source-discovery",
     }));
 

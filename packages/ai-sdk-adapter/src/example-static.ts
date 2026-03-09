@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 
-import { createStaticDiscoveryFromTools } from "@executor-v3/codemode-core";
+import { createStaticDiscoveryFromTools } from "@executor/codemode-core";
 
 import { createToolsFromAiSdkTools } from "./index";
 

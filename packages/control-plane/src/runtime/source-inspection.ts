@@ -1,4 +1,4 @@
-import { typeSignatureFromSchemaJson } from "@executor-v3/codemode-core";
+import { typeSignatureFromSchemaJson } from "@executor/codemode-core";
 import {
   buildOpenApiToolPresentation,
   compileOpenApiToolDefinitions,
@@ -6,7 +6,7 @@ import {
   openApiOutputTypeSignatureFromSchemaJson,
   type OpenApiToolDefinition,
   type OpenApiToolManifest,
-} from "@executor-v3/codemode-openapi";
+} from "@executor/codemode-openapi";
 import type {
   Source,
   SourceId,

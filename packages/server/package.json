@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/server",
+  "name": "@executor/server",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "@effect/platform": "catalog:",
-    "@executor-v3/control-plane": "workspace:*",
-    "@executor-v3/executor-mcp": "workspace:*",
+    "@executor/control-plane": "workspace:*",
+    "@executor/executor-mcp": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

@@ -13,7 +13,7 @@ import {
   SecretMaterialIdSchema,
   SourceIdSchema,
 } from "#schema";
-import type { ToolPath } from "@executor-v3/codemode-core";
+import type { ToolPath } from "@executor/codemode-core";
 
 import {
   createSqlControlPlaneRuntime,

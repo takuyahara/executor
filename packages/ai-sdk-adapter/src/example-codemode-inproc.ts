@@ -2,8 +2,8 @@ import { tool } from "ai";
 import * as Effect from "effect/Effect";
 import { z } from "zod";
 
-import { makeToolInvokerFromTools } from "@executor-v3/codemode-core";
-import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
+import { makeToolInvokerFromTools } from "@executor/codemode-core";
+import { makeInProcessExecutor } from "@executor/runtime-local-inproc";
 
 import {
   createCodeTool,

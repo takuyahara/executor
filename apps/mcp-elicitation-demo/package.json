@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/mcp-elicitation-demo",
+  "name": "@executor/mcp-elicitation-demo",
   "private": true,
   "type": "module",
   "exports": {

@@ -18,7 +18,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { Schema } from "effect";
 
-import type { ToolDefinition, ToolInput, ToolMap } from "@executor-v3/codemode-core";
+import type { ToolDefinition, ToolInput, ToolMap } from "@executor/codemode-core";
 
 import { extractOpenApiManifest } from "./openapi-extraction";
 import { createOpenApiToolsFromManifest, createOpenApiToolsFromSpec } from "./openapi-tools";

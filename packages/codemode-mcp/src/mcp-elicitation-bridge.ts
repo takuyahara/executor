@@ -12,7 +12,7 @@ import type {
   ElicitationResponse,
   ToolExecutionContext,
   ToolPath,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 
 const UnknownRecordSchema = Schema.Record({
   key: Schema.String,

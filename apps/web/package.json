@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/web",
+  "name": "@executor/web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,8 +9,8 @@
     "start": "NODE_ENV=production bun src/server.ts"
   },
   "dependencies": {
-    "@executor-v3/react": "workspace:*",
-    "@executor-v3/server": "workspace:*",
+    "@executor/react": "workspace:*",
+    "@executor/server": "workspace:*",
     "@streamdown/code": "^1.0.3",
     "@tanstack/react-router": "^1.132.7",
     "class-variance-authority": "^0.7.1",

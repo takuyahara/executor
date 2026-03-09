@@ -3,7 +3,7 @@ import type {
   OnElicitation,
   ToolCatalog,
   ToolInvoker,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 import type { AccountId, ExecutionId, WorkspaceId } from "#schema";
 import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";

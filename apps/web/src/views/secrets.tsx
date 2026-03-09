@@ -8,7 +8,7 @@ import {
   useUpdateSecret,
   useDeleteSecret,
   useRefreshSecrets,
-} from "@executor-v3/react";
+} from "@executor/react";
 import { LoadableBlock } from "../components/loadable";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";

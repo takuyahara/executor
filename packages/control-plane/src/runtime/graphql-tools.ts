@@ -8,7 +8,7 @@ import {
   type ToolMetadata,
   type ToolPath,
   typeSignatureFromSchemaJson,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 import * as Effect from "effect/Effect";
 import {
   buildClientSchema,

@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Runtime from "effect/Runtime";
 import * as Scope from "effect/Scope";
-import { createLocalExecutorRequestHandler } from "@executor-v3/server";
+import { createLocalExecutorRequestHandler } from "@executor/server";
 
 const MAX_LOGGED_ERROR_BODY_LENGTH = 4_000;
 

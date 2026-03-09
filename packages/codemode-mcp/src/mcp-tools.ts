@@ -17,7 +17,7 @@ import {
   type ToolMetadata,
   type ToolPath,
   unknownInputSchema,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 
 import {
   createInteractionId,

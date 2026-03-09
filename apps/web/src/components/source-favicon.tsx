@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Source } from "@executor-v3/react";
+import type { Source } from "@executor/react";
 import { getSourceFaviconUrl } from "../lib/source-favicon";
 import { cn } from "../lib/utils";
 

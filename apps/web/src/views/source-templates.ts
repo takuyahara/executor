@@ -1,4 +1,4 @@
-import type { Source } from "@executor-v3/react";
+import type { Source } from "@executor/react";
 
 type SourceTemplateBase = {
   id: string;

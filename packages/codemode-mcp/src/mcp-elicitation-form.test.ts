@@ -5,8 +5,8 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { z } from "zod/v4";
 
-import { makeToolInvokerFromTools } from "@executor-v3/codemode-core";
-import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
+import { makeToolInvokerFromTools } from "@executor/codemode-core";
+import { makeInProcessExecutor } from "@executor/runtime-local-inproc";
 
 import {
   createMcpConnectorFromClient,

@@ -19,7 +19,7 @@ import {
 } from "./api";
 import { withWorkspaceRequestActor } from "../http-auth";
 
-const OAUTH_RESULT_STORAGE_KEY_PREFIX = "executor-v3:oauth-result:";
+const OAUTH_RESULT_STORAGE_KEY_PREFIX = "executor:oauth-result:";
 
 const requireWriteSources = (workspaceId: WorkspaceId) =>
   requirePermission({
@@ -119,13 +119,13 @@ const sourceOAuthPopupResultDocument = (input: {
   sessionId: string;
   payload:
     | {
-        type: "executor-v3:oauth-result";
+        type: "executor:oauth-result";
         ok: true;
         sessionId: string;
         auth: CompleteSourceOAuthResult["auth"];
       }
     | {
-        type: "executor-v3:oauth-result";
+        type: "executor:oauth-result";
         ok: false;
         sessionId: string | null;
         error: string;
@@ -293,7 +293,7 @@ export const ControlPlaneOAuthLive = HttpApiBuilder.group(
                 status: "connected",
                 sessionId: completed.right.sessionId,
                 payload: {
-                  type: "executor-v3:oauth-result",
+                  type: "executor:oauth-result",
                   ok: true,
                   sessionId: completed.right.sessionId,
                   auth: completed.right.auth,
@@ -313,7 +313,7 @@ export const ControlPlaneOAuthLive = HttpApiBuilder.group(
               status: "failed",
               sessionId: "failed",
               payload: {
-                type: "executor-v3:oauth-result",
+                type: "executor:oauth-result",
                 ok: false,
                 sessionId: null,
                 error: message,

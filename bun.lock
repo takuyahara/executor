@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "executor-v3",
+      "name": "executor",
       "devDependencies": {
         "knip": "^5.85.0",
         "turbo": "^2.5.6",
@@ -12,22 +12,24 @@
     },
     "apps/executor": {
       "name": "executor",
-      "version": "1.1.0",
+      "version": "1.1.8",
       "bin": {
-        "executor": "./bin/executor",
+        "executor": "bin/executor",
       },
       "dependencies": {
         "@effect/cli": "catalog:",
         "@effect/platform": "catalog:",
         "@effect/platform-node": "catalog:",
-        "@executor-v3/codemode-core": "workspace:*",
-        "@executor-v3/control-plane": "workspace:*",
-        "@executor-v3/server": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
+        "@executor/control-plane": "workspace:*",
+        "@executor/executor-mcp": "workspace:*",
+        "@executor/server": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
-        "@executor-v3/mcp-elicitation-demo": "workspace:*",
+        "@executor/mcp-elicitation-demo": "workspace:*",
+        "@executor/runtime-local-inproc": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.26.0",
         "@types/node": "catalog:",
         "bun-types": "catalog:",
@@ -36,7 +38,7 @@
       },
     },
     "apps/mcp-elicitation-demo": {
-      "name": "@executor-v3/mcp-elicitation-demo",
+      "name": "@executor/mcp-elicitation-demo",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.26.0",
         "zod": "catalog:",
@@ -47,10 +49,10 @@
       },
     },
     "apps/web": {
-      "name": "@executor-v3/web",
+      "name": "@executor/web",
       "dependencies": {
-        "@executor-v3/react": "workspace:*",
-        "@executor-v3/server": "workspace:*",
+        "@executor/react": "workspace:*",
+        "@executor/server": "workspace:*",
         "@streamdown/code": "^1.0.3",
         "@tanstack/react-router": "^1.132.7",
         "class-variance-authority": "^0.7.1",
@@ -78,10 +80,10 @@
       },
     },
     "packages/ai-sdk-adapter": {
-      "name": "@executor-v3/ai-sdk-adapter",
+      "name": "@executor/ai-sdk-adapter",
       "dependencies": {
-        "@executor-v3/codemode-core": "workspace:*",
-        "@executor-v3/runtime-local-inproc": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
+        "@executor/runtime-local-inproc": "workspace:*",
         "ai": "^6.0.0",
         "effect": "catalog:",
         "zod": "catalog:",
@@ -92,7 +94,7 @@
       },
     },
     "packages/codemode-core": {
-      "name": "@executor-v3/codemode-core",
+      "name": "@executor/codemode-core",
       "dependencies": {
         "@standard-schema/spec": "^1.0.0",
         "ajv": "^8.17.1",
@@ -106,10 +108,10 @@
       },
     },
     "packages/codemode-mcp": {
-      "name": "@executor-v3/codemode-mcp",
+      "name": "@executor/codemode-mcp",
       "dependencies": {
-        "@executor-v3/codemode-core": "workspace:*",
-        "@executor-v3/runtime-local-inproc": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
+        "@executor/runtime-local-inproc": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.26.0",
         "effect": "catalog:",
       },
@@ -122,10 +124,10 @@
       },
     },
     "packages/codemode-openapi": {
-      "name": "@executor-v3/codemode-openapi",
+      "name": "@executor/codemode-openapi",
       "dependencies": {
         "@effect/platform": "catalog:",
-        "@executor-v3/codemode-core": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
         "effect": "catalog:",
         "yaml": "^2.8.1",
       },
@@ -138,14 +140,14 @@
       },
     },
     "packages/control-plane": {
-      "name": "@executor-v3/control-plane",
+      "name": "@executor/control-plane",
       "dependencies": {
         "@effect/platform": "catalog:",
         "@electric-sql/pglite": "^0.3.12",
-        "@executor-v3/codemode-core": "workspace:*",
-        "@executor-v3/codemode-mcp": "workspace:*",
-        "@executor-v3/codemode-openapi": "workspace:*",
-        "@executor-v3/runtime-deno-subprocess": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
+        "@executor/codemode-mcp": "workspace:*",
+        "@executor/codemode-openapi": "workspace:*",
+        "@executor/runtime-deno-subprocess": "workspace:*",
         "drizzle-orm": "1.0.0-beta.15-859cf75",
         "effect": "catalog:",
         "graphql": "^16.12.0",
@@ -164,9 +166,9 @@
       },
     },
     "packages/executor-mcp": {
-      "name": "@executor-v3/executor-mcp",
+      "name": "@executor/executor-mcp",
       "dependencies": {
-        "@executor-v3/control-plane": "workspace:*",
+        "@executor/control-plane": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.26.0",
         "effect": "catalog:",
         "zod": "catalog:",
@@ -179,14 +181,14 @@
       },
     },
     "packages/kitchen-sink": {
-      "name": "@executor-v3/kitchen-sink",
+      "name": "@executor/kitchen-sink",
       "dependencies": {
         "@effect/platform": "catalog:",
-        "@executor-v3/ai-sdk-adapter": "workspace:*",
-        "@executor-v3/codemode-core": "workspace:*",
-        "@executor-v3/codemode-openapi": "workspace:*",
-        "@executor-v3/control-plane": "workspace:*",
-        "@executor-v3/runtime-local-inproc": "workspace:*",
+        "@executor/ai-sdk-adapter": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
+        "@executor/codemode-openapi": "workspace:*",
+        "@executor/control-plane": "workspace:*",
+        "@executor/runtime-local-inproc": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -197,11 +199,11 @@
       },
     },
     "packages/react": {
-      "name": "@executor-v3/react",
+      "name": "@executor/react",
       "dependencies": {
         "@effect-atom/atom": "0.5.3",
         "@effect-atom/atom-react": "0.5.0",
-        "@executor-v3/control-plane": "workspace:*",
+        "@executor/control-plane": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -222,9 +224,9 @@
       },
     },
     "packages/runtime-deno-subprocess": {
-      "name": "@executor-v3/runtime-deno-subprocess",
+      "name": "@executor/runtime-deno-subprocess",
       "dependencies": {
-        "@executor-v3/codemode-core": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -235,9 +237,9 @@
       },
     },
     "packages/runtime-local-inproc": {
-      "name": "@executor-v3/runtime-local-inproc",
+      "name": "@executor/runtime-local-inproc",
       "dependencies": {
-        "@executor-v3/codemode-core": "workspace:*",
+        "@executor/codemode-core": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -246,11 +248,11 @@
       },
     },
     "packages/server": {
-      "name": "@executor-v3/server",
+      "name": "@executor/server",
       "dependencies": {
         "@effect/platform": "catalog:",
-        "@executor-v3/control-plane": "workspace:*",
-        "@executor-v3/executor-mcp": "workspace:*",
+        "@executor/control-plane": "workspace:*",
+        "@executor/executor-mcp": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -455,31 +457,31 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
 
-    "@executor-v3/ai-sdk-adapter": ["@executor-v3/ai-sdk-adapter@workspace:packages/ai-sdk-adapter"],
+    "@executor/ai-sdk-adapter": ["@executor/ai-sdk-adapter@workspace:packages/ai-sdk-adapter"],
 
-    "@executor-v3/codemode-core": ["@executor-v3/codemode-core@workspace:packages/codemode-core"],
+    "@executor/codemode-core": ["@executor/codemode-core@workspace:packages/codemode-core"],
 
-    "@executor-v3/codemode-mcp": ["@executor-v3/codemode-mcp@workspace:packages/codemode-mcp"],
+    "@executor/codemode-mcp": ["@executor/codemode-mcp@workspace:packages/codemode-mcp"],
 
-    "@executor-v3/codemode-openapi": ["@executor-v3/codemode-openapi@workspace:packages/codemode-openapi"],
+    "@executor/codemode-openapi": ["@executor/codemode-openapi@workspace:packages/codemode-openapi"],
 
-    "@executor-v3/control-plane": ["@executor-v3/control-plane@workspace:packages/control-plane"],
+    "@executor/control-plane": ["@executor/control-plane@workspace:packages/control-plane"],
 
-    "@executor-v3/executor-mcp": ["@executor-v3/executor-mcp@workspace:packages/executor-mcp"],
+    "@executor/executor-mcp": ["@executor/executor-mcp@workspace:packages/executor-mcp"],
 
-    "@executor-v3/kitchen-sink": ["@executor-v3/kitchen-sink@workspace:packages/kitchen-sink"],
+    "@executor/kitchen-sink": ["@executor/kitchen-sink@workspace:packages/kitchen-sink"],
 
-    "@executor-v3/mcp-elicitation-demo": ["@executor-v3/mcp-elicitation-demo@workspace:apps/mcp-elicitation-demo"],
+    "@executor/mcp-elicitation-demo": ["@executor/mcp-elicitation-demo@workspace:apps/mcp-elicitation-demo"],
 
-    "@executor-v3/react": ["@executor-v3/react@workspace:packages/react"],
+    "@executor/react": ["@executor/react@workspace:packages/react"],
 
-    "@executor-v3/runtime-deno-subprocess": ["@executor-v3/runtime-deno-subprocess@workspace:packages/runtime-deno-subprocess"],
+    "@executor/runtime-deno-subprocess": ["@executor/runtime-deno-subprocess@workspace:packages/runtime-deno-subprocess"],
 
-    "@executor-v3/runtime-local-inproc": ["@executor-v3/runtime-local-inproc@workspace:packages/runtime-local-inproc"],
+    "@executor/runtime-local-inproc": ["@executor/runtime-local-inproc@workspace:packages/runtime-local-inproc"],
 
-    "@executor-v3/server": ["@executor-v3/server@workspace:packages/server"],
+    "@executor/server": ["@executor/server@workspace:packages/server"],
 
-    "@executor-v3/web": ["@executor-v3/web@workspace:apps/web"],
+    "@executor/web": ["@executor/web@workspace:apps/web"],
 
     "@hono/node-server": ["@hono/node-server@1.19.11", "", { "peerDependencies": { "hono": "^4" } }, "sha512-dr8/3zEaB+p0D2n/IUrlPF1HZm586qgJNXK1a9fhg/PzdtkK7Ksd5l312tJX2yBuALqDYBlG20QEbayqPyxn+g=="],
 

@@ -16,7 +16,7 @@ At runtime, `executor` behaves like one local product:
 - a local web UI for connecting sources, inspecting tools, and managing secrets
 - an MCP endpoint for hosts that want to drive `executor` through MCP
 
-The current codebase is the v3 rewrite. Older experiments live in `legacy/` and `legacy2/`, but the active architecture is the one in `apps/` and `packages/`.
+The current codebase lives in `apps/` and `packages/`. Older experiments stay in `legacy/` and `legacy2/`.
 
 ## Attribution
 

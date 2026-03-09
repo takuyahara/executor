@@ -1,7 +1,7 @@
 import type {
   ElicitationResponse,
   OnElicitation,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 import { type SqlControlPlaneRows } from "#persistence";
 import {
   ExecutionInteractionIdSchema,

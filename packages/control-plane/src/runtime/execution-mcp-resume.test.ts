@@ -10,9 +10,9 @@ import { assertTrue } from "@effect/vitest/utils";
 import * as Effect from "effect/Effect";
 import { z } from "zod/v4";
 
-import { makeToolInvokerFromTools } from "@executor-v3/codemode-core";
-import { discoverMcpToolsFromConnector } from "@executor-v3/codemode-mcp";
-import { makeDenoSubprocessExecutor } from "@executor-v3/runtime-deno-subprocess";
+import { makeToolInvokerFromTools } from "@executor/codemode-core";
+import { discoverMcpToolsFromConnector } from "@executor/codemode-mcp";
+import { makeDenoSubprocessExecutor } from "@executor/runtime-deno-subprocess";
 
 import {
   createSqlControlPlaneRuntime,

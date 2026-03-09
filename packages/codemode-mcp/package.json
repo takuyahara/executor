@@ -1,5 +1,5 @@
 {
-  "name": "@executor-v3/codemode-mcp",
+  "name": "@executor/codemode-mcp",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,8 +11,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@executor-v3/codemode-core": "workspace:*",
-    "@executor-v3/runtime-local-inproc": "workspace:*",
+    "@executor/codemode-core": "workspace:*",
+    "@executor/runtime-local-inproc": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "effect": "catalog:"
   },

@@ -7,8 +7,8 @@ import {
   createSdkMcpConnector,
   discoverMcpToolsFromConnector,
   type McpToolManifestEntry,
-} from "@executor-v3/codemode-mcp";
-import { extractOpenApiManifest } from "@executor-v3/codemode-openapi";
+} from "@executor/codemode-mcp";
+import { extractOpenApiManifest } from "@executor/codemode-openapi";
 import type { SqlControlPlaneRows } from "#persistence";
 import {
   type SecretRef,

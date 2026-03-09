@@ -1,7 +1,7 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { ToolPath } from "@executor-v3/codemode-core";
+import type { ToolPath } from "@executor/codemode-core";
 
 export type McpToolManifestEntry = {
   toolId: string;

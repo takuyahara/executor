@@ -5,7 +5,7 @@ import type {
   CodeExecutor,
   ExecuteResult,
   ToolInvoker,
-} from "@executor-v3/codemode-core";
+} from "@executor/codemode-core";
 import * as Effect from "effect/Effect";
 
 import {

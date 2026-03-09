@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   EXECUTOR_MIGRATIONS_DIR_ENV,
   EXECUTOR_WEB_ASSETS_DIR_ENV,
-} from "@executor-v3/server";
+} from "@executor/server";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 
