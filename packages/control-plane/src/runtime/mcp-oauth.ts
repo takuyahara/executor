@@ -3,37 +3,20 @@ import {
   type OAuthClientProvider,
   type OAuthDiscoveryState,
 } from "@modelcontextprotocol/sdk/client/auth.js";
+import type { JsonObject } from "#schema";
 import type {
   OAuthClientInformationMixed,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import * as Effect from "effect/Effect";
 
-const serializeJson = (value: unknown): string | null => {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  return JSON.stringify(value);
-};
-
-const decodeJson = <A>(input: {
-  value: string | null;
-  fallback: A;
-}): A => {
-  if (input.value === null) {
-    return input.fallback;
-  }
-
-  try {
-    return JSON.parse(input.value) as A;
-  } catch {
-    return input.fallback;
-  }
-};
-
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
+
+const toJsonObject = (value: unknown): JsonObject | null =>
+  value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonObject
+    : null;
 
 const createClientMetadata = (redirectUrl: string) => ({
   redirect_uris: [redirectUrl],
@@ -48,9 +31,9 @@ export type McpOAuthStartResult = {
   codeVerifier: string;
   resourceMetadataUrl: string | null;
   authorizationServerUrl: string | null;
-  resourceMetadataJson: string | null;
-  authorizationServerMetadataJson: string | null;
-  clientInformationJson: string | null;
+  resourceMetadata: JsonObject | null;
+  authorizationServerMetadata: JsonObject | null;
+  clientInformation: JsonObject | null;
 };
 
 export type McpOAuthSession = {
@@ -59,18 +42,18 @@ export type McpOAuthSession = {
   codeVerifier: string;
   resourceMetadataUrl: string | null;
   authorizationServerUrl: string | null;
-  resourceMetadataJson: string | null;
-  authorizationServerMetadataJson: string | null;
-  clientInformationJson: string | null;
+  resourceMetadata: JsonObject | null;
+  authorizationServerMetadata: JsonObject | null;
+  clientInformation: JsonObject | null;
 };
 
 export type McpOAuthExchangeResult = {
   tokens: OAuthTokens;
   resourceMetadataUrl: string | null;
   authorizationServerUrl: string | null;
-  resourceMetadataJson: string | null;
-  authorizationServerMetadataJson: string | null;
-  clientInformationJson: string | null;
+  resourceMetadata: JsonObject | null;
+  authorizationServerMetadata: JsonObject | null;
+  clientInformation: JsonObject | null;
 };
 
 export const startMcpOAuthAuthorization = (input: {
@@ -138,11 +121,11 @@ export const startMcpOAuthAuthorization = (input: {
       codeVerifier: captured.codeVerifier,
       resourceMetadataUrl: captured.discoveryState?.resourceMetadataUrl ?? null,
       authorizationServerUrl: captured.discoveryState?.authorizationServerUrl ?? null,
-      resourceMetadataJson: serializeJson(captured.discoveryState?.resourceMetadata),
-      authorizationServerMetadataJson: serializeJson(
+      resourceMetadata: toJsonObject(captured.discoveryState?.resourceMetadata),
+      authorizationServerMetadata: toJsonObject(
         captured.discoveryState?.authorizationServerMetadata,
       ),
-      clientInformationJson: serializeJson(captured.clientInformation),
+      clientInformation: toJsonObject(captured.clientInformation),
     } satisfies McpOAuthStartResult;
   });
 
@@ -160,19 +143,11 @@ export const exchangeMcpOAuthAuthorizationCode = (input: {
         authorizationServerUrl:
           input.session.authorizationServerUrl ?? new URL("/", input.session.endpoint).toString(),
         resourceMetadataUrl: input.session.resourceMetadataUrl ?? undefined,
-        resourceMetadata: decodeJson({
-          value: input.session.resourceMetadataJson,
-          fallback: undefined,
-        }),
-        authorizationServerMetadata: decodeJson({
-          value: input.session.authorizationServerMetadataJson,
-          fallback: undefined,
-        }),
+        resourceMetadata: input.session.resourceMetadata as OAuthDiscoveryState["resourceMetadata"],
+        authorizationServerMetadata:
+          input.session.authorizationServerMetadata as OAuthDiscoveryState["authorizationServerMetadata"],
       },
-      clientInformation: decodeJson<OAuthClientInformationMixed | undefined>({
-        value: input.session.clientInformationJson,
-        fallback: undefined,
-      }),
+      clientInformation: input.session.clientInformation as OAuthClientInformationMixed | undefined,
     };
 
     const provider: OAuthClientProvider = {
@@ -220,10 +195,10 @@ export const exchangeMcpOAuthAuthorizationCode = (input: {
       tokens: captured.tokens,
       resourceMetadataUrl: captured.discoveryState?.resourceMetadataUrl ?? null,
       authorizationServerUrl: captured.discoveryState?.authorizationServerUrl ?? null,
-      resourceMetadataJson: serializeJson(captured.discoveryState?.resourceMetadata),
-      authorizationServerMetadataJson: serializeJson(
+      resourceMetadata: toJsonObject(captured.discoveryState?.resourceMetadata),
+      authorizationServerMetadata: toJsonObject(
         captured.discoveryState?.authorizationServerMetadata,
       ),
-      clientInformationJson: serializeJson(captured.clientInformation),
+      clientInformation: toJsonObject(captured.clientInformation),
     } satisfies McpOAuthExchangeResult;
   });
