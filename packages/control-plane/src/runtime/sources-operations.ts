@@ -2,7 +2,9 @@ import type {
   CreateSourcePayload,
   UpdateSourcePayload,
 } from "../api/sources/api";
+import { Actor } from "#domain";
 import {
+  type AccountId,
   SourceIdSchema,
   type Source,
   type SourceId,
@@ -51,6 +53,7 @@ const shouldAutoProbeSource = (source: Source): boolean =>
 const syncArtifactsForSource = (input: {
   store: ControlPlaneStoreShape;
   source: Source;
+  actorAccountId: AccountId;
   operation:
     | typeof sourceOps.create
     | typeof sourceOps.update;
@@ -95,7 +98,9 @@ const syncArtifactsForSource = (input: {
             );
             yield* mapPersistenceError(
               input.operation.child("source_connected"),
-              persistSource(input.store, connectedSource),
+              persistSource(input.store, connectedSource, {
+                actorAccountId: input.actorAccountId,
+              }),
             );
             return connectedSource;
           }
@@ -122,7 +127,9 @@ const syncArtifactsForSource = (input: {
 
             yield* mapPersistenceError(
               input.operation.child("source_error"),
-              persistSource(input.store, erroredSource),
+              persistSource(input.store, erroredSource, {
+                actorAccountId: input.actorAccountId,
+              }),
             );
           }
 
@@ -135,11 +142,15 @@ const syncArtifactsForSource = (input: {
 
 export const listSources = (workspaceId: WorkspaceId) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
-    loadSourcesInWorkspace(store, workspaceId).pipe(
-      Effect.mapError((error) =>
-        sourceOps.list.unknownStorage(
-          error,
-          "Failed projecting stored sources",
+    Effect.flatMap(Actor, (actor) =>
+      loadSourcesInWorkspace(store, workspaceId, {
+        actorAccountId: actor.principal.accountId,
+      }).pipe(
+        Effect.mapError((error) =>
+          sourceOps.list.unknownStorage(
+            error,
+            "Failed projecting stored sources",
+          ),
         ),
       ),
     ));
@@ -149,53 +160,61 @@ export const createSource = (input: {
   payload: CreateSourcePayload;
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
-    Effect.gen(function* () {
-      const now = Date.now();
+    Effect.flatMap(Actor, (actor) =>
+      Effect.gen(function* () {
+        const now = Date.now();
 
-      const source = yield* createSourceFromPayload({
-        workspaceId: input.workspaceId,
-        sourceId: SourceIdSchema.make(`src_${crypto.randomUUID()}`),
-        payload: input.payload,
-        now,
-      }).pipe(
-        Effect.mapError((cause) =>
-          sourceOps.create.badRequest(
-            "Invalid source definition",
-            cause instanceof Error ? cause.message : String(cause),
+        const source = yield* createSourceFromPayload({
+          workspaceId: input.workspaceId,
+          sourceId: SourceIdSchema.make(`src_${crypto.randomUUID()}`),
+          payload: input.payload,
+          now,
+        }).pipe(
+          Effect.mapError((cause) =>
+            sourceOps.create.badRequest(
+              "Invalid source definition",
+              cause instanceof Error ? cause.message : String(cause),
+            ),
           ),
-        ),
-      );
+        );
 
-      yield* mapPersistenceError(
-        sourceOps.create.child("persist"),
-        persistSource(store, source),
-      );
+        yield* mapPersistenceError(
+          sourceOps.create.child("persist"),
+          persistSource(store, source, {
+            actorAccountId: actor.principal.accountId,
+          }),
+        );
 
-      return yield* syncArtifactsForSource({
-        store,
-        source,
-        operation: sourceOps.create,
-      });
-    }));
+        return yield* syncArtifactsForSource({
+          store,
+          source,
+          actorAccountId: actor.principal.accountId,
+          operation: sourceOps.create,
+        });
+      }),
+    ));
 
 export const getSource = (input: {
   workspaceId: WorkspaceId;
   sourceId: SourceId;
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
-    loadSourceById(store, {
-      workspaceId: input.workspaceId,
-      sourceId: input.sourceId,
-    }).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error && cause.message.startsWith("Source not found:")
-          ? sourceOps.get.notFound(
-              "Source not found",
-              `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
-            )
-          : sourceOps.get.unknownStorage(
-              cause,
-              "Failed projecting stored source",
+    Effect.flatMap(Actor, (actor) =>
+      loadSourceById(store, {
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId,
+        actorAccountId: actor.principal.accountId,
+      }).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error && cause.message.startsWith("Source not found:")
+            ? sourceOps.get.notFound(
+                "Source not found",
+                `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
+              )
+            : sourceOps.get.unknownStorage(
+                cause,
+                "Failed projecting stored source",
+              ),
             ),
       ),
     ));
@@ -206,48 +225,54 @@ export const updateSource = (input: {
   payload: UpdateSourcePayload;
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
-    Effect.gen(function* () {
-      const existingSource = yield* loadSourceById(store, {
-        workspaceId: input.workspaceId,
-        sourceId: input.sourceId,
-      }).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error && cause.message.startsWith("Source not found:")
-            ? sourceOps.update.notFound(
-                "Source not found",
-                `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
-              )
-            : sourceOps.update.unknownStorage(
-                cause,
-                "Failed projecting stored source",
-              ),
-        ),
-      );
-
-      const updatedSource = yield* updateSourceFromPayload({
-        source: existingSource,
-        payload: input.payload,
-        now: Date.now(),
-      }).pipe(
-        Effect.mapError((cause) =>
-          sourceOps.update.badRequest(
-            "Invalid source definition",
-            cause instanceof Error ? cause.message : String(cause),
+    Effect.flatMap(Actor, (actor) =>
+      Effect.gen(function* () {
+        const existingSource = yield* loadSourceById(store, {
+          workspaceId: input.workspaceId,
+          sourceId: input.sourceId,
+          actorAccountId: actor.principal.accountId,
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error && cause.message.startsWith("Source not found:")
+              ? sourceOps.update.notFound(
+                  "Source not found",
+                  `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
+                )
+              : sourceOps.update.unknownStorage(
+                  cause,
+                  "Failed projecting stored source",
+                ),
           ),
-        ),
-      );
+        );
 
-      yield* mapPersistenceError(
-        sourceOps.update.child("persist"),
-        persistSource(store, updatedSource),
-      );
+        const updatedSource = yield* updateSourceFromPayload({
+          source: existingSource,
+          payload: input.payload,
+          now: Date.now(),
+        }).pipe(
+          Effect.mapError((cause) =>
+            sourceOps.update.badRequest(
+              "Invalid source definition",
+              cause instanceof Error ? cause.message : String(cause),
+            ),
+          ),
+        );
 
-      return yield* syncArtifactsForSource({
-        store,
-        source: updatedSource,
-        operation: sourceOps.update,
-      });
-    }));
+        yield* mapPersistenceError(
+          sourceOps.update.child("persist"),
+          persistSource(store, updatedSource, {
+            actorAccountId: actor.principal.accountId,
+          }),
+        );
+
+        return yield* syncArtifactsForSource({
+          store,
+          source: updatedSource,
+          actorAccountId: actor.principal.accountId,
+          operation: sourceOps.update,
+        });
+      }),
+    ));
 
 export const removeSource = (input: {
   workspaceId: WorkspaceId;
@@ -255,10 +280,6 @@ export const removeSource = (input: {
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
     Effect.gen(function* () {
-      yield* sourceOps.remove.child("artifacts").mapStorage(
-        store.toolArtifacts.removeByWorkspaceAndSourceId(input.workspaceId, input.sourceId),
-      );
-
       const removed = yield* sourceOps.remove.mapStorage(
         removeSourceById(store, {
           workspaceId: input.workspaceId,

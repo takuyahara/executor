@@ -8,6 +8,7 @@ import {
   type ToolPath,
 } from "@executor/codemode-core";
 import {
+  type AccountId,
   ExecutionIdSchema,
   ExecutionInteractionIdSchema,
   SourceSchema,
@@ -235,6 +236,7 @@ const promptForSourceCredentialSelection = (input: {
 
 export const createExecutorToolMap = (input: {
   workspaceId: WorkspaceId;
+  accountId: AccountId;
   sourceAuthService: RuntimeSourceAuthService;
 }): ToolMap => ({
   "executor.sources.add": toTool({
@@ -274,6 +276,7 @@ export const createExecutorToolMap = (input: {
             ? {
               ...args,
               workspaceId: input.workspaceId,
+              actorAccountId: input.accountId,
               executionId,
               interactionId,
             }
@@ -283,6 +286,7 @@ export const createExecutorToolMap = (input: {
               name: args.name ?? null,
               namespace: args.namespace ?? null,
               workspaceId: input.workspaceId,
+              actorAccountId: input.accountId,
               executionId,
               interactionId,
             };
@@ -389,6 +393,7 @@ export const createExecutorToolMap = (input: {
           input.sourceAuthService.getSourceById({
             workspaceId: input.workspaceId,
             sourceId: result.source.id,
+            actorAccountId: input.accountId,
           }),
         );
       },

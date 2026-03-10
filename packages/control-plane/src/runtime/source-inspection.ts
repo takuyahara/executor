@@ -2,7 +2,6 @@ import { typeSignatureFromSchemaJson } from "@executor/codemode-core";
 import {
   buildOpenApiToolPresentation,
   compileOpenApiToolDefinitions,
-  extractOpenApiManifest,
   openApiOutputTypeSignatureFromSchemaJson,
   type OpenApiToolDefinition,
   type OpenApiToolManifest,
@@ -16,7 +15,6 @@ import type {
   SourceInspectionDiscoverResultItem,
   SourceInspectionToolDetail,
   SourceInspectionToolSummary,
-  StoredSourceRecord,
   WorkspaceId,
 } from "#schema";
 import {
@@ -31,12 +29,16 @@ import { formatJsonIfNeeded, formatWithPrettier } from "./prettier-format";
 import {
   buildGraphqlToolPresentation,
   compileGraphqlToolDefinitions,
-  extractGraphqlManifest,
   type GraphqlToolDefinition,
   type GraphqlToolManifest,
 } from "./graphql-tools";
-import { loadSourceById as loadStoredSourceById } from "./source-store";
-import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
+import {
+  loadSourceRecipe,
+  recipePrimaryDocumentText,
+  recipeToolPath,
+  type LoadedSourceRecipe,
+} from "./source-recipes-runtime";
+import { ControlPlaneStore } from "./store";
 import { namespaceFromSourceName } from "./tool-artifacts";
 
 const sourceInspectOps = {
@@ -133,7 +135,18 @@ const formatInspectionToolRecord = (record: InspectionToolRecord) =>
     } satisfies InspectionToolRecord;
   });
 
-const loadSourceRecord = (input: {
+const loadStoredDocumentText = (recipe: LoadedSourceRecipe) => {
+  const rawDocumentText = recipePrimaryDocumentText({
+    source: recipe.source,
+    documents: recipe.documents,
+  });
+
+  return rawDocumentText === null
+    ? Effect.succeed<string | null>(null)
+    : Effect.promise(() => formatJsonIfNeeded(rawDocumentText));
+};
+
+const loadSourceRecipeRecord = (input: {
   workspaceId: WorkspaceId;
   sourceId: SourceId;
 }) =>
@@ -151,78 +164,69 @@ const loadSourceRecord = (input: {
         );
       }
 
-      const source = yield* loadStoredSourceById(store, {
+      const recipe = yield* loadSourceRecipe({
+        rows: store,
         workspaceId: input.workspaceId,
         sourceId: input.sourceId,
       }).pipe(
         Effect.mapError((cause) =>
           sourceInspectOps.bundle.unknownStorage(
             cause,
-            "Failed projecting stored source",
+            "Failed loading source recipe",
           ),
         ),
       );
 
       return {
         store,
-        source,
         sourceRecord: sourceRecord.value,
+        recipe,
       };
     }),
   );
 
-const persistedToolSummaryFromArtifact = (input: {
+const persistedToolSummaryFromRecipeOperation = (input: {
   source: Source;
-  artifact: {
-    path: string;
-    toolId: string;
-    title: string | null;
-    description: string | null;
-    providerKind: string;
-    openApiRawToolId: string | null;
-    openApiOperationId: string | null;
-    openApiTagsJson: string | null;
-    openApiMethod: SourceInspectionToolSummary["method"];
-    openApiPathTemplate: string | null;
-    inputSchemaJson: string | null;
-    outputSchemaJson: string | null;
-  };
+  operation: LoadedSourceRecipe["operations"][number];
 }): SourceInspectionToolSummary => ({
-  path: input.artifact.path,
+  path: recipeToolPath({
+    source: input.source,
+    operation: input.operation,
+  }),
   sourceKey: input.source.id,
-  ...(input.artifact.title ? { title: input.artifact.title } : {}),
-  ...(input.artifact.description ? { description: input.artifact.description } : {}),
-  providerKind: input.artifact.providerKind,
-  toolId: input.artifact.toolId,
-  rawToolId: input.artifact.openApiRawToolId,
-  operationId: input.artifact.openApiOperationId,
+  ...(input.operation.title ? { title: input.operation.title } : {}),
+  ...(input.operation.description ? { description: input.operation.description } : {}),
+  providerKind: input.operation.providerKind,
+  toolId: input.operation.toolId,
+  rawToolId: input.operation.openApiRawToolId,
+  operationId: input.operation.graphqlOperationName ?? input.operation.openApiOperationId,
   group: null,
   leaf: null,
-  tags: input.artifact.openApiTagsJson
-    ? ((JSON.parse(input.artifact.openApiTagsJson) as Array<string>) ?? [])
+  tags: input.operation.openApiTagsJson
+    ? ((JSON.parse(input.operation.openApiTagsJson) as Array<string>) ?? [])
     : [],
-  method: input.artifact.openApiMethod,
-  pathTemplate: input.artifact.openApiPathTemplate,
-  ...(input.artifact.inputSchemaJson
+  method: input.operation.openApiMethod,
+  pathTemplate: input.operation.openApiPathTemplate,
+  ...(input.operation.inputSchemaJson
     ? {
         inputType: typeSignatureFromSchemaJson(
-          input.artifact.inputSchemaJson,
+          input.operation.inputSchemaJson,
           "unknown",
           Infinity,
         ),
       }
     : {}),
-  ...(input.artifact.providerKind === "openapi"
+  ...(input.operation.providerKind === "openapi"
     ? {
         outputType: openApiOutputTypeSignatureFromSchemaJson(
-          input.artifact.outputSchemaJson ?? undefined,
+          input.operation.outputSchemaJson ?? undefined,
           Infinity,
         ),
       }
-    : input.artifact.outputSchemaJson
+    : input.operation.outputSchemaJson
       ? {
           outputType: typeSignatureFromSchemaJson(
-            input.artifact.outputSchemaJson,
+            input.operation.outputSchemaJson,
             "unknown",
             Infinity,
           ),
@@ -323,21 +327,15 @@ const graphqlToolRecord = (input: {
 };
 
 const loadPersistedInspection = (input: {
-  store: ControlPlaneStoreShape;
-  source: Source;
+  recipe: LoadedSourceRecipe;
 }): Effect.Effect<ResolvedSourceInspection, Error, never> =>
   Effect.gen(function* () {
-    const artifacts = yield* sourceInspectOps.bundle.child("artifacts").mapStorage(
-      input.store.toolArtifacts.listByWorkspaceId(input.source.workspaceId, {
-        sourceId: input.source.id,
-        limit: 1000,
-      }),
-    );
-    const namespace = input.source.namespace ?? namespaceFromSourceName(input.source.name);
-    const tools = yield* Effect.forEach(artifacts, (artifact) => {
-      const summary = persistedToolSummaryFromArtifact({
-        source: input.source,
-        artifact,
+    const namespace =
+      input.recipe.source.namespace ?? namespaceFromSourceName(input.recipe.source.name);
+    const tools = yield* Effect.forEach(input.recipe.operations, (operation) => {
+      const summary = persistedToolSummaryFromRecipeOperation({
+        source: input.recipe.source,
+        operation,
       });
       return formatInspectionToolRecord({
         summary,
@@ -345,70 +343,60 @@ const loadPersistedInspection = (input: {
           summary,
           definitionJson: null,
           documentationJson: null,
-          providerDataJson: null,
-          inputSchemaJson: artifact.inputSchemaJson,
-          outputSchemaJson: artifact.outputSchemaJson,
+          providerDataJson: operation.providerDataJson,
+          inputSchemaJson: operation.inputSchemaJson,
+          outputSchemaJson: operation.outputSchemaJson,
           exampleInputJson: null,
           exampleOutputJson: null,
         },
         searchText: searchTextFromSummary(summary),
       } satisfies InspectionToolRecord);
     });
+    const rawDocumentText = yield* loadStoredDocumentText(input.recipe);
+    const manifestJson = yield* formatOptionalJson(input.recipe.revision.manifestJson);
 
     return {
-      source: input.source,
+      source: input.recipe.source,
       namespace,
       pipelineKind: "persisted",
-      rawDocumentText: null,
-      manifestJson: null,
+      rawDocumentText,
+      manifestJson,
       definitionsJson: null,
       tools,
     } satisfies ResolvedSourceInspection;
   });
 
 const loadOpenApiInspection = (input: {
-  source: Source;
-  sourceRecord: StoredSourceRecord;
+  recipe: LoadedSourceRecipe;
 }): Effect.Effect<ResolvedSourceInspection, Error, never> =>
   Effect.gen(function* () {
-    const rawDocumentText = input.sourceRecord.sourceDocumentText;
-    if (!rawDocumentText) {
-      return yield* Effect.fail(new Error("Missing stored OpenAPI document"));
+    if (input.recipe.manifest === null) {
+      return yield* Effect.fail(new Error("Missing stored OpenAPI manifest"));
     }
 
-    const manifest = yield* extractOpenApiManifest(
-      input.source.name,
-      rawDocumentText,
-    ).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-      ),
-    );
+    const manifest = input.recipe.manifest as OpenApiToolManifest;
     const definitions = compileOpenApiToolDefinitions(manifest);
-    const namespace = input.source.namespace ?? namespaceFromSourceName(input.source.name);
+    const namespace =
+      input.recipe.source.namespace ?? namespaceFromSourceName(input.recipe.source.name);
     const tools = yield* Effect.forEach(definitions, (definition) =>
       formatInspectionToolRecord(openApiToolRecord({
-        source: input.source,
+        source: input.recipe.source,
         namespace,
         manifest,
         definition,
       })),
     );
-    const manifestJson = yield* Effect.promise(() =>
-      formatWithPrettier(asPrettyJson(manifest), "json"),
-    );
+    const manifestJson = yield* formatOptionalJson(input.recipe.revision.manifestJson);
     const definitionsJson = yield* Effect.promise(() =>
       formatWithPrettier(asPrettyJson(definitions), "json"),
     );
-    const formattedRawDocumentText = yield* Effect.promise(() =>
-      formatJsonIfNeeded(rawDocumentText),
-    );
+    const rawDocumentText = yield* loadStoredDocumentText(input.recipe);
 
     return {
-      source: input.source,
+      source: input.recipe.source,
       namespace,
       pipelineKind: "openapi",
-      rawDocumentText: formattedRawDocumentText,
+      rawDocumentText,
       manifestJson,
       definitionsJson,
       tools,
@@ -416,48 +404,36 @@ const loadOpenApiInspection = (input: {
   });
 
 const loadGraphqlInspection = (input: {
-  source: Source;
-  sourceRecord: StoredSourceRecord;
+  recipe: LoadedSourceRecipe;
 }): Effect.Effect<ResolvedSourceInspection, Error, never> =>
   Effect.gen(function* () {
-    const rawDocumentText = input.sourceRecord.sourceDocumentText;
-    if (!rawDocumentText) {
-      return yield* Effect.fail(new Error("Missing stored GraphQL document"));
+    if (input.recipe.manifest === null) {
+      return yield* Effect.fail(new Error("Missing stored GraphQL manifest"));
     }
 
-    const manifest = yield* extractGraphqlManifest(
-      input.source.name,
-      rawDocumentText,
-    ).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-      ),
-    );
+    const manifest = input.recipe.manifest as GraphqlToolManifest;
     const definitions = compileGraphqlToolDefinitions(manifest);
-    const namespace = input.source.namespace ?? namespaceFromSourceName(input.source.name);
+    const namespace =
+      input.recipe.source.namespace ?? namespaceFromSourceName(input.recipe.source.name);
     const tools = yield* Effect.forEach(definitions, (definition) =>
       formatInspectionToolRecord(graphqlToolRecord({
-        source: input.source,
+        source: input.recipe.source,
         namespace,
         manifest,
         definition,
       })),
     );
-    const manifestJson = yield* Effect.promise(() =>
-      formatWithPrettier(asPrettyJson(manifest), "json"),
-    );
+    const manifestJson = yield* formatOptionalJson(input.recipe.revision.manifestJson);
     const definitionsJson = yield* Effect.promise(() =>
       formatWithPrettier(asPrettyJson(definitions), "json"),
     );
-    const formattedRawDocumentText = yield* Effect.promise(() =>
-      formatJsonIfNeeded(rawDocumentText),
-    );
+    const rawDocumentText = yield* loadStoredDocumentText(input.recipe);
 
     return {
-      source: input.source,
+      source: input.recipe.source,
       namespace,
       pipelineKind: "graphql",
-      rawDocumentText: formattedRawDocumentText,
+      rawDocumentText,
       manifestJson,
       definitionsJson,
       tools,
@@ -469,39 +445,34 @@ const resolveSourceInspection = (input: {
   sourceId: SourceId;
 }) =>
   Effect.gen(function* () {
-    const { store, source, sourceRecord } = yield* loadSourceRecord(input);
+    const { recipe } = yield* loadSourceRecipeRecord(input);
 
-    if (source.kind === "openapi" && sourceRecord.sourceDocumentText) {
+    if (recipe.source.kind === "openapi" && recipe.manifest !== null) {
       return yield* loadOpenApiInspection({
-        source,
-        sourceRecord,
+        recipe,
       }).pipe(
         Effect.catchAll(() =>
           loadPersistedInspection({
-            store,
-            source,
+            recipe,
           }),
         ),
       );
     }
 
-    if (source.kind === "graphql" && sourceRecord.sourceDocumentText) {
+    if (recipe.source.kind === "graphql" && recipe.manifest !== null) {
       return yield* loadGraphqlInspection({
-        source,
-        sourceRecord,
+        recipe,
       }).pipe(
         Effect.catchAll(() =>
           loadPersistedInspection({
-            store,
-            source,
+            recipe,
           }),
         ),
       );
     }
 
     return yield* loadPersistedInspection({
-      store,
-      source,
+      recipe,
     });
   });
 
