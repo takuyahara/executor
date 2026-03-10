@@ -10,6 +10,8 @@ import {
 import {
   AccountId,
   ExecutionIdSchema,
+  McpSourceAuthSessionDataJsonSchema,
+  type McpSourceAuthSessionData,
   type SecretMaterialPurpose,
   Source,
   SourceAuthSession,
@@ -24,6 +26,7 @@ import * as Either from "effect/Either";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as ParseResult from "effect/ParseResult";
 import * as Schema from "effect/Schema";
 
 import {
@@ -101,29 +104,32 @@ const normalizeEndpoint = (endpoint: string): string => {
   return url.toString();
 };
 
+const SourceOAuthSessionStatePayloadSchema = Schema.Struct({
+  kind: Schema.Literal("source_oauth"),
+  nonce: Schema.String,
+  displayName: Schema.NullOr(Schema.String),
+});
+
+const encodeSourceOAuthSessionStatePayload = Schema.encodeSync(
+  Schema.parseJson(SourceOAuthSessionStatePayloadSchema),
+);
+
+const decodeSourceOAuthSessionStatePayloadOption = Schema.decodeUnknownOption(
+  Schema.parseJson(SourceOAuthSessionStatePayloadSchema),
+);
+
 const createSourceOAuthSessionState = (input: {
   displayName?: string | null;
-}): string => {
-  const nonce = crypto.randomUUID();
-  const displayName = trimOrNull(input.displayName);
-  if (displayName === null) {
-    return `source-oauth:${nonce}`;
-  }
-
-  return `source-oauth:${nonce}:${encodeURIComponent(displayName)}`;
-};
+}): string =>
+  encodeSourceOAuthSessionStatePayload({
+    kind: "source_oauth",
+    nonce: crypto.randomUUID(),
+    displayName: trimOrNull(input.displayName),
+  });
 
 const readSourceOAuthSessionDisplayName = (state: string): string | null => {
-  const [, , encodedDisplayName] = state.split(":", 3);
-  if (!encodedDisplayName) {
-    return null;
-  }
-
-  try {
-    return trimOrNull(decodeURIComponent(encodedDisplayName));
-  } catch {
-    return null;
-  }
+  const decoded = decodeSourceOAuthSessionStatePayloadOption(state);
+  return Option.isSome(decoded) ? trimOrNull(decoded.value.displayName) : null;
 };
 
 const resolveSourceOAuthSecretName = (input: {
@@ -176,23 +182,13 @@ export const createTerminalSourceAuthSessionPatch = (input: {
   sessionDataJson: input.sessionDataJson,
 }) satisfies Partial<SourceAuthSession>;
 
-type McpSourceAuthSessionData = {
-  kind: "mcp_oauth";
-  endpoint: string;
-  redirectUri: string;
-  scope: string | null;
-  resourceMetadataUrl: string | null;
-  authorizationServerUrl: string | null;
-  resourceMetadataJson: string | null;
-  authorizationServerMetadataJson: string | null;
-  clientInformationJson: string | null;
-  codeVerifier: string | null;
-  authorizationUrl: string | null;
-};
-
 const encodeMcpSourceAuthSessionData = (
   sessionData: McpSourceAuthSessionData,
-): string => JSON.stringify(sessionData);
+): string => Schema.encodeSync(McpSourceAuthSessionDataJsonSchema)(sessionData);
+
+const decodeMcpSourceAuthSessionDataJson = Schema.decodeUnknownEither(
+  McpSourceAuthSessionDataJsonSchema,
+);
 
 const decodeMcpSourceAuthSessionData = (
   session: Pick<SourceAuthSession, "id" | "providerKind" | "sessionDataJson">,
@@ -201,24 +197,14 @@ const decodeMcpSourceAuthSessionData = (
     throw new Error(`Unsupported source auth provider for session ${session.id}`);
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(session.sessionDataJson) as unknown;
-  } catch (cause) {
+  const decoded = decodeMcpSourceAuthSessionDataJson(session.sessionDataJson);
+  if (Either.isLeft(decoded)) {
     throw new Error(
-      `Invalid source auth session data for ${session.id}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Invalid source auth session data for ${session.id}: ${ParseResult.TreeFormatter.formatErrorSync(decoded.left)}`,
     );
   }
 
-  if (
-    parsed === null
-    || typeof parsed !== "object"
-    || (parsed as { kind?: unknown }).kind !== "mcp_oauth"
-  ) {
-    throw new Error(`Invalid source auth session payload for ${session.id}`);
-  }
-
-  return parsed as McpSourceAuthSessionData;
+  return decoded.right;
 };
 
 const mergeMcpSourceAuthSessionData = (input: {
@@ -730,9 +716,9 @@ const connectMcpSourceInternal = (input: {
         scope: null,
         resourceMetadataUrl: oauthStart.resourceMetadataUrl,
         authorizationServerUrl: oauthStart.authorizationServerUrl,
-        resourceMetadataJson: oauthStart.resourceMetadataJson,
-        authorizationServerMetadataJson: oauthStart.authorizationServerMetadataJson,
-        clientInformationJson: oauthStart.clientInformationJson,
+        resourceMetadata: oauthStart.resourceMetadata,
+        authorizationServerMetadata: oauthStart.authorizationServerMetadata,
+        clientInformation: oauthStart.clientInformation,
         codeVerifier: oauthStart.codeVerifier,
         authorizationUrl: oauthStart.authorizationUrl,
       }),
@@ -1069,9 +1055,9 @@ export const createRuntimeSourceAuthService = (input: {
           scope: oauthInput.provider.kind,
           resourceMetadataUrl: oauthStart.resourceMetadataUrl,
           authorizationServerUrl: oauthStart.authorizationServerUrl,
-          resourceMetadataJson: oauthStart.resourceMetadataJson,
-          authorizationServerMetadataJson: oauthStart.authorizationServerMetadataJson,
-          clientInformationJson: oauthStart.clientInformationJson,
+          resourceMetadata: oauthStart.resourceMetadata,
+          authorizationServerMetadata: oauthStart.authorizationServerMetadata,
+          clientInformation: oauthStart.clientInformation,
           codeVerifier: oauthStart.codeVerifier,
           authorizationUrl: oauthStart.authorizationUrl,
         }),
@@ -1146,9 +1132,9 @@ export const createRuntimeSourceAuthService = (input: {
           codeVerifier: sessionData.codeVerifier,
           resourceMetadataUrl: sessionData.resourceMetadataUrl,
           authorizationServerUrl: sessionData.authorizationServerUrl,
-          resourceMetadataJson: sessionData.resourceMetadataJson,
-          authorizationServerMetadataJson: sessionData.authorizationServerMetadataJson,
-          clientInformationJson: sessionData.clientInformationJson,
+          resourceMetadata: sessionData.resourceMetadata,
+          authorizationServerMetadata: sessionData.authorizationServerMetadata,
+          clientInformation: sessionData.clientInformation,
         },
         code: authorizationCode,
       });
@@ -1188,8 +1174,8 @@ export const createRuntimeSourceAuthService = (input: {
               authorizationUrl: null,
               resourceMetadataUrl: exchanged.resourceMetadataUrl,
               authorizationServerUrl: exchanged.authorizationServerUrl,
-              resourceMetadataJson: exchanged.resourceMetadataJson,
-              authorizationServerMetadataJson: exchanged.authorizationServerMetadataJson,
+              resourceMetadata: exchanged.resourceMetadata,
+              authorizationServerMetadata: exchanged.authorizationServerMetadata,
             },
           }),
           status: "completed",
@@ -1304,9 +1290,9 @@ export const createRuntimeSourceAuthService = (input: {
           codeVerifier: sessionData.codeVerifier,
           resourceMetadataUrl: sessionData.resourceMetadataUrl,
           authorizationServerUrl: sessionData.authorizationServerUrl,
-          resourceMetadataJson: sessionData.resourceMetadataJson,
-          authorizationServerMetadataJson: sessionData.authorizationServerMetadataJson,
-          clientInformationJson: sessionData.clientInformationJson,
+          resourceMetadata: sessionData.resourceMetadata,
+          authorizationServerMetadata: sessionData.authorizationServerMetadata,
+          clientInformation: sessionData.clientInformation,
         },
         code: authorizationCode,
       });
@@ -1370,8 +1356,8 @@ export const createRuntimeSourceAuthService = (input: {
               authorizationUrl: null,
               resourceMetadataUrl: exchanged.resourceMetadataUrl,
               authorizationServerUrl: exchanged.authorizationServerUrl,
-              resourceMetadataJson: exchanged.resourceMetadataJson,
-              authorizationServerMetadataJson: exchanged.authorizationServerMetadataJson,
+              resourceMetadata: exchanged.resourceMetadata,
+              authorizationServerMetadata: exchanged.authorizationServerMetadata,
             },
           }),
           status: "completed",

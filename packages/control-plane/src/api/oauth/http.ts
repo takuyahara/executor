@@ -6,6 +6,7 @@ import {
 import type { WorkspaceId } from "#schema";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { requirePermission, withPolicy } from "#domain";
 import { RuntimeSourceAuthServiceTag } from "../../runtime/source-auth-service";
@@ -15,7 +16,8 @@ import {
   ControlPlaneStorageError,
 } from "../errors";
 import {
-  type CompleteSourceOAuthResult,
+  SourceOAuthPopupResultSchema,
+  type SourceOAuthPopupResult,
 } from "./api";
 import { withWorkspaceRequestActor } from "../http-auth";
 
@@ -35,8 +37,18 @@ const escapeHtml = (value: string): string =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 
-const serializeJsonForScript = (value: unknown): string =>
+const serializeValueForScript = (value: unknown): string =>
   JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026");
+
+const encodeSourceOAuthPopupResultJson = Schema.encodeSync(
+  Schema.parseJson(SourceOAuthPopupResultSchema),
+);
+
+const serializeJsonLiteralForScript = (value: string): string =>
+  value
     .replaceAll("<", "\\u003c")
     .replaceAll(">", "\\u003e")
     .replaceAll("&", "\\u0026");
@@ -117,19 +129,7 @@ const sourceOAuthPopupResultDocument = (input: {
   message: string;
   status: "connected" | "failed";
   sessionId: string;
-  payload:
-    | {
-        type: "executor:oauth-result";
-        ok: true;
-        sessionId: string;
-        auth: CompleteSourceOAuthResult["auth"];
-      }
-    | {
-        type: "executor:oauth-result";
-        ok: false;
-        sessionId: string | null;
-        error: string;
-      };
+  payload: SourceOAuthPopupResult;
 }) => `<!doctype html>
 <html lang="en">
   <head>
@@ -218,8 +218,8 @@ const sourceOAuthPopupResultDocument = (input: {
     </main>
     <script>
       (() => {
-        const payload = ${serializeJsonForScript(input.payload)};
-        const storageKey = ${serializeJsonForScript(`${OAUTH_RESULT_STORAGE_KEY_PREFIX}${input.sessionId}`)};
+        const payload = ${serializeJsonLiteralForScript(encodeSourceOAuthPopupResultJson(input.payload))};
+        const storageKey = ${serializeValueForScript(`${OAUTH_RESULT_STORAGE_KEY_PREFIX}${input.sessionId}`)};
         try {
           window.localStorage.setItem(storageKey, JSON.stringify(payload));
         } catch {}

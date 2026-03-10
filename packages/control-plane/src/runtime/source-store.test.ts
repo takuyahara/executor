@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   AccountIdSchema,
+  McpSourceAuthSessionDataJsonSchema,
   OrganizationIdSchema,
   SecretMaterialIdSchema,
   SourceAuthSessionIdSchema,
@@ -11,6 +12,7 @@ import {
 } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import {
@@ -34,6 +36,8 @@ const makePersistence: Effect.Effect<SqlControlPlanePersistence, unknown, Scope.
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(Effect.orDie),
   );
+
+const encodeSessionDataJson = Schema.encodeSync(McpSourceAuthSessionDataJsonSchema);
 
 const makeOpenApiSource = (input: {
   workspaceId: Source["workspaceId"];
@@ -140,16 +144,16 @@ describe("source-store", () => {
         providerKind: "mcp_oauth",
         status: "pending",
         state: "state_source_store",
-        sessionDataJson: JSON.stringify({
+        sessionDataJson: encodeSessionDataJson({
           kind: "mcp_oauth",
           endpoint: "https://api.github.com",
           redirectUri: "http://127.0.0.1/callback",
           scope: null,
           resourceMetadataUrl: null,
           authorizationServerUrl: null,
-          resourceMetadataJson: null,
-          authorizationServerMetadataJson: null,
-          clientInformationJson: null,
+          resourceMetadata: null,
+          authorizationServerMetadata: null,
+          clientInformation: null,
           codeVerifier: "verifier",
           authorizationUrl: "https://example.com/auth",
         }),

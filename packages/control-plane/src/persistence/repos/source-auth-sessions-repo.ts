@@ -21,6 +21,16 @@ export const createSourceAuthSessionsRepo = (
   client: DrizzleClient,
   tables: DrizzleTables,
 ) => ({
+  listAll: () =>
+    client.use("rows.source_auth_sessions.list_all", async (db) => {
+      const rows = await db
+        .select()
+        .from(tables.sourceAuthSessionsTable)
+        .orderBy(asc(tables.sourceAuthSessionsTable.updatedAt), asc(tables.sourceAuthSessionsTable.id));
+
+      return rows.map((row) => decodeSourceAuthSession(row));
+    }),
+
   listByWorkspaceId: (workspaceId: SourceAuthSession["workspaceId"]) =>
     client.use("rows.source_auth_sessions.list_by_workspace", async (db) => {
       const rows = await db

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AccountIdSchema,
+  McpSourceAuthSessionDataJsonSchema,
   OrganizationIdSchema,
+  SourceAuthSessionIdSchema,
   SourceIdSchema,
   SourceRecipeIdSchema,
   SourceRecipeRevisionIdSchema,
@@ -9,6 +11,7 @@ import {
 } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import {
   buildSchema,
@@ -264,6 +267,64 @@ describe("post-migrations", () => {
       expect(revision.pipe(Option.getOrNull)?.manifestJson).not.toBeNull();
       expect((yield* persistence.rows.sourceRecipeOperations.listByRevisionId(recipeRevisionId)).length)
         .toBeGreaterThan(0);
+    }),
+  );
+
+  it.scoped("repairs legacy MCP source auth session payloads", () =>
+    Effect.gen(function* () {
+      const persistence = yield* makePersistence;
+      const workspaceId = WorkspaceIdSchema.make("ws_post_migration_session");
+      const sourceId = SourceIdSchema.make("src_post_migration_session");
+      const sessionId = SourceAuthSessionIdSchema.make("src_auth_post_migration_session");
+      const now = Date.now();
+
+      yield* persistence.rows.sourceAuthSessions.insert({
+        id: sessionId,
+        workspaceId,
+        sourceId,
+        actorAccountId: null,
+        executionId: null,
+        interactionId: null,
+        providerKind: "mcp_oauth",
+        status: "pending",
+        state: "state_post_migration_session",
+        sessionDataJson: JSON.stringify({
+          kind: "mcp_oauth",
+          endpoint: "https://api.github.com",
+          redirectUri: "http://127.0.0.1/callback",
+          scope: null,
+          resourceMetadataUrl: "https://api.github.com/.well-known/oauth-protected-resource",
+          authorizationServerUrl: "https://github.com/login/oauth",
+          resourceMetadataJson: '{"issuer":"https://api.github.com"}',
+          authorizationServerMetadataJson: '{"token_endpoint":"https://github.com/login/oauth/access_token"}',
+          clientInformationJson: '{"client_id":"abc123"}',
+          codeVerifier: "verifier",
+          authorizationUrl: "https://github.com/login/oauth/authorize",
+        }),
+        errorText: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      yield* runPostMigrationRepairs(persistence.rows);
+
+      const session = yield* persistence.rows.sourceAuthSessions.getById(sessionId);
+      expect(Option.isSome(session)).toBe(true);
+      const repairedSession = session.pipe(Option.getOrNull);
+      expect(repairedSession).not.toBeNull();
+      const repaired = Schema.decodeUnknownSync(McpSourceAuthSessionDataJsonSchema)(
+        repairedSession!.sessionDataJson,
+      );
+      expect(repaired.resourceMetadata).toEqual({
+        issuer: "https://api.github.com",
+      });
+      expect(repaired.authorizationServerMetadata).toEqual({
+        token_endpoint: "https://github.com/login/oauth/access_token",
+      });
+      expect(repaired.clientInformation).toEqual({
+        client_id: "abc123",
+      });
     }),
   );
 });

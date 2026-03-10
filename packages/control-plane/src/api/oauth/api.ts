@@ -40,18 +40,41 @@ export const StartSourceOAuthResultSchema = Schema.Struct({
 
 export type StartSourceOAuthResult = typeof StartSourceOAuthResultSchema.Type;
 
+export const SourceOAuthAuthSchema = Schema.Struct({
+  kind: Schema.Literal("oauth2"),
+  headerName: Schema.String,
+  prefix: Schema.String,
+  accessToken: SecretRefSchema,
+  refreshToken: Schema.NullOr(SecretRefSchema),
+});
+
 export const CompleteSourceOAuthResultSchema = Schema.Struct({
   sessionId: SourceAuthSessionIdSchema,
-  auth: Schema.Struct({
-    kind: Schema.Literal("oauth2"),
-    headerName: Schema.String,
-    prefix: Schema.String,
-    accessToken: SecretRefSchema,
-    refreshToken: Schema.NullOr(SecretRefSchema),
-  }),
+  auth: SourceOAuthAuthSchema,
 });
 
 export type CompleteSourceOAuthResult = typeof CompleteSourceOAuthResultSchema.Type;
+
+export const SourceOAuthPopupSuccessResultSchema = Schema.Struct({
+  type: Schema.Literal("executor:oauth-result"),
+  ok: Schema.Literal(true),
+  sessionId: SourceAuthSessionIdSchema,
+  auth: SourceOAuthAuthSchema,
+});
+
+export const SourceOAuthPopupFailureResultSchema = Schema.Struct({
+  type: Schema.Literal("executor:oauth-result"),
+  ok: Schema.Literal(false),
+  sessionId: Schema.Null,
+  error: Schema.String,
+});
+
+export const SourceOAuthPopupResultSchema = Schema.Union(
+  SourceOAuthPopupSuccessResultSchema,
+  SourceOAuthPopupFailureResultSchema,
+);
+
+export type SourceOAuthPopupResult = typeof SourceOAuthPopupResultSchema.Type;
 
 const OAuthCallbackUrlParamsSchema = Schema.Struct({
   state: Schema.String,

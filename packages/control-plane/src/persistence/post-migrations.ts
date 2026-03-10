@@ -6,12 +6,21 @@ import {
   extractOpenApiManifest,
 } from "@executor/codemode-openapi";
 import type {
+  McpSourceAuthSessionData,
   StoredSourceRecipeDocumentRecord,
   StoredSourceRecipeOperationRecord,
   StoredSourceRecipeRevisionRecord,
   StoredSourceRecord,
+  SourceAuthSession,
 } from "#schema";
+import {
+  JsonObjectSchema,
+  McpSourceAuthSessionDataJsonSchema,
+} from "#schema";
+import * as Either from "effect/Either";
 import * as Effect from "effect/Effect";
+import * as ParseResult from "effect/ParseResult";
+import * as Schema from "effect/Schema";
 
 import {
   buildGraphqlToolPresentation,
@@ -26,6 +35,86 @@ const normalizeSearchText = (...parts: ReadonlyArray<string | null | undefined>)
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+
+const LegacyMcpSourceAuthSessionDataSchema = Schema.Struct({
+  kind: Schema.Literal("mcp_oauth"),
+  endpoint: Schema.String,
+  redirectUri: Schema.String,
+  scope: Schema.NullOr(Schema.String),
+  resourceMetadataUrl: Schema.NullOr(Schema.String),
+  authorizationServerUrl: Schema.NullOr(Schema.String),
+  resourceMetadataJson: Schema.NullOr(Schema.String),
+  authorizationServerMetadataJson: Schema.NullOr(Schema.String),
+  clientInformationJson: Schema.NullOr(Schema.String),
+  codeVerifier: Schema.NullOr(Schema.String),
+  authorizationUrl: Schema.NullOr(Schema.String),
+});
+
+const decodeLegacyMcpSourceAuthSessionDataJson = Schema.decodeUnknownEither(
+  Schema.parseJson(LegacyMcpSourceAuthSessionDataSchema),
+);
+
+const decodeMcpSourceAuthSessionDataJson = Schema.decodeUnknownEither(
+  McpSourceAuthSessionDataJsonSchema,
+);
+
+const encodeMcpSourceAuthSessionDataJson = Schema.encodeSync(
+  McpSourceAuthSessionDataJsonSchema,
+);
+
+const decodeJsonObjectFromJson = Schema.decodeUnknownEither(
+  Schema.parseJson(JsonObjectSchema),
+);
+
+const decodeLegacyJsonObject = (value: string | null) => {
+  if (value === null) {
+    return null;
+  }
+
+  const decoded = decodeJsonObjectFromJson(value);
+  return Either.isRight(decoded) ? decoded.right : null;
+};
+
+const repairLegacyMcpSourceAuthSession = (input: {
+  rows: SqlControlPlaneRows;
+  session: SourceAuthSession;
+}): Effect.Effect<void, never, never> => {
+  if (input.session.providerKind !== "mcp_oauth") {
+    return Effect.void;
+  }
+
+  if (Either.isRight(decodeMcpSourceAuthSessionDataJson(input.session.sessionDataJson))) {
+    return Effect.void;
+  }
+
+  const legacy = decodeLegacyMcpSourceAuthSessionDataJson(input.session.sessionDataJson);
+  if (Either.isLeft(legacy)) {
+    console.warn(
+      `Skipping source auth session repair for ${input.session.id}: ${ParseResult.TreeFormatter.formatErrorSync(legacy.left)}`,
+    );
+    return Effect.void;
+  }
+
+  const repaired: McpSourceAuthSessionData = {
+    kind: "mcp_oauth",
+    endpoint: legacy.right.endpoint,
+    redirectUri: legacy.right.redirectUri,
+    scope: legacy.right.scope,
+    resourceMetadataUrl: legacy.right.resourceMetadataUrl,
+    authorizationServerUrl: legacy.right.authorizationServerUrl,
+    resourceMetadata: decodeLegacyJsonObject(legacy.right.resourceMetadataJson),
+    authorizationServerMetadata: decodeLegacyJsonObject(
+      legacy.right.authorizationServerMetadataJson,
+    ),
+    clientInformation: decodeLegacyJsonObject(legacy.right.clientInformationJson),
+    codeVerifier: legacy.right.codeVerifier,
+    authorizationUrl: legacy.right.authorizationUrl,
+  };
+
+  return input.rows.sourceAuthSessions.update(input.session.id, {
+    sessionDataJson: encodeMcpSourceAuthSessionDataJson(repaired),
+  }).pipe(Effect.asVoid, Effect.orDie);
+};
 
 const toOpenApiRecipeOperationRecord = (input: {
   recipeRevisionId: StoredSourceRecipeRevisionRecord["id"];
@@ -251,71 +340,76 @@ export const runPostMigrationRepairs = (
 ): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
     const sourceRecords = yield* rows.sources.listAll();
-    if (sourceRecords.length === 0) {
-      return;
-    }
+    if (sourceRecords.length > 0) {
+      const revisionIds = [...new Set(sourceRecords.map((sourceRecord) => sourceRecord.recipeRevisionId))];
+      const revisions = yield* rows.sourceRecipeRevisions.listByIds(revisionIds);
+      const documents = yield* rows.sourceRecipeDocuments.listByRevisionIds(revisionIds);
+      const operations = yield* rows.sourceRecipeOperations.listByRevisionIds(revisionIds);
 
-    const revisionIds = [...new Set(sourceRecords.map((sourceRecord) => sourceRecord.recipeRevisionId))];
-    const revisions = yield* rows.sourceRecipeRevisions.listByIds(revisionIds);
-    const documents = yield* rows.sourceRecipeDocuments.listByRevisionIds(revisionIds);
-    const operations = yield* rows.sourceRecipeOperations.listByRevisionIds(revisionIds);
+      const revisionById = new Map(revisions.map((revision) => [revision.id, revision]));
+      const documentsByRevisionId = new Map<string, StoredSourceRecipeDocumentRecord[]>();
+      for (const document of documents) {
+        const existing = documentsByRevisionId.get(document.recipeRevisionId) ?? [];
+        existing.push(document);
+        documentsByRevisionId.set(document.recipeRevisionId, existing);
+      }
 
-    const revisionById = new Map(revisions.map((revision) => [revision.id, revision]));
-    const documentsByRevisionId = new Map<string, StoredSourceRecipeDocumentRecord[]>();
-    for (const document of documents) {
-      const existing = documentsByRevisionId.get(document.recipeRevisionId) ?? [];
-      existing.push(document);
-      documentsByRevisionId.set(document.recipeRevisionId, existing);
-    }
+      const operationCountsByRevisionId = new Map<string, number>();
+      for (const operation of operations) {
+        operationCountsByRevisionId.set(
+          operation.recipeRevisionId,
+          (operationCountsByRevisionId.get(operation.recipeRevisionId) ?? 0) + 1,
+        );
+      }
 
-    const operationCountsByRevisionId = new Map<string, number>();
-    for (const operation of operations) {
-      operationCountsByRevisionId.set(
-        operation.recipeRevisionId,
-        (operationCountsByRevisionId.get(operation.recipeRevisionId) ?? 0) + 1,
-      );
-    }
+      yield* Effect.forEach(sourceRecords, (sourceRecord) =>
+        Effect.gen(function* () {
+          if (sourceRecord.kind !== "openapi" && sourceRecord.kind !== "graphql") {
+            return;
+          }
 
-    yield* Effect.forEach(sourceRecords, (sourceRecord) =>
-      Effect.gen(function* () {
-        if (sourceRecord.kind !== "openapi" && sourceRecord.kind !== "graphql") {
-          return;
-        }
+          const revision = revisionById.get(sourceRecord.recipeRevisionId);
+          if (!revision) {
+            return;
+          }
 
-        const revision = revisionById.get(sourceRecord.recipeRevisionId);
-        if (!revision) {
-          return;
-        }
+          const existingOperationCount = operationCountsByRevisionId.get(revision.id) ?? 0;
+          if (revision.manifestJson !== null && existingOperationCount > 0) {
+            return;
+          }
 
-        const existingOperationCount = operationCountsByRevisionId.get(revision.id) ?? 0;
-        if (revision.manifestJson !== null && existingOperationCount > 0) {
-          return;
-        }
+          const sourceDocuments = documentsByRevisionId.get(revision.id) ?? [];
+          const document = primaryRecipeDocument({
+            sourceRecord,
+            documents: sourceDocuments,
+          });
+          if (!document) {
+            return;
+          }
 
-        const sourceDocuments = documentsByRevisionId.get(revision.id) ?? [];
-        const document = primaryRecipeDocument({
-          sourceRecord,
-          documents: sourceDocuments,
-        });
-        if (!document) {
-          return;
-        }
+          if (sourceRecord.kind === "openapi") {
+            yield* repairOpenApiRecipeRevision({
+              rows,
+              sourceRecord,
+              revision,
+              document,
+            });
+            return;
+          }
 
-        if (sourceRecord.kind === "openapi") {
-          yield* repairOpenApiRecipeRevision({
+          yield* repairGraphqlRecipeRevision({
             rows,
             sourceRecord,
             revision,
             document,
           });
-          return;
-        }
+        }), { discard: true });
+    }
 
-        yield* repairGraphqlRecipeRevision({
-          rows,
-          sourceRecord,
-          revision,
-          document,
-        });
+    const sourceAuthSessions = yield* rows.sourceAuthSessions.listAll();
+    yield* Effect.forEach(sourceAuthSessions, (session) =>
+      repairLegacyMcpSourceAuthSession({
+        rows,
+        session,
       }), { discard: true });
   });

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import * as Schema from "effect/Schema";
 
-import type { Source } from "#schema";
+import {
+  McpSourceAuthSessionDataJsonSchema,
+  type Source,
+} from "#schema";
 
 import {
   createTerminalSourceAuthSessionPatch,
@@ -29,16 +33,24 @@ const makeExistingOpenApiSource = (auth: Source["auth"]): Source => ({
 });
 
 describe("source-auth-service", () => {
-  const baseSessionDataJson = JSON.stringify({
+  const encodeSessionDataJson = Schema.encodeSync(McpSourceAuthSessionDataJsonSchema);
+
+  const baseSessionDataJson = encodeSessionDataJson({
     kind: "mcp_oauth",
     endpoint: "https://example.com/resource",
     redirectUri: "http://127.0.0.1/callback",
     scope: null,
     resourceMetadataUrl: "https://example.com/resource",
     authorizationServerUrl: "https://example.com/as",
-    resourceMetadataJson: '{"issuer":"https://example.com"}',
-    authorizationServerMetadataJson: '{"token_endpoint":"https://example.com/token"}',
-    clientInformationJson: '{"client_id":"abc"}',
+    resourceMetadata: {
+      issuer: "https://example.com",
+    },
+    authorizationServerMetadata: {
+      token_endpoint: "https://example.com/token",
+    },
+    clientInformation: {
+      client_id: "abc",
+    },
     codeVerifier: "verifier",
     authorizationUrl: "https://example.com/auth",
   });
