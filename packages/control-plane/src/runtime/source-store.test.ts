@@ -17,6 +17,10 @@ import {
   createSqlControlPlanePersistence,
   type SqlControlPlanePersistence,
 } from "../persistence";
+import {
+  stableSourceRecipeId,
+  stableSourceRecipeRevisionId,
+} from "./source-definitions";
 import { persistSource, removeSourceById } from "./source-store";
 
 const makePersistence: Effect.Effect<SqlControlPlanePersistence, unknown, Scope.Scope> =
@@ -36,20 +40,23 @@ const makeOpenApiSource = (input: {
   sourceId: Source["id"];
   now: number;
   updatedAt?: number;
+  name?: string;
+  endpoint?: string;
+  specUrl?: string;
   auth: Source["auth"];
 }): Source => ({
   id: input.sourceId,
   workspaceId: input.workspaceId,
-  name: "GitHub",
+  name: input.name ?? "GitHub",
   kind: "openapi",
-  endpoint: "https://api.github.com",
+  endpoint: input.endpoint ?? "https://api.github.com",
   status: "connected",
   enabled: true,
   namespace: "github",
   transport: null,
   queryParams: null,
   headers: null,
-  specUrl: "https://example.com/openapi.json",
+  specUrl: input.specUrl ?? "https://example.com/openapi.json",
   defaultHeaders: null,
   auth: input.auth,
   sourceHash: null,
@@ -261,6 +268,246 @@ describe("source-store", () => {
       expect(credentials.some((credential) => credential.actorAccountId === null)).toBe(true);
       expect(credentials.some((credential) => credential.actorAccountId === accountId)).toBe(true);
       expect(new Set(credentials.map((credential) => credential.id)).size).toBe(2);
+    }),
+  );
+
+  it.scoped("cleans up orphaned recipe data when the source config changes", () =>
+    Effect.gen(function* () {
+      const persistence = yield* makePersistence;
+      const now = Date.now();
+      const accountId = AccountIdSchema.make("acc_recipe_rewrite");
+      const organizationId = OrganizationIdSchema.make("org_recipe_rewrite");
+      const workspaceId = WorkspaceIdSchema.make("ws_recipe_rewrite");
+      const sourceId = SourceIdSchema.make("src_recipe_rewrite");
+
+      yield* persistence.rows.organizations.insert({
+        id: organizationId,
+        slug: "recipe-rewrite",
+        name: "Recipe Rewrite",
+        status: "active",
+        createdByAccountId: accountId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      yield* persistence.rows.workspaces.insert({
+        id: workspaceId,
+        organizationId,
+        name: "Primary",
+        createdByAccountId: accountId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const initialSource = makeOpenApiSource({
+        workspaceId,
+        sourceId,
+        now,
+        auth: { kind: "none" },
+      });
+      const initialRecipeId = stableSourceRecipeId(initialSource);
+      const initialRecipeRevisionId = stableSourceRecipeRevisionId(initialSource);
+
+      yield* persistSource(persistence.rows, initialSource);
+      yield* persistence.rows.sourceRecipeDocuments.replaceForRevision({
+        recipeRevisionId: initialRecipeRevisionId,
+        documents: [{
+          id: "src_recipe_doc_recipe_rewrite",
+          recipeRevisionId: initialRecipeRevisionId,
+          documentKind: "openapi",
+          documentKey: initialSource.specUrl ?? initialSource.endpoint,
+          contentText: "{}",
+          contentHash: "hash_recipe_rewrite",
+          fetchedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        }],
+      });
+      yield* persistence.rows.sourceRecipeOperations.replaceForRevision({
+        recipeRevisionId: initialRecipeRevisionId,
+        operations: [{
+          id: "src_recipe_op_recipe_rewrite",
+          recipeRevisionId: initialRecipeRevisionId,
+          operationKey: "getRepo",
+          transportKind: "http",
+          toolId: "getRepo",
+          title: "Get Repo",
+          description: "Read a repository",
+          operationKind: "read",
+          searchText: "github get repo",
+          inputSchemaJson: null,
+          outputSchemaJson: null,
+          providerKind: "openapi",
+          providerDataJson: null,
+          mcpToolName: null,
+          openApiMethod: "get",
+          openApiPathTemplate: "/repos/{owner}/{repo}",
+          openApiOperationHash: "hash_recipe_rewrite",
+          openApiRawToolId: "repos_getRepo",
+          openApiOperationId: "repos.getRepo",
+          openApiTagsJson: JSON.stringify(["repos"]),
+          openApiRequestBodyRequired: null,
+          graphqlOperationType: null,
+          graphqlOperationName: null,
+          createdAt: now,
+          updatedAt: now,
+        }],
+      });
+
+      const updatedSource = makeOpenApiSource({
+        workspaceId,
+        sourceId,
+        now,
+        updatedAt: now + 1,
+        endpoint: "https://api.example.com",
+        specUrl: "https://api.example.com/openapi.json",
+        auth: { kind: "none" },
+      });
+      const nextRecipeId = stableSourceRecipeId(updatedSource);
+      const nextRecipeRevisionId = stableSourceRecipeRevisionId(updatedSource);
+
+      yield* persistSource(persistence.rows, updatedSource);
+
+      expect(Option.isNone(yield* persistence.rows.sourceRecipes.getById(initialRecipeId))).toBe(true);
+      expect(
+        Option.isNone(yield* persistence.rows.sourceRecipeRevisions.getById(initialRecipeRevisionId)),
+      ).toBe(true);
+      expect(
+        yield* persistence.rows.sourceRecipeDocuments.listByRevisionId(initialRecipeRevisionId),
+      ).toEqual([]);
+      expect(
+        yield* persistence.rows.sourceRecipeOperations.listByRevisionId(initialRecipeRevisionId),
+      ).toEqual([]);
+      expect(Option.isSome(yield* persistence.rows.sourceRecipes.getById(nextRecipeId))).toBe(true);
+      expect(
+        Option.isSome(yield* persistence.rows.sourceRecipeRevisions.getById(nextRecipeRevisionId)),
+      ).toBe(true);
+    }),
+  );
+
+  it.scoped("retains shared recipe data until the last source reference is removed", () =>
+    Effect.gen(function* () {
+      const persistence = yield* makePersistence;
+      const now = Date.now();
+      const accountId = AccountIdSchema.make("acc_shared_recipe");
+      const organizationId = OrganizationIdSchema.make("org_shared_recipe");
+      const workspaceId = WorkspaceIdSchema.make("ws_shared_recipe");
+      const firstSourceId = SourceIdSchema.make("src_shared_recipe_one");
+      const secondSourceId = SourceIdSchema.make("src_shared_recipe_two");
+
+      yield* persistence.rows.organizations.insert({
+        id: organizationId,
+        slug: "shared-recipe",
+        name: "Shared Recipe",
+        status: "active",
+        createdByAccountId: accountId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      yield* persistence.rows.workspaces.insert({
+        id: workspaceId,
+        organizationId,
+        name: "Primary",
+        createdByAccountId: accountId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const firstSource = makeOpenApiSource({
+        workspaceId,
+        sourceId: firstSourceId,
+        now,
+        name: "GitHub One",
+        auth: { kind: "none" },
+      });
+      const secondSource = makeOpenApiSource({
+        workspaceId,
+        sourceId: secondSourceId,
+        now,
+        updatedAt: now + 1,
+        name: "GitHub Two",
+        auth: { kind: "none" },
+      });
+      const sharedRecipeId = stableSourceRecipeId(firstSource);
+      const sharedRecipeRevisionId = stableSourceRecipeRevisionId(firstSource);
+
+      yield* persistSource(persistence.rows, firstSource);
+      yield* persistSource(persistence.rows, secondSource);
+      yield* persistence.rows.sourceRecipeDocuments.replaceForRevision({
+        recipeRevisionId: sharedRecipeRevisionId,
+        documents: [{
+          id: "src_recipe_doc_shared_recipe",
+          recipeRevisionId: sharedRecipeRevisionId,
+          documentKind: "openapi",
+          documentKey: firstSource.specUrl ?? firstSource.endpoint,
+          contentText: "{}",
+          contentHash: "hash_shared_recipe",
+          fetchedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        }],
+      });
+      yield* persistence.rows.sourceRecipeOperations.replaceForRevision({
+        recipeRevisionId: sharedRecipeRevisionId,
+        operations: [{
+          id: "src_recipe_op_shared_recipe",
+          recipeRevisionId: sharedRecipeRevisionId,
+          operationKey: "getRepo",
+          transportKind: "http",
+          toolId: "getRepo",
+          title: "Get Repo",
+          description: "Read a repository",
+          operationKind: "read",
+          searchText: "github get repo",
+          inputSchemaJson: null,
+          outputSchemaJson: null,
+          providerKind: "openapi",
+          providerDataJson: null,
+          mcpToolName: null,
+          openApiMethod: "get",
+          openApiPathTemplate: "/repos/{owner}/{repo}",
+          openApiOperationHash: "hash_shared_recipe",
+          openApiRawToolId: "repos_getRepo",
+          openApiOperationId: "repos.getRepo",
+          openApiTagsJson: JSON.stringify(["repos"]),
+          openApiRequestBodyRequired: null,
+          graphqlOperationType: null,
+          graphqlOperationName: null,
+          createdAt: now,
+          updatedAt: now,
+        }],
+      });
+
+      yield* removeSourceById(persistence.rows, {
+        workspaceId,
+        sourceId: firstSourceId,
+      });
+
+      expect(Option.isSome(yield* persistence.rows.sourceRecipes.getById(sharedRecipeId))).toBe(true);
+      expect(
+        Option.isSome(yield* persistence.rows.sourceRecipeRevisions.getById(sharedRecipeRevisionId)),
+      ).toBe(true);
+      expect(
+        yield* persistence.rows.sourceRecipeDocuments.listByRevisionId(sharedRecipeRevisionId),
+      ).toHaveLength(1);
+      expect(
+        yield* persistence.rows.sourceRecipeOperations.listByRevisionId(sharedRecipeRevisionId),
+      ).toHaveLength(1);
+
+      yield* removeSourceById(persistence.rows, {
+        workspaceId,
+        sourceId: secondSourceId,
+      });
+
+      expect(Option.isNone(yield* persistence.rows.sourceRecipes.getById(sharedRecipeId))).toBe(true);
+      expect(
+        Option.isNone(yield* persistence.rows.sourceRecipeRevisions.getById(sharedRecipeRevisionId)),
+      ).toBe(true);
+      expect(
+        yield* persistence.rows.sourceRecipeDocuments.listByRevisionId(sharedRecipeRevisionId),
+      ).toEqual([]);
+      expect(
+        yield* persistence.rows.sourceRecipeOperations.listByRevisionId(sharedRecipeRevisionId),
+      ).toEqual([]);
     }),
   );
 });

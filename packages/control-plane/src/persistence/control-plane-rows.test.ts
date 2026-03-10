@@ -21,6 +21,7 @@ import {
   createSqlControlPlanePersistence,
   type SqlControlPlanePersistence,
 } from "./index";
+import { drizzleSchema } from "./schema";
 
 const makePersistence: Effect.Effect<SqlControlPlanePersistence, unknown, Scope.Scope> =
   Effect.acquireRelease(
@@ -34,21 +35,15 @@ const makePersistence: Effect.Effect<SqlControlPlanePersistence, unknown, Scope.
     }).pipe(Effect.orDie),
   );
 
-const seedWorkspaceCredentialState = (input: {
+const seedWorkspaceSourceState = (input: {
   persistence: SqlControlPlanePersistence;
   accountId: ReturnType<typeof AccountIdSchema.make>;
   organizationId: ReturnType<typeof OrganizationIdSchema.make>;
   workspaceId: ReturnType<typeof WorkspaceIdSchema.make>;
   sourceId: ReturnType<typeof SourceIdSchema.make>;
-}): Effect.Effect<{
-  tokenId: ReturnType<typeof SecretMaterialIdSchema.make>;
-  refreshId: ReturnType<typeof SecretMaterialIdSchema.make>;
-}, unknown, never> =>
+}): Effect.Effect<void, unknown, never> =>
   Effect.gen(function* () {
     const now = Date.now();
-    const credentialId = CredentialIdSchema.make(`cred_${input.workspaceId}`);
-    const tokenId = SecretMaterialIdSchema.make(`sec_${input.workspaceId}_token`);
-    const refreshId = SecretMaterialIdSchema.make(`sec_${input.workspaceId}_refresh`);
     const recipeId = SourceRecipeIdSchema.make(`src_recipe_${input.sourceId}`);
     const recipeRevisionId = SourceRecipeRevisionIdSchema.make(`src_recipe_rev_${input.sourceId}`);
 
@@ -92,6 +87,25 @@ const seedWorkspaceCredentialState = (input: {
       createdAt: now,
       updatedAt: now,
     });
+  });
+
+const seedWorkspaceCredentialState = (input: {
+  persistence: SqlControlPlanePersistence;
+  accountId: ReturnType<typeof AccountIdSchema.make>;
+  organizationId: ReturnType<typeof OrganizationIdSchema.make>;
+  workspaceId: ReturnType<typeof WorkspaceIdSchema.make>;
+  sourceId: ReturnType<typeof SourceIdSchema.make>;
+}): Effect.Effect<{
+  tokenId: ReturnType<typeof SecretMaterialIdSchema.make>;
+  refreshId: ReturnType<typeof SecretMaterialIdSchema.make>;
+}, unknown, never> =>
+  Effect.gen(function* () {
+    const now = Date.now();
+    const credentialId = CredentialIdSchema.make(`cred_${input.workspaceId}`);
+    const tokenId = SecretMaterialIdSchema.make(`sec_${input.workspaceId}_token`);
+    const refreshId = SecretMaterialIdSchema.make(`sec_${input.workspaceId}_refresh`);
+
+    yield* seedWorkspaceSourceState(input);
     yield* input.persistence.rows.secretMaterials.upsert({
       id: tokenId,
       name: null,
@@ -281,6 +295,137 @@ describe("control-plane-persistence-drizzle", () => {
       if (Option.isSome(membership)) {
         expect(membership.value.role).toBe("admin");
       }
+    }),
+  );
+
+  it.scoped("deduplicates null-actor credentials and returns actor/shared matches", () =>
+    Effect.gen(function* () {
+      const persistence = yield* makePersistence;
+      const accountId = AccountIdSchema.make("acc_credentials");
+      const organizationId = OrganizationIdSchema.make("org_credentials");
+      const workspaceId = WorkspaceIdSchema.make("ws_credentials");
+      const sourceId = SourceIdSchema.make("src_credentials");
+      const actorCredentialId = CredentialIdSchema.make("cred_actor_credentials");
+      const nullCredentialA = CredentialIdSchema.make("cred_null_credentials_a");
+      const nullCredentialB = CredentialIdSchema.make("cred_null_credentials_b");
+      const now = Date.now();
+
+      yield* seedWorkspaceSourceState({
+        persistence,
+        accountId,
+        organizationId,
+        workspaceId,
+        sourceId,
+      });
+
+      yield* Effect.tryPromise(async () => {
+        await persistence.db.insert(drizzleSchema.credentialsTable).values([
+          {
+            id: nullCredentialA,
+            workspaceId,
+            sourceId,
+            actorAccountId: null,
+            authKind: "bearer",
+            authHeaderName: "Authorization",
+            authPrefix: "Bearer ",
+            tokenProviderId: "postgres",
+            tokenHandle: "sec_null_a",
+            refreshTokenProviderId: null,
+            refreshTokenHandle: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: nullCredentialB,
+            workspaceId,
+            sourceId,
+            actorAccountId: null,
+            authKind: "bearer",
+            authHeaderName: "Authorization",
+            authPrefix: "Bearer ",
+            tokenProviderId: "postgres",
+            tokenHandle: "sec_null_b",
+            refreshTokenProviderId: null,
+            refreshTokenHandle: null,
+            createdAt: now + 1,
+            updatedAt: now + 1,
+          },
+        ]);
+      }).pipe(Effect.orDie);
+
+      yield* persistence.rows.credentials.upsert({
+        id: CredentialIdSchema.make("cred_null_credentials_replacement"),
+        workspaceId,
+        sourceId,
+        actorAccountId: null,
+        authKind: "oauth2",
+        authHeaderName: "X-Auth",
+        authPrefix: "Token ",
+        tokenProviderId: "postgres",
+        tokenHandle: "sec_null_replacement",
+        refreshTokenProviderId: "postgres",
+        refreshTokenHandle: "sec_null_refresh",
+        createdAt: now + 2,
+        updatedAt: now + 2,
+      });
+
+      yield* persistence.rows.credentials.upsert({
+        id: actorCredentialId,
+        workspaceId,
+        sourceId,
+        actorAccountId: accountId,
+        authKind: "bearer",
+        authHeaderName: "Authorization",
+        authPrefix: "Bearer ",
+        tokenProviderId: "postgres",
+        tokenHandle: "sec_actor",
+        refreshTokenProviderId: null,
+        refreshTokenHandle: null,
+        createdAt: now + 3,
+        updatedAt: now + 3,
+      });
+
+      const allCredentials = yield* persistence.rows.credentials.listByWorkspaceAndSourceId({
+        workspaceId,
+        sourceId,
+      });
+      expect(allCredentials).toHaveLength(2);
+      const nullActorCredentials = allCredentials.filter((credential) => credential.actorAccountId === null);
+      expect(nullActorCredentials).toHaveLength(1);
+      expect(nullActorCredentials[0]?.id).toBe(nullCredentialA);
+      expect(nullActorCredentials[0]?.authKind).toBe("oauth2");
+      expect(nullActorCredentials[0]?.authHeaderName).toBe("X-Auth");
+      expect(nullActorCredentials[0]?.tokenHandle).toBe("sec_null_replacement");
+      expect(allCredentials.map((credential) => credential.id).sort()).toEqual(
+        [actorCredentialId, nullCredentialA].sort(),
+      );
+
+      const forActor = yield* persistence.rows.credentials.listByWorkspaceSourceAndActor({
+        workspaceId,
+        sourceId,
+        actorAccountId: accountId,
+      });
+      expect(forActor).toHaveLength(2);
+      expect(new Set(forActor.map((credential) => credential.id))).toEqual(
+        new Set([actorCredentialId, nullCredentialA]),
+      );
+
+      const nullActorOnly = yield* persistence.rows.credentials.getByWorkspaceSourceAndActor({
+        workspaceId,
+        sourceId,
+        actorAccountId: null,
+      });
+      assertTrue(Option.isSome(nullActorOnly));
+      if (Option.isSome(nullActorOnly)) {
+        expect(nullActorOnly.value.id).toBe(nullCredentialA);
+      }
+
+      const missingActor = yield* persistence.rows.credentials.getByWorkspaceSourceAndActor({
+        workspaceId,
+        sourceId,
+        actorAccountId: AccountIdSchema.make("acc_missing_credentials"),
+      });
+      expect(Option.isNone(missingActor)).toBe(true);
     }),
   );
 
