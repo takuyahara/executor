@@ -1,0 +1,10 @@
+{
+  "name": "@executor/docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx --bun mint dev --no-open --port 3337",
+    "typecheck": "echo 'No typecheck for @executor/docs'",
+    "validate": "bunx --bun mint validate"
+  }
+}

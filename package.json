@@ -5,7 +5,8 @@
   "packageManager": "bun@1.2.22",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "docs"
   ],
   "catalog": {
     "@effect/cli": "^0.73.2",
@@ -19,7 +20,8 @@
     "zod": "^4.3.6"
   },
   "scripts": {
-    "dev": "turbo run dev --filter=@executor/web",
+    "dev": "turbo run dev",
+    "docs:dev": "turbo run dev --filter=@executor/docs",
     "test": "turbo run test",
     "executor": "./apps/executor/bin/executor",
     "typecheck": "bun run --filter='*' typecheck",
