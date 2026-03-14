@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
@@ -36,6 +36,7 @@ describe("local-installation", () => {
       assertTrue(account._tag === "Some");
       assertTrue(organization._tag === "Some");
       assertTrue(workspace._tag === "Some");
+      expect(existsSync(join(TEST_WORKSPACE_ROOT, ".executor", "executor.jsonc"))).toBe(false);
     }),
   );
 

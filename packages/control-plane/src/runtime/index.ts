@@ -230,7 +230,6 @@ export const createSqlControlPlaneRuntime = (
       loadedConfig: loadedLocalConfig,
       installation: {
         workspaceId: localInstallation.workspaceId,
-        accountId: localInstallation.accountId,
       },
     }).pipe(
       Effect.mapError(toLocalInstallationBootstrapError),
