@@ -100,7 +100,12 @@ describe("portable distribution flow", () => {
       const distDir = join(tempRoot, "dist");
       const homeDir = join(tempRoot, "home");
       const binDir = join(homeDir, ".local", "bin");
-      const installHome = join(homeDir, ".local", "share", "executor");
+      const installHome = process.platform === "darwin"
+        ? join(homeDir, "Library", "Application Support", "Executor")
+        : join(homeDir, ".local", "share", "executor");
+      const runHome = process.platform === "darwin"
+        ? join(installHome, "run")
+        : join(homeDir, ".local", "state", "executor", "run");
       const legacyExecutorBin = join(homeDir, ".executor", "bin", "executor");
       const baseUrl = `http://127.0.0.1:${await allocatePort()}`;
 
@@ -176,9 +181,9 @@ describe("portable distribution flow", () => {
       expect(status.reachable).toBe(true);
       expect(status.pidRunning).toBe(true);
       expect(status.installation).not.toBeNull();
-      expect(status.logFile.startsWith(join(homeDir, ".local", "state", "executor", "run"))).toBe(true);
+      expect(status.logFile.startsWith(runHome)).toBe(true);
       expect(status.localDataDir.startsWith(join(installHome, "data"))).toBe(true);
-      expect(status.pidFile.startsWith(join(homeDir, ".local", "state", "executor", "run"))).toBe(true);
+      expect(status.pidFile.startsWith(runHome)).toBe(true);
 
       const html = await fetch(new URL("/", baseUrl));
       expect(html.status).toBe(200);

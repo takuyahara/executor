@@ -11,6 +11,7 @@ import {
   AccountId,
   type CredentialSlot,
   ExecutionIdSchema,
+  type LocalExecutorConfig,
   McpSourceAuthSessionDataJsonSchema,
   type McpSourceAuthSessionData,
   OAuth2PkceSourceAuthSessionDataJsonSchema,
@@ -43,6 +44,10 @@ import {
   LiveExecutionManagerService,
   type LiveExecutionManager,
 } from "./live-execution";
+import {
+  RuntimeLocalWorkspaceService,
+  type RuntimeLocalWorkspaceState,
+} from "./local-runtime-context";
 import {
   exchangeMcpOAuthAuthorizationCode,
   startMcpOAuthAuthorization,
@@ -1634,13 +1639,35 @@ export const createRuntimeSourceAuthService = (input: {
   rows: SqlControlPlaneRows;
   liveExecutionManager: LiveExecutionManager;
   getLocalServerBaseUrl?: () => string | undefined;
+  localConfig?: LocalExecutorConfig | null;
+  workspaceRoot?: string | null;
+  localWorkspaceState?: RuntimeLocalWorkspaceState;
 }) => {
   const resolveSecretMaterial = createDefaultSecretMaterialResolver({
     rows: input.rows,
+    localConfig: input.localConfig,
+    workspaceRoot: input.workspaceRoot,
   });
   const storeSecretMaterial = createDefaultSecretMaterialStorer({
     rows: input.rows,
   });
+  const mirrorLocalSourceResult = (
+    result: ExecutorSourceAddResult,
+  ): Effect.Effect<ExecutorSourceAddResult, Error, never> =>
+    Effect.succeed(result);
+  const mirrorLocalMcpSourceResult = (
+    result: McpSourceConnectResult,
+  ): Effect.Effect<McpSourceConnectResult, Error, never> =>
+    Effect.succeed(result);
+  const provideLocalWorkspace = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    input.localWorkspaceState
+      ? effect.pipe(
+          Effect.provideService(
+            RuntimeLocalWorkspaceService,
+            input.localWorkspaceState,
+          ),
+        )
+      : effect;
 
   return {
   getLocalServerBaseUrl: () => input.getLocalServerBaseUrl?.() ?? null,
@@ -1652,68 +1679,78 @@ export const createRuntimeSourceAuthService = (input: {
     }),
 
   getSourceById: ({ workspaceId, sourceId, actorAccountId }) =>
-    loadSourceById(input.rows, {
-      workspaceId,
-      sourceId,
-      actorAccountId,
-    }),
+    provideLocalWorkspace(
+      loadSourceById(input.rows, {
+        workspaceId,
+        sourceId,
+        actorAccountId,
+      }),
+    ),
 
   addExecutorSource: (sourceInput, options = undefined) =>
-    sourceInput.kind === "google_discovery"
-      ? addExecutorGoogleDiscoverySource({
-          rows: input.rows,
-          sourceInput,
-          storeSecretMaterial,
-          resolveSecretMaterial,
-          getLocalServerBaseUrl: input.getLocalServerBaseUrl,
-          baseUrl: options?.baseUrl,
-        })
-      : hasSourceAdapterFamily(sourceInput.kind ?? "mcp", "http_api")
-      ? addExecutorHttpSource({
-          rows: input.rows,
-          sourceInput: sourceInput as Extract<
-            ExecutorAddSourceInput,
-            { kind: "openapi" | "graphql" }
-          >,
-          storeSecretMaterial,
-          resolveSecretMaterial,
-          getLocalServerBaseUrl: input.getLocalServerBaseUrl,
-          baseUrl: options?.baseUrl,
-        })
-      : connectMcpSourceInternal({
-          rows: input.rows,
-          getLocalServerBaseUrl: input.getLocalServerBaseUrl,
-          workspaceId: sourceInput.workspaceId,
-          actorAccountId: sourceInput.actorAccountId,
-          executionId: sourceInput.executionId,
-          interactionId: sourceInput.interactionId,
-          endpoint: sourceInput.endpoint,
-          name: sourceInput.name,
-          namespace: sourceInput.namespace,
-          mcpDiscoveryElicitation: options?.mcpDiscoveryElicitation,
-          baseUrl: options?.baseUrl,
-          resolveSecretMaterial,
-        }),
+    provideLocalWorkspace(
+      (sourceInput.kind === "google_discovery"
+        ? addExecutorGoogleDiscoverySource({
+            rows: input.rows,
+            sourceInput,
+            storeSecretMaterial,
+            resolveSecretMaterial,
+            getLocalServerBaseUrl: input.getLocalServerBaseUrl,
+            baseUrl: options?.baseUrl,
+          })
+        : hasSourceAdapterFamily(sourceInput.kind ?? "mcp", "http_api")
+        ? addExecutorHttpSource({
+            rows: input.rows,
+            sourceInput: sourceInput as Extract<
+              ExecutorAddSourceInput,
+              { kind: "openapi" | "graphql" }
+            >,
+            storeSecretMaterial,
+            resolveSecretMaterial,
+            getLocalServerBaseUrl: input.getLocalServerBaseUrl,
+            baseUrl: options?.baseUrl,
+          })
+        : connectMcpSourceInternal({
+            rows: input.rows,
+            getLocalServerBaseUrl: input.getLocalServerBaseUrl,
+            workspaceId: sourceInput.workspaceId,
+            actorAccountId: sourceInput.actorAccountId,
+            executionId: sourceInput.executionId,
+            interactionId: sourceInput.interactionId,
+            endpoint: sourceInput.endpoint,
+            name: sourceInput.name,
+            namespace: sourceInput.namespace,
+            mcpDiscoveryElicitation: options?.mcpDiscoveryElicitation,
+            baseUrl: options?.baseUrl,
+            resolveSecretMaterial,
+          })).pipe(
+            Effect.flatMap(mirrorLocalSourceResult),
+          ),
+    ),
 
   connectMcpSource: (sourceInput) =>
-    connectMcpSourceInternal({
-      rows: input.rows,
-      getLocalServerBaseUrl: input.getLocalServerBaseUrl,
-      workspaceId: sourceInput.workspaceId,
-      actorAccountId: sourceInput.actorAccountId,
-      sourceId: sourceInput.sourceId,
-      executionId: null,
-      interactionId: null,
-      endpoint: sourceInput.endpoint,
-      name: sourceInput.name,
-      namespace: sourceInput.namespace,
-      enabled: sourceInput.enabled,
-      transport: sourceInput.transport,
-      queryParams: sourceInput.queryParams,
-      headers: sourceInput.headers,
-      baseUrl: sourceInput.baseUrl,
-      resolveSecretMaterial,
-    }),
+    provideLocalWorkspace(
+      connectMcpSourceInternal({
+        rows: input.rows,
+        getLocalServerBaseUrl: input.getLocalServerBaseUrl,
+        workspaceId: sourceInput.workspaceId,
+        actorAccountId: sourceInput.actorAccountId,
+        sourceId: sourceInput.sourceId,
+        executionId: null,
+        interactionId: null,
+        endpoint: sourceInput.endpoint,
+        name: sourceInput.name,
+        namespace: sourceInput.namespace,
+        enabled: sourceInput.enabled,
+        transport: sourceInput.transport,
+        queryParams: sourceInput.queryParams,
+        headers: sourceInput.headers,
+        baseUrl: sourceInput.baseUrl,
+        resolveSecretMaterial,
+      }).pipe(
+        Effect.flatMap(mirrorLocalMcpSourceResult),
+      ),
+    ),
 
   startSourceOAuthSession: (oauthInput) =>
     Effect.gen(function* () {
@@ -1781,7 +1818,7 @@ export const createRuntimeSourceAuthService = (input: {
     error,
     errorDescription,
   }) =>
-    Effect.gen(function* () {
+    provideLocalWorkspace(Effect.gen(function* () {
       const sessionOption = yield* input.rows.sourceAuthSessions.getByState(state);
       if (Option.isNone(sessionOption)) {
         return yield* Effect.fail(new Error(`Source auth session not found for state ${state}`));
@@ -1890,7 +1927,7 @@ export const createRuntimeSourceAuthService = (input: {
         sessionId: session.id,
         auth,
       } satisfies CompleteSourceOAuthSessionResult;
-    }),
+    })),
 
   completeSourceCredentialSetup: ({
     workspaceId,
@@ -1901,7 +1938,7 @@ export const createRuntimeSourceAuthService = (input: {
     error,
     errorDescription,
   }) =>
-    Effect.gen(function* () {
+    provideLocalWorkspace(Effect.gen(function* () {
       const sessionOption = yield* input.rows.sourceAuthSessions.getByState(state);
       if (Option.isNone(sessionOption)) {
         return yield* Effect.fail(new Error(`Source auth session not found for state ${state}`));
@@ -2164,7 +2201,7 @@ export const createRuntimeSourceAuthService = (input: {
       });
 
       return connectedSource;
-    }),
+    })),
   } satisfies RuntimeSourceAuthServiceShape;
 };
 
@@ -2176,6 +2213,9 @@ export class RuntimeSourceAuthServiceTag extends Context.Tag(
 
 export const RuntimeSourceAuthServiceLive = (input: {
   getLocalServerBaseUrl?: () => string | undefined;
+  localConfig?: LocalExecutorConfig | null;
+  workspaceRoot?: string | null;
+  localWorkspaceState?: RuntimeLocalWorkspaceState;
 } = {}) =>
   Layer.effect(
     RuntimeSourceAuthServiceTag,
@@ -2187,6 +2227,9 @@ export const RuntimeSourceAuthServiceLive = (input: {
         rows,
         liveExecutionManager,
         getLocalServerBaseUrl: input.getLocalServerBaseUrl,
+        localConfig: input.localConfig,
+        workspaceRoot: input.workspaceRoot,
+        localWorkspaceState: input.localWorkspaceState,
       });
     }),
   );

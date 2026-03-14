@@ -17,6 +17,8 @@ import { LiveExecutionManagerService } from "./live-execution";
 import {
   operationErrors,
 } from "./operation-errors";
+import { resolveLocalWorkspaceContext } from "./local-config";
+import { getRuntimeLocalWorkspaceOption } from "./local-runtime-context";
 import { RuntimeSourceAuthServiceTag } from "./source-auth-service";
 import {
   createSourceCredentialSelectionBearerContent,
@@ -181,8 +183,11 @@ const loadSourceCredentialInteraction = (input: {
 export const getLocalInstallation = () =>
   Effect.gen(function* () {
     const store = yield* ControlPlaneStore;
+    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
+    const context = runtimeLocalWorkspace?.context
+      ?? (yield* Effect.promise(() => resolveLocalWorkspaceContext()));
 
-    const installation = yield* loadLocalInstallation(store).pipe(
+    const installation = yield* loadLocalInstallation(store, context).pipe(
       Effect.mapError((error) =>
         error instanceof ControlPlanePersistenceError
           ? localOps.installation.storage(error)

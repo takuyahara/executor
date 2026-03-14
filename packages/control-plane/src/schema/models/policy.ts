@@ -1,7 +1,5 @@
 import {
-  createInsertSchema,
   createSelectSchema,
-  createUpdateSchema,
 } from "drizzle-orm/effect-schema";
 import { Schema } from "effect";
 
@@ -56,17 +54,60 @@ const policySchemaOverrides = {
   updatedAt: TimestampMsSchema,
 } as const;
 
-export const PolicySchema = createSelectSchema(policiesTable, policySchemaOverrides);
+const PolicyStorageSchema = createSelectSchema(policiesTable, policySchemaOverrides);
 
-export const PolicyInsertSchema = createInsertSchema(
-  policiesTable,
-  policySchemaOverrides,
+const PolicyTypeSchema = Schema.Struct({
+  id: PolicyIdSchema,
+  configKey: Schema.NullOr(Schema.String),
+  scopeType: PolicyScopeTypeSchema,
+  organizationId: OrganizationIdSchema,
+  workspaceId: Schema.NullOr(WorkspaceIdSchema),
+  targetAccountId: Schema.NullOr(AccountIdSchema),
+  clientId: Schema.NullOr(Schema.String),
+  resourceType: PolicyResourceTypeSchema,
+  resourcePattern: Schema.String,
+  matchType: PolicyMatchTypeSchema,
+  effect: PolicyEffectSchema,
+  approvalMode: PolicyApprovalModeSchema,
+  argumentConditionsJson: Schema.NullOr(Schema.String),
+  priority: Schema.Number,
+  enabled: Schema.Boolean,
+  createdAt: TimestampMsSchema,
+  updatedAt: TimestampMsSchema,
+});
+
+export const PolicySchema = Schema.transform(
+  PolicyStorageSchema,
+  PolicyTypeSchema,
+  {
+    strict: false,
+    decode: (row, _input) => ({
+      ...row,
+      configKey: null,
+    }),
+    encode: (policy, _output) => ({
+      id: policy.id,
+      scopeType: policy.scopeType,
+      organizationId: policy.organizationId,
+      workspaceId: policy.workspaceId,
+      targetAccountId: policy.targetAccountId,
+      clientId: policy.clientId,
+      resourceType: policy.resourceType,
+      resourcePattern: policy.resourcePattern,
+      matchType: policy.matchType,
+      effect: policy.effect,
+      approvalMode: policy.approvalMode,
+      argumentConditionsJson: policy.argumentConditionsJson,
+      priority: policy.priority,
+      enabled: policy.enabled,
+      createdAt: policy.createdAt,
+      updatedAt: policy.updatedAt,
+    }),
+  },
 );
 
-export const PolicyUpdateSchema = createUpdateSchema(
-  policiesTable,
-  policySchemaOverrides,
-);
+export const PolicyInsertSchema = PolicyTypeSchema;
+export const PolicyUpdateSchema = Schema.partial(PolicyTypeSchema);
 
 export type PolicyResourceType = typeof PolicyResourceTypeSchema.Type;
 export type PolicyMatchType = typeof PolicyMatchTypeSchema.Type;

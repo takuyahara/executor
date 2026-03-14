@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -39,6 +42,7 @@ const makeExecutionResolver = () => {
 const makeRuntime = Effect.acquireRelease(
   createSqlControlPlaneRuntime({
     localDataDir: ":memory:",
+    workspaceRoot: mkdtempSync(join(tmpdir(), "executor-execution-http-")),
     executionResolver: makeExecutionResolver(),
   }),
   (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),

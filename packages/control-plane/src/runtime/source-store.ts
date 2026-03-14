@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
+
 import type {
   AccountId,
   AuthArtifact,
   CredentialSlot,
+  LocalConfigSecretInput,
+  LocalConfigSource,
   Source,
   SourceRecipeId,
   SourceRecipeRevisionId,
@@ -20,9 +24,32 @@ import {
   stableSourceRecipeRevisionId,
   splitSourceForStorage,
 } from "./source-definitions";
+import {
+  loadLocalExecutorConfig,
+  type ResolvedLocalWorkspaceContext,
+  writeProjectLocalExecutorConfig,
+} from "./local-config";
+import {
+  readLocalSourceArtifact,
+  removeLocalSourceArtifact,
+} from "./local-source-artifacts";
+import {
+  getRuntimeLocalWorkspaceOption,
+} from "./local-runtime-context";
+import {
+  loadLocalWorkspaceState,
+  writeLocalWorkspaceState,
+  type LocalWorkspaceState,
+} from "./local-workspace-state";
+import {
+  fromConfigSecretProviderId,
+  toConfigSecretProviderId,
+} from "./local-config-secrets";
 import { createDefaultSecretMaterialDeleter } from "./secret-material-providers";
 import { authArtifactSecretMaterialRefs } from "./auth-artifacts";
 import { removeAuthLeaseAndSecrets } from "./auth-leases";
+import { getSourceAdapter } from "./source-adapters";
+import { slugify } from "./slug";
 
 const secretRefKey = (ref: { providerId: string; handle: string }): string =>
   `${ref.providerId}:${ref.handle}`;
@@ -79,6 +106,283 @@ const selectExactAuthArtifact = (input: {
       && artifact.actorAccountId === (input.actorAccountId ?? null),
   ) ?? null;
 
+const trimOrNull = (value: string | null | undefined): string | null => {
+  if (value == null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const cloneJson = <T>(value: T): T =>
+  JSON.parse(JSON.stringify(value)) as T;
+
+const localSourceIdForConfigKey = (input: {
+  workspaceRoot: string;
+  configKey: string;
+}): Source["id"] => {
+  const hash = createHash("sha256")
+    .update(`${input.workspaceRoot}:${input.configKey}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `src_local_${hash}` as Source["id"];
+};
+
+const deriveLocalSourceConfigKey = (source: Pick<Source, "configKey" | "namespace" | "name">): string => {
+  const base =
+    trimOrNull(source.configKey)
+    ?? trimOrNull(source.namespace)
+    ?? trimOrNull(source.name)
+    ?? "source";
+  return slugify(base) || "source";
+};
+
+const resolveLocalConfigSecretProviderAlias = (config: Awaited<ReturnType<typeof loadLocalExecutorConfig>>["config"]): string | null => {
+  const defaultAlias = trimOrNull(config?.secrets?.defaults?.env);
+  if (defaultAlias !== null && config?.secrets?.providers?.[defaultAlias]) {
+    return defaultAlias;
+  }
+
+  return config?.secrets?.providers?.default ? "default" : null;
+};
+
+const sourceAuthFromConfigInput = (input: {
+  auth: unknown;
+  config: Awaited<ReturnType<typeof loadLocalExecutorConfig>>["config"];
+  existing: Source["auth"] | null;
+}): Source["auth"] => {
+  if (input.auth === undefined) {
+    return input.existing ?? { kind: "none" };
+  }
+
+  if (typeof input.auth === "string") {
+    const providerAlias = resolveLocalConfigSecretProviderAlias(input.config);
+    return {
+      kind: "bearer",
+      headerName: "Authorization",
+      prefix: "Bearer ",
+      token: {
+        providerId: providerAlias ? toConfigSecretProviderId(providerAlias) : "env",
+        handle: input.auth,
+      },
+    };
+  }
+
+  if (typeof input.auth === "object" && input.auth !== null) {
+    const explicit = input.auth as {
+      source?: string;
+      provider?: string;
+      id?: string;
+    };
+    const providerAlias = trimOrNull(explicit.provider);
+    const providerId = providerAlias
+      ? toConfigSecretProviderId(providerAlias)
+      : explicit.source === "env"
+        ? "env"
+        : null;
+    const handle = trimOrNull(explicit.id);
+    if (providerId && handle) {
+      return {
+        kind: "bearer",
+        headerName: "Authorization",
+        prefix: "Bearer ",
+        token: {
+          providerId,
+          handle,
+        },
+      };
+    }
+  }
+
+  return input.existing ?? { kind: "none" };
+};
+
+const configAuthFromSource = (input: {
+  source: Source;
+  existingConfigAuth: LocalConfigSecretInput | undefined;
+  config: Awaited<ReturnType<typeof loadLocalExecutorConfig>>["config"];
+}): LocalConfigSecretInput | undefined => {
+  if (input.source.auth.kind !== "bearer") {
+    return input.existingConfigAuth;
+  }
+
+  if (input.source.auth.token.providerId === "env") {
+    return input.source.auth.token.handle;
+  }
+
+  const provider = fromConfigSecretProviderId(input.source.auth.token.providerId);
+  if (provider !== null) {
+    const configuredProvider = input.config?.secrets?.providers?.[provider];
+    if (configuredProvider) {
+      return {
+        source: configuredProvider.source,
+        provider,
+        id: input.source.auth.token.handle,
+      };
+    }
+  }
+
+  return input.existingConfigAuth;
+};
+
+const resolveRuntimeLocalWorkspace = (workspaceId: WorkspaceId) =>
+  Effect.gen(function* () {
+    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
+    if (runtimeLocalWorkspace === null || runtimeLocalWorkspace.installation.workspaceId !== workspaceId) {
+      return null;
+    }
+
+    const loadedConfig = yield* Effect.tryPromise({
+      try: () => loadLocalExecutorConfig(runtimeLocalWorkspace.context),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+    });
+    const workspaceState = yield* Effect.tryPromise({
+      try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+    });
+
+    return {
+      context: runtimeLocalWorkspace.context,
+      installation: runtimeLocalWorkspace.installation,
+      loadedConfig,
+      workspaceState,
+    };
+  });
+
+const buildLocalSourceRecord = (input: {
+  context: ResolvedLocalWorkspaceContext;
+  workspaceId: WorkspaceId;
+  loadedConfig: Awaited<ReturnType<typeof loadLocalExecutorConfig>>;
+  workspaceState: LocalWorkspaceState;
+  configKey: string;
+  actorAccountId?: AccountId | null;
+  authArtifacts: ReadonlyArray<AuthArtifact>;
+}): Effect.Effect<{
+  source: Source;
+  configKey: string;
+}, Error, never> =>
+  Effect.gen(function* () {
+    const sourceConfig = input.loadedConfig.config?.sources?.[input.configKey];
+    if (!sourceConfig) {
+      return yield* Effect.fail(new Error(`Configured source not found for key ${input.configKey}`));
+    }
+
+    const existingState = input.workspaceState.sources[input.configKey];
+    const adapter = getSourceAdapter(sourceConfig.kind);
+    const baseSource = yield* adapter.validateSource({
+      id: existingState?.id ?? localSourceIdForConfigKey({
+        workspaceRoot: input.context.workspaceRoot,
+        configKey: input.configKey,
+      }),
+      workspaceId: input.workspaceId,
+      configKey: input.configKey,
+      name: trimOrNull(sourceConfig.name) ?? input.configKey,
+      kind: sourceConfig.kind,
+      endpoint: sourceConfig.connection.endpoint.trim(),
+      status: existingState?.status ?? ((sourceConfig.enabled ?? true) ? "connected" : "draft"),
+      enabled: sourceConfig.enabled ?? true,
+      namespace: trimOrNull(sourceConfig.namespace) ?? input.configKey,
+      bindingVersion: adapter.bindingConfigVersion,
+      binding: sourceConfig.binding,
+      importAuthPolicy: adapter.defaultImportAuthPolicy,
+      importAuth: { kind: "none" },
+      auth: sourceAuthFromConfigInput({
+        auth: sourceConfig.connection.auth,
+        config: input.loadedConfig.config,
+        existing: null,
+      }),
+      sourceHash: existingState?.sourceHash ?? null,
+      lastError: existingState?.lastError ?? null,
+      createdAt: existingState?.createdAt ?? Date.now(),
+      updatedAt: existingState?.updatedAt ?? Date.now(),
+    });
+
+    const artifact = yield* Effect.tryPromise({
+      try: () => readLocalSourceArtifact({
+        context: input.context,
+        configKey: input.configKey,
+      }),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+    }).pipe(
+      Effect.catchAll(() => Effect.succeed(null)),
+    );
+
+    const runtimeAuthArtifact = selectPreferredAuthArtifact({
+      authArtifacts: input.authArtifacts.filter((artifactItem) => artifactItem.sourceId === baseSource.id),
+      actorAccountId: input.actorAccountId,
+      slot: "runtime",
+    });
+    const importAuthArtifact = selectPreferredAuthArtifact({
+      authArtifacts: input.authArtifacts.filter((artifactItem) => artifactItem.sourceId === baseSource.id),
+      actorAccountId: input.actorAccountId,
+      slot: "import",
+    });
+
+    const sourceRecord = {
+      id: baseSource.id,
+      workspaceId: baseSource.workspaceId,
+      configKey: input.configKey,
+      recipeId: artifact?.recipeId ?? stableSourceRecipeId(baseSource),
+      recipeRevisionId: artifact?.revision.id ?? stableSourceRecipeRevisionId(baseSource),
+      name: baseSource.name,
+      kind: baseSource.kind,
+      endpoint: baseSource.endpoint,
+      status: baseSource.status,
+      enabled: baseSource.enabled,
+      namespace: baseSource.namespace,
+      importAuthPolicy: baseSource.importAuthPolicy,
+      bindingConfigJson: adapter.serializeBindingConfig(baseSource),
+      sourceHash: baseSource.sourceHash,
+      lastError: baseSource.lastError,
+      createdAt: baseSource.createdAt,
+      updatedAt: baseSource.updatedAt,
+    };
+
+    const source = yield* projectSourceFromStorage({
+      sourceRecord,
+      runtimeAuthArtifact,
+      importAuthArtifact,
+    });
+
+    return {
+      source,
+      configKey: input.configKey,
+    };
+  });
+
+const resolveLocalSourceConfigKey = (input: {
+  context: {
+    workspaceRoot: string;
+  };
+  loadedConfig: Awaited<ReturnType<typeof loadLocalExecutorConfig>>;
+  workspaceState: LocalWorkspaceState;
+  sourceId: Source["id"];
+}): string | null => {
+  const configKeys = Object.keys(input.loadedConfig.config?.sources ?? {});
+  for (const configKey of configKeys) {
+    const storedId = input.workspaceState.sources[configKey]?.id;
+    if (storedId === input.sourceId) {
+      return configKey;
+    }
+
+    if (
+      storedId === undefined
+      && localSourceIdForConfigKey({
+        workspaceRoot: input.context.workspaceRoot,
+        configKey,
+      }) === input.sourceId
+    ) {
+      return configKey;
+    }
+  }
+
+  return null;
+};
+
 export const loadSourcesInWorkspace = (
   rows: SqlControlPlaneRows,
   workspaceId: WorkspaceId,
@@ -87,6 +391,27 @@ export const loadSourcesInWorkspace = (
   } = {},
 ) =>
   Effect.gen(function* () {
+    const localWorkspace = yield* resolveRuntimeLocalWorkspace(workspaceId);
+    if (localWorkspace !== null) {
+      const authArtifacts = yield* rows.authArtifacts.listByWorkspaceId(workspaceId);
+      return yield* Effect.forEach(
+        Object.keys(localWorkspace.loadedConfig.config?.sources ?? {}),
+        (configKey) =>
+          Effect.map(
+            buildLocalSourceRecord({
+              context: localWorkspace.context,
+              workspaceId,
+              loadedConfig: localWorkspace.loadedConfig,
+              workspaceState: localWorkspace.workspaceState,
+              configKey,
+              actorAccountId: options.actorAccountId,
+              authArtifacts,
+            }),
+            ({ source }) => source,
+          ),
+      );
+    }
+
     const sourceRecords = yield* rows.sources.listByWorkspaceId(workspaceId);
     const authArtifacts = yield* rows.authArtifacts.listByWorkspaceId(workspaceId);
     const filteredAuthArtifacts = sourceRecords.flatMap((sourceRecord) => {
@@ -118,6 +443,35 @@ export const loadSourceById = (rows: SqlControlPlaneRows, input: {
   actorAccountId?: AccountId | null;
 }) =>
   Effect.gen(function* () {
+    const localWorkspace = yield* resolveRuntimeLocalWorkspace(input.workspaceId);
+    if (localWorkspace !== null) {
+      const authArtifacts = yield* rows.authArtifacts.listByWorkspaceId(input.workspaceId);
+      const configKey = resolveLocalSourceConfigKey({
+        context: localWorkspace.context,
+        loadedConfig: localWorkspace.loadedConfig,
+        workspaceState: localWorkspace.workspaceState,
+        sourceId: input.sourceId,
+      });
+
+      if (configKey === null) {
+        return yield* Effect.fail(
+          new Error(`Source not found: workspaceId=${input.workspaceId} sourceId=${input.sourceId}`),
+        );
+      }
+
+      const localSource = yield* buildLocalSourceRecord({
+        context: localWorkspace.context,
+        workspaceId: input.workspaceId,
+        loadedConfig: localWorkspace.loadedConfig,
+        workspaceState: localWorkspace.workspaceState,
+        configKey,
+        actorAccountId: input.actorAccountId,
+        authArtifacts,
+      });
+
+      return localSource.source;
+    }
+
     const sourceRecord = yield* rows.sources.getByWorkspaceAndId(
       input.workspaceId,
       input.sourceId,
@@ -150,6 +504,62 @@ export const loadSourceById = (rows: SqlControlPlaneRows, input: {
       importAuthArtifact,
     });
   });
+
+const configSourceFromLocalSource = (input: {
+  source: Source;
+  configKey: string;
+  existingConfigAuth: LocalConfigSecretInput | undefined;
+  config: Awaited<ReturnType<typeof loadLocalExecutorConfig>>["config"];
+}): LocalConfigSource => {
+  const auth = configAuthFromSource({
+    source: input.source,
+    existingConfigAuth: input.existingConfigAuth,
+    config: input.config,
+  });
+
+  const common = {
+    ...(trimOrNull(input.source.name) !== trimOrNull(input.configKey)
+      ? { name: input.source.name }
+      : {}),
+    ...(trimOrNull(input.source.namespace) !== trimOrNull(input.configKey)
+      ? { namespace: input.source.namespace ?? undefined }
+      : {}),
+    ...(input.source.enabled === false ? { enabled: false } : {}),
+    connection: {
+      endpoint: input.source.endpoint,
+      ...(auth !== undefined ? { auth } : {}),
+    },
+  };
+
+  switch (input.source.kind) {
+    case "openapi":
+      return {
+        kind: "openapi",
+        ...common,
+        binding: cloneJson(input.source.binding) as Extract<LocalConfigSource, { kind: "openapi" }>["binding"],
+      };
+    case "graphql":
+      return {
+        kind: "graphql",
+        ...common,
+        binding: cloneJson(input.source.binding) as Extract<LocalConfigSource, { kind: "graphql" }>["binding"],
+      };
+    case "google_discovery":
+      return {
+        kind: "google_discovery",
+        ...common,
+        binding: cloneJson(input.source.binding) as Extract<LocalConfigSource, { kind: "google_discovery" }>["binding"],
+      };
+    case "mcp":
+      return {
+        kind: "mcp",
+        ...common,
+        binding: cloneJson(input.source.binding) as Extract<LocalConfigSource, { kind: "mcp" }>["binding"],
+      };
+    default:
+      throw new Error(`Unsupported source kind for local config: ${input.source.kind}`);
+  }
+};
 
 const removeAuthArtifactsForSource = (rows: SqlControlPlaneRows, input: {
   workspaceId: WorkspaceId;
@@ -227,6 +637,75 @@ export const removeSourceById = (rows: SqlControlPlaneRows, input: {
   sourceId: Source["id"];
 }) =>
   Effect.gen(function* () {
+    const localWorkspace = yield* resolveRuntimeLocalWorkspace(input.workspaceId);
+    if (localWorkspace !== null) {
+      const configKey = resolveLocalSourceConfigKey({
+        context: localWorkspace.context,
+        loadedConfig: localWorkspace.loadedConfig,
+        workspaceState: localWorkspace.workspaceState,
+        sourceId: input.sourceId,
+      });
+      if (configKey === null) {
+        return false;
+      }
+
+      const projectConfig = cloneJson(localWorkspace.loadedConfig.projectConfig ?? {});
+      const sources = {
+        ...(projectConfig.sources ?? {}),
+      };
+      delete sources[configKey];
+      yield* Effect.tryPromise({
+        try: () =>
+          writeProjectLocalExecutorConfig({
+            context: localWorkspace.context,
+            config: {
+              ...projectConfig,
+              sources,
+            },
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+
+      const {
+        [configKey]: _removedSource,
+        ...remainingSources
+      } = localWorkspace.workspaceState.sources;
+      const workspaceState: LocalWorkspaceState = {
+        ...localWorkspace.workspaceState,
+        sources: remainingSources,
+      };
+      yield* Effect.tryPromise({
+        try: () =>
+          writeLocalWorkspaceState({
+            context: localWorkspace.context,
+            state: workspaceState,
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+      yield* Effect.tryPromise({
+        try: () =>
+          removeLocalSourceArtifact({
+            context: localWorkspace.context,
+            configKey,
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+
+      yield* rows.sourceAuthSessions.removeByWorkspaceAndSourceId(
+        input.workspaceId,
+        input.sourceId,
+      );
+      yield* rows.sourceOauthClients.removeByWorkspaceAndSourceId({
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId,
+      });
+      yield* removeAuthArtifactsForSource(rows, input);
+      return true;
+    }
+
     const sourceRecord = yield* rows.sources.getByWorkspaceAndId(input.workspaceId, input.sourceId);
     if (Option.isNone(sourceRecord)) {
       return false;
@@ -262,6 +741,158 @@ export const persistSource = (
   } = {},
 ) =>
   Effect.gen(function* () {
+    const localWorkspace = yield* resolveRuntimeLocalWorkspace(source.workspaceId);
+    if (localWorkspace !== null) {
+      const existingAuthArtifacts = yield* rows.authArtifacts.listByWorkspaceAndSourceId({
+        workspaceId: source.workspaceId,
+        sourceId: source.id,
+      });
+      const existingRuntimeAuthArtifact = selectExactAuthArtifact({
+        authArtifacts: existingAuthArtifacts,
+        actorAccountId: options.actorAccountId,
+        slot: "runtime",
+      });
+      const existingImportAuthArtifact = selectExactAuthArtifact({
+        authArtifacts: existingAuthArtifacts,
+        actorAccountId: options.actorAccountId,
+        slot: "import",
+      });
+      const configKey =
+        source.configKey
+        ?? resolveLocalSourceConfigKey({
+          context: localWorkspace.context,
+          loadedConfig: localWorkspace.loadedConfig,
+          workspaceState: localWorkspace.workspaceState,
+          sourceId: source.id,
+        })
+        ?? deriveLocalSourceConfigKey(source);
+      const nextSource = {
+        ...source,
+        configKey,
+      } satisfies Source;
+      const projectConfig = cloneJson(localWorkspace.loadedConfig.projectConfig ?? {});
+      const sources = {
+        ...(projectConfig.sources ?? {}),
+      };
+      const existingConfigSource = sources[configKey];
+      sources[configKey] = configSourceFromLocalSource({
+        source: nextSource,
+        configKey,
+        existingConfigAuth: existingConfigSource?.connection.auth,
+        config: localWorkspace.loadedConfig.config,
+      });
+      yield* Effect.tryPromise({
+        try: () =>
+          writeProjectLocalExecutorConfig({
+            context: localWorkspace.context,
+            config: {
+              ...projectConfig,
+              sources,
+            },
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+
+      const { runtimeAuthArtifact, importAuthArtifact } = splitSourceForStorage({
+        source: nextSource,
+        recipeId: stableSourceRecipeId(nextSource),
+        recipeRevisionId: stableSourceRecipeRevisionId(nextSource),
+        actorAccountId: options.actorAccountId,
+        existingRuntimeAuthArtifactId: existingRuntimeAuthArtifact?.id ?? null,
+        existingImportAuthArtifactId: existingImportAuthArtifact?.id ?? null,
+      });
+
+      if (runtimeAuthArtifact === null) {
+        if (existingRuntimeAuthArtifact !== null) {
+          yield* removeAuthLeaseAndSecrets(rows, {
+            authArtifactId: existingRuntimeAuthArtifact.id,
+          });
+        }
+        yield* rows.authArtifacts.removeByWorkspaceSourceAndActor({
+          workspaceId: source.workspaceId,
+          sourceId: source.id,
+          actorAccountId: options.actorAccountId ?? null,
+          slot: "runtime",
+        });
+      } else {
+        yield* rows.authArtifacts.upsert(runtimeAuthArtifact);
+        if (
+          existingRuntimeAuthArtifact !== null
+          && existingRuntimeAuthArtifact.id !== runtimeAuthArtifact.id
+        ) {
+          yield* removeAuthLeaseAndSecrets(rows, {
+            authArtifactId: existingRuntimeAuthArtifact.id,
+          });
+        }
+      }
+
+      yield* cleanupAuthArtifactSecretRefs(rows, {
+        previous: existingRuntimeAuthArtifact ?? null,
+        next: runtimeAuthArtifact,
+      });
+
+      if (importAuthArtifact === null) {
+        if (existingImportAuthArtifact !== null) {
+          yield* removeAuthLeaseAndSecrets(rows, {
+            authArtifactId: existingImportAuthArtifact.id,
+          });
+        }
+        yield* rows.authArtifacts.removeByWorkspaceSourceAndActor({
+          workspaceId: source.workspaceId,
+          sourceId: source.id,
+          actorAccountId: options.actorAccountId ?? null,
+          slot: "import",
+        });
+      } else {
+        yield* rows.authArtifacts.upsert(importAuthArtifact);
+        if (
+          existingImportAuthArtifact !== null
+          && existingImportAuthArtifact.id !== importAuthArtifact.id
+        ) {
+          yield* removeAuthLeaseAndSecrets(rows, {
+            authArtifactId: existingImportAuthArtifact.id,
+          });
+        }
+      }
+
+      yield* cleanupAuthArtifactSecretRefs(rows, {
+        previous: existingImportAuthArtifact ?? null,
+        next: importAuthArtifact,
+      });
+
+      const existingSourceState = localWorkspace.workspaceState.sources[configKey];
+      const workspaceState: LocalWorkspaceState = {
+        ...localWorkspace.workspaceState,
+        sources: {
+          ...localWorkspace.workspaceState.sources,
+          [configKey]: {
+            id: nextSource.id,
+            status: nextSource.status,
+            lastError: nextSource.lastError,
+            sourceHash: nextSource.sourceHash,
+            createdAt: existingSourceState?.createdAt ?? nextSource.createdAt,
+            updatedAt: nextSource.updatedAt,
+          },
+        },
+      };
+      yield* Effect.tryPromise({
+        try: () =>
+          writeLocalWorkspaceState({
+            context: localWorkspace.context,
+            state: workspaceState,
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+
+      return yield* loadSourceById(rows, {
+        workspaceId: source.workspaceId,
+        sourceId: nextSource.id,
+        actorAccountId: options.actorAccountId,
+      });
+    }
+
     const existing = yield* rows.sources.getByWorkspaceAndId(source.workspaceId, source.id);
     const existingAuthArtifacts = yield* rows.authArtifacts.listByWorkspaceAndSourceId({
       workspaceId: source.workspaceId,

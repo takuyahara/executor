@@ -68,6 +68,7 @@ export type StartLocalExecutorServerOptions = {
   readonly port?: number;
   readonly host?: string;
   readonly localDataDir?: string;
+  readonly workspaceRoot?: string;
   readonly migrationsFolder?: string;
   readonly pidFile?: string;
   readonly executionResolver?: ResolveExecutionEnvironment;
@@ -100,6 +101,7 @@ const createRuntime = (
   createSqlControlPlaneRuntime({
     localDataDir,
     migrationsFolder: options.migrationsFolder,
+    workspaceRoot: options.workspaceRoot,
     executionResolver: options.executionResolver,
     resolveSecretMaterial: options.resolveSecretMaterial,
     getLocalServerBaseUrl,

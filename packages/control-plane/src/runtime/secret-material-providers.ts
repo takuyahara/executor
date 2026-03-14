@@ -1,14 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { promises as fs } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
+import { isAbsolute } from "node:path";
 
 import type { SqlControlPlaneRows } from "#persistence";
 import {
+  type LocalConfigSecretProvider,
+  type LocalExecutorConfig,
   type SecretMaterialPurpose,
   SecretMaterialIdSchema,
   type SecretRef,
 } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+
+import { resolveConfigRelativePath } from "./local-config";
+import { fromConfigSecretProviderId } from "./local-config-secrets";
 
 export const ENV_SECRET_PROVIDER_ID = "env";
 export const PARAMS_SECRET_PROVIDER_ID = "params";
@@ -43,6 +51,8 @@ type SecretMaterialProviderRuntime = {
   env: NodeJS.ProcessEnv;
   dangerouslyAllowEnvSecrets: boolean;
   keychainServiceName: string;
+  localConfig: LocalExecutorConfig | null;
+  workspaceRoot: string | null;
 };
 
 type SecretMaterialProvider = {
@@ -125,6 +135,7 @@ const runCommand = (input: {
   command: string;
   args: ReadonlyArray<string>;
   stdin?: string;
+  env?: NodeJS.ProcessEnv;
   operation: string;
 }): Effect.Effect<SpawnResult, Error, never> =>
   Effect.tryPromise({
@@ -132,6 +143,7 @@ const runCommand = (input: {
       new Promise<SpawnResult>((resolve, reject) => {
         const child = spawn(input.command, [...input.args], {
           stdio: "pipe",
+          env: input.env,
         });
 
         let stdout = "";
@@ -474,17 +486,169 @@ const createSecretMaterialProviderRuntime = (input: {
   rows: SqlControlPlaneRows;
   dangerouslyAllowEnvSecrets?: boolean;
   keychainServiceName?: string;
+  localConfig?: LocalExecutorConfig | null;
+  workspaceRoot?: string | null;
 }): SecretMaterialProviderRuntime => ({
   rows: input.rows,
   env: process.env,
   dangerouslyAllowEnvSecrets: resolveDangerouslyAllowEnvSecrets(input.dangerouslyAllowEnvSecrets),
   keychainServiceName: resolveKeychainServiceName(input.keychainServiceName),
+  localConfig: input.localConfig ?? null,
+  workspaceRoot: input.workspaceRoot ?? null,
 });
+
+const isRegularFilePath = (path: string, allowSymlink: boolean): boolean => {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) {
+    if (!allowSymlink) {
+      return false;
+    }
+    const targetStat = lstatSync(realpathSync(path));
+    return targetStat.isFile();
+  }
+  return stat.isFile();
+};
+
+const ensureTrustedDir = (path: string, trustedDirs: readonly string[] | undefined): boolean => {
+  if (!trustedDirs || trustedDirs.length === 0) {
+    return true;
+  }
+
+  const real = realpathSync(path);
+  return trustedDirs.some((dir) => {
+    const trusted = realpathSync(dir);
+    return real === trusted || real.startsWith(`${trusted}/`);
+  });
+};
+
+const readFileSecretValue = (input: {
+  provider: Extract<LocalConfigSecretProvider, { source: "file" }>;
+  ref: SecretRef;
+  workspaceRoot: string;
+}): Effect.Effect<string, Error, never> =>
+  Effect.tryPromise({
+    try: async () => {
+      const resolvedPath = resolveConfigRelativePath({
+        path: input.provider.path,
+        workspaceRoot: input.workspaceRoot,
+      });
+      const raw = await fs.readFile(resolvedPath, "utf8");
+      const mode = input.provider.mode ?? "singleValue";
+      if (mode === "singleValue") {
+        return raw.trim();
+      }
+
+      const parsed = JSON.parse(raw) as unknown;
+      if (input.ref.handle.startsWith("/")) {
+        const segments = input.ref.handle
+          .split("/")
+          .slice(1)
+          .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"));
+        let current: unknown = parsed;
+        for (const segment of segments) {
+          if (typeof current !== "object" || current === null || !(segment in current)) {
+            throw new Error(`Secret path not found in ${resolvedPath}: ${input.ref.handle}`);
+          }
+          current = (current as Record<string, unknown>)[segment];
+        }
+        if (typeof current !== "string" || current.trim().length === 0) {
+          throw new Error(`Secret path did not resolve to a string: ${input.ref.handle}`);
+        }
+        return current;
+      }
+
+      if (typeof parsed !== "object" || parsed === null) {
+        throw new Error(`JSON secret provider must resolve to an object: ${resolvedPath}`);
+      }
+      const value = (parsed as Record<string, unknown>)[input.ref.handle];
+      if (typeof value !== "string" || value.trim().length === 0) {
+        throw new Error(`Secret key not found in ${resolvedPath}: ${input.ref.handle}`);
+      }
+      return value;
+    },
+    catch: (cause) =>
+      cause instanceof Error ? cause : new Error(String(cause)),
+  });
+
+const resolveConfiguredSecretProvider = (input: {
+  ref: SecretRef;
+  runtime: SecretMaterialProviderRuntime;
+}): Effect.Effect<string, Error, never> => {
+  const providerAlias = fromConfigSecretProviderId(input.ref.providerId);
+  if (providerAlias === null) {
+    return Effect.fail(new Error(`Unsupported secret provider: ${input.ref.providerId}`));
+  }
+
+  const provider = input.runtime.localConfig?.secrets?.providers?.[providerAlias];
+  if (!provider) {
+    return Effect.fail(
+      new Error(`Config secret provider "${providerAlias}" is not configured`),
+    );
+  }
+  if (input.runtime.workspaceRoot === null) {
+    return Effect.fail(
+      new Error(`Config secret provider "${providerAlias}" requires a workspace root`),
+    );
+  }
+
+  if (provider.source === "env") {
+    const value = ensureNonEmptyString(input.runtime.env[input.ref.handle]);
+    return value === null
+      ? Effect.fail(new Error(`Environment variable ${input.ref.handle} is not set`))
+      : Effect.succeed(value);
+  }
+
+  if (provider.source === "file") {
+    return readFileSecretValue({
+      provider,
+      ref: input.ref,
+      workspaceRoot: input.runtime.workspaceRoot,
+    });
+  }
+
+  const command = provider.command.trim();
+  if (!isAbsolute(command)) {
+    return Effect.fail(
+      new Error(`Exec secret provider command must be absolute: ${command}`),
+    );
+  }
+  if (!isRegularFilePath(command, provider.allowSymlinkCommand ?? false)) {
+    return Effect.fail(
+      new Error(`Exec secret provider command is not an allowed regular file: ${command}`),
+    );
+  }
+  if (!ensureTrustedDir(command, provider.trustedDirs)) {
+    return Effect.fail(
+      new Error(`Exec secret provider command is outside trustedDirs: ${command}`),
+    );
+  }
+
+  return runCommand({
+    command,
+    args: [...(provider.args ?? []), input.ref.handle],
+    env: {
+      ...input.runtime.env,
+      ...(provider.env ?? {}),
+    },
+    operation: `config-secret.get:${providerAlias}`,
+  }).pipe(
+    Effect.flatMap((result) =>
+      ensureCommandSuccess({
+        result,
+        operation: `config-secret.get:${providerAlias}`,
+        message: "Failed resolving configured exec secret",
+      }),
+    ),
+    Effect.map((result) => result.stdout.trimEnd()),
+  );
+};
 
 export const createDefaultSecretMaterialResolver = (input: {
   rows: SqlControlPlaneRows;
   dangerouslyAllowEnvSecrets?: boolean;
   keychainServiceName?: string;
+  localConfig?: LocalExecutorConfig | null;
+  workspaceRoot?: string | null;
 }): ResolveSecretMaterial => {
   const providers = createSecretMaterialProviderRegistry();
   const runtime = createSecretMaterialProviderRuntime(input);
@@ -494,7 +658,20 @@ export const createDefaultSecretMaterialResolver = (input: {
       const provider = yield* getSecretMaterialProvider({
         providers,
         providerId: ref.providerId,
-      });
+      }).pipe(
+        Effect.catchAll(() =>
+          fromConfigSecretProviderId(ref.providerId) !== null
+            ? Effect.succeed(null)
+            : Effect.fail(new Error(`Unsupported secret provider: ${ref.providerId}`)),
+        ),
+      );
+
+      if (provider === null) {
+        return yield* resolveConfiguredSecretProvider({
+          ref,
+          runtime,
+        });
+      }
 
       return yield* provider.resolve({
         ref,

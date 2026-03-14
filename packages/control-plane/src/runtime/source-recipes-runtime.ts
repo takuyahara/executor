@@ -15,6 +15,12 @@ import type {
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import {
+  readLocalSourceArtifact,
+} from "./local-source-artifacts";
+import {
+  getRuntimeLocalWorkspaceOption,
+} from "./local-runtime-context";
 import { namespaceFromSourceName } from "./source-names";
 import {
   getSourceAdapterForOperation,
@@ -156,6 +162,73 @@ export const loadWorkspaceSourceRecipes = (input: {
   actorAccountId?: AccountId | null;
 }): Effect.Effect<readonly LoadedSourceRecipe[], Error, never> =>
   Effect.gen(function* () {
+    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
+    if (
+      runtimeLocalWorkspace !== null
+      && runtimeLocalWorkspace.installation.workspaceId === input.workspaceId
+    ) {
+      const sources = yield* loadSourcesInWorkspace(input.rows, input.workspaceId, {
+        actorAccountId: input.actorAccountId,
+      });
+
+      const localRecipes = yield* Effect.forEach(sources, (source) =>
+        Effect.gen(function* () {
+          if (source.configKey === null) {
+            return null;
+          }
+
+          const artifact = yield* Effect.tryPromise({
+            try: () =>
+              readLocalSourceArtifact({
+                context: runtimeLocalWorkspace.context,
+                configKey: source.configKey!,
+              }),
+            catch: (cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+          });
+          if (artifact === null) {
+            return null;
+          }
+
+          const sourceRecord: StoredSourceRecord = {
+            id: source.id,
+            workspaceId: source.workspaceId,
+            configKey: source.configKey,
+            recipeId: artifact.recipeId,
+            recipeRevisionId: artifact.revision.id,
+            name: source.name,
+            kind: source.kind,
+            endpoint: source.endpoint,
+            status: source.status,
+            enabled: source.enabled,
+            namespace: source.namespace,
+            importAuthPolicy: source.importAuthPolicy,
+            bindingConfigJson: getSourceAdapterForSource(source).serializeBindingConfig(source),
+            sourceHash: source.sourceHash,
+            lastError: source.lastError,
+            createdAt: source.createdAt,
+            updatedAt: source.updatedAt,
+          };
+          const manifest = yield* parseManifestForRecipe({
+            source,
+            revision: artifact.revision,
+          });
+
+          return {
+            source,
+            sourceRecord,
+            revision: artifact.revision,
+            documents: artifact.documents,
+            schemaBundles: artifact.schemaBundles,
+            operations: artifact.operations,
+            manifest,
+          } satisfies LoadedSourceRecipe;
+        }),
+      );
+
+      return localRecipes.filter((recipe): recipe is LoadedSourceRecipe => recipe !== null);
+    }
+
     const sourceRecords = yield* input.rows.sources.listByWorkspaceId(input.workspaceId);
     const sources = yield* loadSourcesInWorkspace(input.rows, input.workspaceId, {
       actorAccountId: input.actorAccountId,
@@ -230,6 +303,72 @@ export const loadSourceWithRecipe = (input: {
   actorAccountId?: AccountId | null;
 }): Effect.Effect<LoadedSourceRecipe, Error, never> =>
   Effect.gen(function* () {
+    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
+    if (
+      runtimeLocalWorkspace !== null
+      && runtimeLocalWorkspace.installation.workspaceId === input.workspaceId
+    ) {
+      const source = yield* loadSourceById(input.rows, {
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId,
+        actorAccountId: input.actorAccountId,
+      });
+      if (source.configKey === null) {
+        return yield* Effect.fail(
+          new Error(`Source not found: workspaceId=${input.workspaceId} sourceId=${input.sourceId}`),
+        );
+      }
+
+      const artifact = yield* Effect.tryPromise({
+        try: () =>
+          readLocalSourceArtifact({
+            context: runtimeLocalWorkspace.context,
+            configKey: source.configKey!,
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+      if (artifact === null) {
+        return yield* Effect.fail(
+          new Error(`Recipe artifact missing for source ${input.sourceId}`),
+        );
+      }
+
+      const sourceRecord: StoredSourceRecord = {
+        id: source.id,
+        workspaceId: source.workspaceId,
+        configKey: source.configKey,
+        recipeId: artifact.recipeId,
+        recipeRevisionId: artifact.revision.id,
+        name: source.name,
+        kind: source.kind,
+        endpoint: source.endpoint,
+        status: source.status,
+        enabled: source.enabled,
+        namespace: source.namespace,
+        importAuthPolicy: source.importAuthPolicy,
+        bindingConfigJson: getSourceAdapterForSource(source).serializeBindingConfig(source),
+        sourceHash: source.sourceHash,
+        lastError: source.lastError,
+        createdAt: source.createdAt,
+        updatedAt: source.updatedAt,
+      };
+      const manifest = yield* parseManifestForRecipe({
+        source,
+        revision: artifact.revision,
+      });
+
+      return {
+        source,
+        sourceRecord,
+        revision: artifact.revision,
+        documents: artifact.documents,
+        schemaBundles: artifact.schemaBundles,
+        operations: artifact.operations,
+        manifest,
+      } satisfies LoadedSourceRecipe;
+    }
+
     const sourceRecord = yield* input.rows.sources.getByWorkspaceAndId(
       input.workspaceId,
       input.sourceId,
@@ -339,94 +478,26 @@ export const loadWorkspaceSourceRecipeToolIndex = (input: {
   includeSchemas: boolean;
 }): Effect.Effect<readonly LoadedSourceRecipeToolIndexEntry[], Error, never> =>
   Effect.gen(function* () {
-    const sourceRecords = yield* input.rows.sources.listByWorkspaceId(input.workspaceId);
-    const sources = yield* loadSourcesInWorkspace(input.rows, input.workspaceId, {
+    const recipes = yield* loadWorkspaceSourceRecipes({
+      rows: input.rows,
+      workspaceId: input.workspaceId,
       actorAccountId: input.actorAccountId,
     });
-    const sourceById = new Map(sources.map((source) => [source.id, source]));
-    const relevantSourceRecords = sourceRecords.filter((sourceRecord) => sourceById.has(sourceRecord.id));
-    const revisionIds = [...new Set(relevantSourceRecords.map((sourceRecord) => sourceRecord.recipeRevisionId))];
-    const [operations, schemaBundles] = yield* Effect.all([
-      input.rows.sourceRecipeOperations.listByRevisionIds(revisionIds),
-      input.rows.sourceRecipeSchemaBundles.listByRevisionIds(revisionIds),
-    ]);
-
-    const operationsByRevisionId = new Map<string, StoredSourceRecipeOperationRecord[]>();
-    for (const operation of operations) {
-      const existing = operationsByRevisionId.get(operation.recipeRevisionId) ?? [];
-      existing.push(operation);
-      operationsByRevisionId.set(operation.recipeRevisionId, existing);
-    }
-
-    const schemaBundlesByRevisionId = new Map<string, StoredSourceRecipeSchemaBundleRecord[]>();
-    for (const schemaBundle of schemaBundles) {
-      const existing = schemaBundlesByRevisionId.get(schemaBundle.recipeRevisionId) ?? [];
-      existing.push(schemaBundle);
-      schemaBundlesByRevisionId.set(schemaBundle.recipeRevisionId, existing);
-    }
-
-    const entryGroups = yield* Effect.forEach(
-      relevantSourceRecords,
-      (sourceRecord) => {
-        const source = sourceById.get(sourceRecord.id);
-        if (!source) {
-          return Effect.succeed<readonly LoadedSourceRecipeToolIndexEntry[]>([]);
-        }
-
-        return Effect.forEach(
-          operationsByRevisionId.get(sourceRecord.recipeRevisionId) ?? [],
-          (operation) =>
-            Effect.gen(function* () {
-              const path = recipeToolPath({
-                source,
-                operation,
-              });
-              const searchNamespace = recipeToolSearchNamespace({
-                source,
-                path,
-                operation,
-              });
-              const schemaBundleId = primarySchemaBundleForRevision({
-                source,
-                schemaBundles: schemaBundlesByRevisionId.get(sourceRecord.recipeRevisionId) ?? [],
-              })?.id ?? null;
-              const metadata = yield* recipeToolMetadata({
-                source,
-                operation,
-                path,
-              });
-
-              return {
-                path,
-                searchNamespace,
-                searchText: [
-                  path,
-                  searchNamespace,
-                  source.name,
-                  metadata.searchText,
-                ]
-                  .filter((part) => part.length > 0)
-                  .join(" ")
-                  .toLowerCase(),
-                source,
-                sourceRecord,
-                operation,
-                metadata,
-                schemaBundleId,
-                descriptor: recipeToolDescriptor({
-                  source,
-                  operation,
-                  path,
-                  schemaBundleId,
-                  includeSchemas: input.includeSchemas,
-                }),
-              } satisfies LoadedSourceRecipeToolIndexEntry;
-            }),
-        );
-      },
-    );
-
-    return entryGroups.flat();
+    const tools = yield* expandRecipeTools({
+      recipes,
+      includeSchemas: input.includeSchemas,
+    });
+    return tools.map((tool) => ({
+      path: tool.path,
+      searchNamespace: tool.searchNamespace,
+      searchText: tool.searchText,
+      source: tool.source,
+      sourceRecord: tool.sourceRecord,
+      operation: tool.operation,
+      metadata: tool.metadata,
+      schemaBundleId: tool.schemaBundleId,
+      descriptor: tool.descriptor,
+    }));
   });
 
 export const loadWorkspaceSourceRecipeToolByPath = (input: {
@@ -437,110 +508,27 @@ export const loadWorkspaceSourceRecipeToolByPath = (input: {
   includeSchemas: boolean;
 }): Effect.Effect<LoadedSourceRecipeToolIndexEntry | null, Error, never> =>
   Effect.gen(function* () {
-    const sourceRecords = yield* input.rows.sources.listByWorkspaceId(input.workspaceId);
-    const sources = yield* loadSourcesInWorkspace(input.rows, input.workspaceId, {
+    const recipes = yield* loadWorkspaceSourceRecipes({
+      rows: input.rows,
+      workspaceId: input.workspaceId,
       actorAccountId: input.actorAccountId,
     });
-    const sourceById = new Map(sources.map((source) => [source.id, source]));
-    const relevantSourceRecords = sourceRecords.filter((sourceRecord) => sourceById.has(sourceRecord.id));
-
-    const candidates = relevantSourceRecords.flatMap((sourceRecord) => {
-      const source = sourceById.get(sourceRecord.id);
-      if (!source) {
-        return [];
-      }
-
-      const namespace = source.namespace ?? namespaceFromSourceName(source.name);
-      if (namespace.length > 0) {
-        if (!input.path.startsWith(`${namespace}.`)) {
-          return [];
-        }
-
-        return [{
-          source,
-          sourceRecord,
-          toolId: input.path.slice(namespace.length + 1),
-        }];
-      }
-
-      return [{
-        source,
-        sourceRecord,
-        toolId: input.path,
-      }];
+    const tools = yield* expandRecipeTools({
+      recipes,
+      includeSchemas: input.includeSchemas,
     });
-
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    const revisionIds = [...new Set(candidates.map((candidate) => candidate.sourceRecord.recipeRevisionId))];
-    const [operations, schemaBundles] = yield* Effect.all([
-      input.rows.sourceRecipeOperations.listByRevisionIds(revisionIds),
-      input.rows.sourceRecipeSchemaBundles.listByRevisionIds(revisionIds),
-    ]);
-    const schemaBundlesByRevisionId = new Map<string, StoredSourceRecipeSchemaBundleRecord[]>();
-    for (const schemaBundle of schemaBundles) {
-      const existing = schemaBundlesByRevisionId.get(schemaBundle.recipeRevisionId) ?? [];
-      existing.push(schemaBundle);
-      schemaBundlesByRevisionId.set(schemaBundle.recipeRevisionId, existing);
-    }
-
-    for (const candidate of candidates) {
-      const operation = operations.find((entry) =>
-        entry.recipeRevisionId === candidate.sourceRecord.recipeRevisionId
-        && entry.toolId === candidate.toolId
-      );
-      if (!operation) {
-        continue;
-      }
-
-      const path = recipeToolPath({
-        source: candidate.source,
-        operation,
-      });
-      const searchNamespace = recipeToolSearchNamespace({
-        source: candidate.source,
-        path,
-        operation,
-      });
-      const schemaBundleId = primarySchemaBundleForRevision({
-        source: candidate.source,
-        schemaBundles:
-          schemaBundlesByRevisionId.get(candidate.sourceRecord.recipeRevisionId) ?? [],
-      })?.id ?? null;
-      const metadata = yield* recipeToolMetadata({
-        source: candidate.source,
-        operation,
-        path,
-      });
-
-      return {
-        path,
-        searchNamespace,
-        searchText: [
-          path,
-          searchNamespace,
-          candidate.source.name,
-          metadata.searchText,
-        ]
-          .filter((part) => part.length > 0)
-          .join(" ")
-          .toLowerCase(),
-        source: candidate.source,
-        sourceRecord: candidate.sourceRecord,
-        operation,
-        metadata,
-        schemaBundleId,
-        descriptor: recipeToolDescriptor({
-          source: candidate.source,
-          operation,
-          path,
-          schemaBundleId,
-          includeSchemas: input.includeSchemas,
-        }),
-      } satisfies LoadedSourceRecipeToolIndexEntry;
-    }
-
-    return null;
+    const tool = tools.find((entry) => entry.path === input.path) ?? null;
+    return tool
+      ? {
+          path: tool.path,
+          searchNamespace: tool.searchNamespace,
+          searchText: tool.searchText,
+          source: tool.source,
+          sourceRecord: tool.sourceRecord,
+          operation: tool.operation,
+          metadata: tool.metadata,
+          schemaBundleId: tool.schemaBundleId,
+          descriptor: tool.descriptor,
+        }
+      : null;
   });

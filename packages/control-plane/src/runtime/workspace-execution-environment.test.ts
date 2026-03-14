@@ -589,6 +589,7 @@ const persistConnectedEchoTool = (input: {
     const source: Source = {
       id: input.sourceId,
       workspaceId: input.workspaceId,
+      configKey: null,
       name: "Counted MCP",
       kind: "mcp",
       endpoint: input.endpoint,
@@ -801,6 +802,7 @@ const persistConnectedGithubOpenApiSource = (input: {
     const source: Source = {
       id: input.sourceId,
       workspaceId: input.workspaceId,
+      configKey: null,
       name: "GitHub",
       kind: "openapi",
       endpoint: input.endpoint ?? "https://api.github.com",

@@ -188,6 +188,7 @@ const seedMigratedSourceRecipe = (input: {
     yield* input.persistence.rows.sources.insert({
       id: input.sourceId,
       workspaceId: input.workspaceId,
+      configKey: null,
       recipeId,
       recipeRevisionId,
       name: input.kind === "openapi" ? "GitHub" : "GraphQL Demo",
@@ -823,24 +824,43 @@ describe("code-migrations", () => {
         createdAt: now,
         updatedAt: now,
       })));
-      await Effect.runPromise(legacyPersistence.rows.sources.insert({
-        id: sourceId,
-        workspaceId,
-        recipeId,
-        recipeRevisionId,
-        name: "Legacy OpenAPI",
-        kind: "openapi",
-        endpoint: "https://api.example.com",
-        status: "connected",
-        enabled: true,
-        namespace: "legacy.openapi",
-        importAuthPolicy: "reuse_runtime",
-        bindingConfigJson: openApiBindingConfigJson("https://api.example.com/openapi.json"),
-        sourceHash: null,
-        lastError: null,
-        createdAt: now,
-        updatedAt: now,
-      }));
+      await legacyPersistence.db.execute(sql`
+        INSERT INTO "sources" (
+          "source_id",
+          "workspace_id",
+          "recipe_id",
+          "recipe_revision_id",
+          "name",
+          "kind",
+          "endpoint",
+          "status",
+          "enabled",
+          "namespace",
+          "import_auth_policy",
+          "binding_config_json",
+          "source_hash",
+          "last_error",
+          "created_at",
+          "updated_at"
+        ) VALUES (
+          ${sourceId},
+          ${workspaceId},
+          ${recipeId},
+          ${recipeRevisionId},
+          ${"Legacy OpenAPI"},
+          ${"openapi"},
+          ${"https://api.example.com"},
+          ${"connected"},
+          ${true},
+          ${"legacy.openapi"},
+          ${"reuse_runtime"},
+          ${openApiBindingConfigJson("https://api.example.com/openapi.json")},
+          NULL,
+          NULL,
+          ${now},
+          ${now}
+        )
+      `);
       await Effect.runPromise(legacyPersistence.rows.authArtifacts.upsert({
         id: authArtifactId as any,
         workspaceId,

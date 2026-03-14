@@ -5,6 +5,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import { assertTrue } from "@effect/vitest/utils";
 import * as Effect from "effect/Effect";
@@ -283,6 +286,7 @@ describe("execution-mcp-resume", () => {
       const runtime = yield* Effect.acquireRelease(
         createSqlControlPlaneRuntime({
           localDataDir: ":memory:",
+          workspaceRoot: mkdtempSync(join(tmpdir(), "executor-execution-mcp-resume-")),
           executionResolver: makeMcpExecutionResolver(mcpServer.endpoint),
         }),
         (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),

@@ -2,7 +2,7 @@ import {
   ControlPlaneBadRequestError,
   ControlPlaneNotFoundError,
   ControlPlaneStorageError,
-} from "#api";
+} from "../api/errors";
 import { ControlPlanePersistenceError } from "#persistence";
 import type { Organization } from "#schema";
 import * as Effect from "effect/Effect";

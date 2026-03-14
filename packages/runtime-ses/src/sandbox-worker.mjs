@@ -24,6 +24,14 @@ const formatLogArg = (value) => {
 
 const formatLogLine = (args) => args.map(formatLogArg).join(" ");
 
+const toSerializableValue = (value) => {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  return JSON.parse(JSON.stringify(value));
+};
+
 const buildExecutionSource = (code) => {
   const trimmed = code.trim();
   const looksLikeArrowFunction =
@@ -157,7 +165,7 @@ process.on("message", async (message) => {
       process.send?.({
         type: "result",
         id: message.id,
-        value: result,
+        value: toSerializableValue(result),
         logs,
       });
     } catch (error) {

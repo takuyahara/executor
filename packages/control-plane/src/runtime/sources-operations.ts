@@ -140,16 +140,18 @@ const syncArtifactsForSource = (input: {
 export const listSources = (workspaceId: WorkspaceId) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
     Effect.flatMap(Actor, (actor) =>
-      loadSourcesInWorkspace(store, workspaceId, {
-        actorAccountId: actor.principal.accountId,
-      }).pipe(
-        Effect.mapError((error) =>
-          sourceOps.list.unknownStorage(
-            error,
-            "Failed projecting stored sources",
+      Effect.gen(function* () {
+        return yield* loadSourcesInWorkspace(store, workspaceId, {
+          actorAccountId: actor.principal.accountId,
+        }).pipe(
+          Effect.mapError((error) =>
+            sourceOps.list.unknownStorage(
+              error,
+              "Failed projecting stored sources",
+            ),
           ),
-        ),
-      ),
+        );
+      }),
     ));
 
 export const createSource = (input: {
@@ -175,19 +177,21 @@ export const createSource = (input: {
           ),
         );
 
-        yield* mapPersistenceError(
+        const persistedSource = yield* mapPersistenceError(
           sourceOps.create.child("persist"),
           persistSource(store, source, {
             actorAccountId: actor.principal.accountId,
           }),
         );
 
-        return yield* syncArtifactsForSource({
+        const synchronizedSource = yield* syncArtifactsForSource({
           store,
-          source,
+          source: persistedSource,
           actorAccountId: actor.principal.accountId,
           operation: sourceOps.create,
         });
+
+        return synchronizedSource;
       }),
     ));
 
@@ -197,23 +201,25 @@ export const getSource = (input: {
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
     Effect.flatMap(Actor, (actor) =>
-      loadSourceById(store, {
-        workspaceId: input.workspaceId,
-        sourceId: input.sourceId,
-        actorAccountId: actor.principal.accountId,
-      }).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error && cause.message.startsWith("Source not found:")
-            ? sourceOps.get.notFound(
-                "Source not found",
-                `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
-              )
-            : sourceOps.get.unknownStorage(
-                cause,
-                "Failed projecting stored source",
+      Effect.gen(function* () {
+        return yield* loadSourceById(store, {
+          workspaceId: input.workspaceId,
+          sourceId: input.sourceId,
+          actorAccountId: actor.principal.accountId,
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error && cause.message.startsWith("Source not found:")
+              ? sourceOps.get.notFound(
+                  "Source not found",
+                  `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
+                )
+              : sourceOps.get.unknownStorage(
+                  cause,
+                  "Failed projecting stored source",
+                ),
               ),
-            ),
-      ),
+        );
+      }),
     ));
 
 export const updateSource = (input: {
@@ -255,19 +261,21 @@ export const updateSource = (input: {
           ),
         );
 
-        yield* mapPersistenceError(
+        const persistedSource = yield* mapPersistenceError(
           sourceOps.update.child("persist"),
           persistSource(store, updatedSource, {
             actorAccountId: actor.principal.accountId,
           }),
         );
 
-        return yield* syncArtifactsForSource({
+        const synchronizedSource = yield* syncArtifactsForSource({
           store,
-          source: updatedSource,
+          source: persistedSource,
           actorAccountId: actor.principal.accountId,
           operation: sourceOps.update,
         });
+
+        return synchronizedSource;
       }),
     ));
 

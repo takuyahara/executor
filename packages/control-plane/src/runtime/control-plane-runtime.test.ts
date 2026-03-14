@@ -1,4 +1,7 @@
 import { createServer } from "node:http";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "@effect/vitest";
 import { assertTrue } from "@effect/vitest/utils";
@@ -12,8 +15,6 @@ import {
   ExecutionInteractionIdSchema,
   SecretMaterialIdSchema,
   SourceIdSchema,
-  SourceRecipeIdSchema,
-  SourceRecipeRevisionIdSchema,
 } from "#schema";
 import type { ToolPath } from "@executor/codemode-core";
 
@@ -21,23 +22,18 @@ import {
   createSqlControlPlaneRuntime,
   LiveExecutionManagerService,
 } from "./index";
+import { createSourceFromPayload } from "./source-definitions";
 import { decodeSourceCredentialSelectionContent } from "./source-credential-interactions";
+import { persistSource } from "./source-store";
 import { withControlPlaneClient } from "./test-http-client";
 
 const makeRuntime = Effect.acquireRelease(
-  createSqlControlPlaneRuntime({ localDataDir: ":memory:" }),
+  createSqlControlPlaneRuntime({
+    localDataDir: ":memory:",
+    workspaceRoot: mkdtempSync(join(tmpdir(), "executor-control-plane-runtime-")),
+  }),
   (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),
 );
-
-const openApiBindingConfigJson = (specUrl: string): string =>
-  JSON.stringify({
-    adapterKey: "openapi",
-    version: 1,
-    payload: {
-      specUrl,
-      defaultHeaders: null,
-    },
-  });
 
 type OpenApiSpecServer = {
   baseUrl: string;
@@ -123,6 +119,64 @@ const expectLeft = <A, E>(effect: Effect.Effect<A, E, never>) =>
   );
 
 describe("control-plane-runtime", () => {
+  it.scoped("writes local source changes through executor.jsonc", () =>
+    Effect.gen(function* () {
+      const workspaceRoot = mkdtempSync(join(tmpdir(), "executor-local-config-runtime-"));
+      const runtime = yield* Effect.acquireRelease(
+        createSqlControlPlaneRuntime({
+          localDataDir: ":memory:",
+          workspaceRoot,
+        }),
+        (createdRuntime) => Effect.promise(() => createdRuntime.close()).pipe(Effect.orDie),
+      );
+      const openApiServer = yield* makeOpenApiSpecServer;
+      const installation = runtime.localInstallation;
+
+      const createdSource = yield* withControlPlaneClient(
+        { runtime, accountId: installation.accountId },
+        (client) =>
+          client.sources.create({
+            path: { workspaceId: installation.workspaceId },
+            payload: {
+              name: "GitHub",
+              kind: "openapi",
+              endpoint: openApiServer.baseUrl,
+              namespace: "github",
+              binding: {
+                specUrl: openApiServer.specUrl,
+                defaultHeaders: null,
+              },
+              auth: { kind: "none" },
+            },
+          }),
+      );
+
+      const configPath = join(workspaceRoot, ".executor", "executor.jsonc");
+      const createdConfig = JSON.parse(readFileSync(configPath, "utf8")) as {
+        sources?: Record<string, { kind: string; connection: { endpoint: string } }>;
+      };
+      expect(createdConfig.sources?.github?.kind).toBe("openapi");
+      expect(createdConfig.sources?.github?.connection.endpoint).toBe(openApiServer.baseUrl);
+
+      const removed = yield* withControlPlaneClient(
+        { runtime, accountId: installation.accountId },
+        (client) =>
+          client.sources.remove({
+            path: {
+              workspaceId: installation.workspaceId,
+              sourceId: createdSource.id,
+            },
+          }),
+      );
+      expect(removed.removed).toBe(true);
+
+      const removedConfig = JSON.parse(readFileSync(configPath, "utf8")) as {
+        sources?: Record<string, unknown>;
+      };
+      expect(removedConfig.sources?.github).toBeUndefined();
+    }),
+  );
+
   it.scoped("supports full CRUD flow over HTTP API", () =>
     Effect.gen(function* () {
       const runtime = yield* makeRuntime;
@@ -293,24 +347,32 @@ describe("control-plane-runtime", () => {
         updatedAt: now,
       });
 
-      yield* runtime.persistence.rows.sources.insert({
-        id: sourceId,
+      const localSource = yield* createSourceFromPayload({
         workspaceId: installation.workspaceId,
-        recipeId: SourceRecipeIdSchema.make(`src_recipe_${sourceId}`),
-        recipeRevisionId: SourceRecipeRevisionIdSchema.make(`src_recipe_rev_${sourceId}`),
-        name: "GitHub",
-        kind: "openapi",
-        endpoint: "https://api.github.com",
-        status: "auth_required",
-        enabled: true,
-        namespace: "github",
-        importAuthPolicy: "reuse_runtime",
-        bindingConfigJson: openApiBindingConfigJson("https://example.com/github-openapi.yaml"),
-        sourceHash: null,
-        lastError: null,
-        createdAt: now,
-        updatedAt: now,
-      });
+        sourceId,
+        payload: {
+          name: "GitHub",
+          kind: "openapi",
+          endpoint: "https://api.github.com",
+          status: "auth_required",
+          enabled: true,
+          namespace: "github",
+          importAuthPolicy: "reuse_runtime",
+          binding: {
+            specUrl: "https://example.com/github-openapi.yaml",
+            defaultHeaders: null,
+          },
+          importAuth: { kind: "none" },
+          auth: { kind: "none" },
+        },
+        now,
+      }).pipe(Effect.orDie);
+      yield* persistSource(runtime.persistence.rows, localSource, {
+        actorAccountId: installation.accountId,
+      }).pipe(
+        Effect.provide(runtime.runtimeLayer),
+        Effect.orDie,
+      );
 
       const interactionFiber = yield* Effect.gen(function* () {
         const liveExecutionManager = yield* LiveExecutionManagerService;
@@ -448,24 +510,32 @@ describe("control-plane-runtime", () => {
         updatedAt: now,
       });
 
-      yield* runtime.persistence.rows.sources.insert({
-        id: sourceId,
+      const localSource = yield* createSourceFromPayload({
         workspaceId: installation.workspaceId,
-        recipeId: SourceRecipeIdSchema.make(`src_recipe_${sourceId}`),
-        recipeRevisionId: SourceRecipeRevisionIdSchema.make(`src_recipe_rev_${sourceId}`),
-        name: "GitHub",
-        kind: "openapi",
-        endpoint: "https://api.github.com",
-        status: "auth_required",
-        enabled: true,
-        namespace: "github",
-        importAuthPolicy: "reuse_runtime",
-        bindingConfigJson: openApiBindingConfigJson("https://example.com/github-openapi.yaml"),
-        sourceHash: null,
-        lastError: null,
-        createdAt: now,
-        updatedAt: now,
-      });
+        sourceId,
+        payload: {
+          name: "GitHub",
+          kind: "openapi",
+          endpoint: "https://api.github.com",
+          status: "auth_required",
+          enabled: true,
+          namespace: "github",
+          importAuthPolicy: "reuse_runtime",
+          binding: {
+            specUrl: "https://example.com/github-openapi.yaml",
+            defaultHeaders: null,
+          },
+          importAuth: { kind: "none" },
+          auth: { kind: "none" },
+        },
+        now,
+      }).pipe(Effect.orDie);
+      yield* persistSource(runtime.persistence.rows, localSource, {
+        actorAccountId: installation.accountId,
+      }).pipe(
+        Effect.provide(runtime.runtimeLayer),
+        Effect.orDie,
+      );
 
       const interactionFiber = yield* Effect.gen(function* () {
         const liveExecutionManager = yield* LiveExecutionManagerService;

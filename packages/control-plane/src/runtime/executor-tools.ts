@@ -19,10 +19,24 @@ import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
+import type { RuntimeLocalWorkspaceState } from "./local-runtime-context";
+import { RuntimeLocalWorkspaceService } from "./local-runtime-context";
 
 /** Run an Effect as a Promise, preserving the original error (not FiberFailure). */
-const runEffect = async <A>(effect: Effect.Effect<A, unknown, never>): Promise<A> => {
-  const exit = await Effect.runPromiseExit(effect);
+const runEffect = async <A>(
+  effect: Effect.Effect<A, unknown, never>,
+  runtimeLocalWorkspace: RuntimeLocalWorkspaceState | null = null,
+): Promise<A> => {
+  const provided =
+    runtimeLocalWorkspace === null
+      ? effect
+      : effect.pipe(
+          Effect.provideService(
+            RuntimeLocalWorkspaceService,
+            runtimeLocalWorkspace,
+          ),
+        );
+  const exit = await Effect.runPromiseExit(provided);
   if (Exit.isSuccess(exit)) return exit.value;
   throw Cause.squash(exit.cause);
 };
@@ -105,6 +119,9 @@ const trimOrNull = (value: string | null | undefined): string | null => {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 };
+
+const toSerializableValue = <A>(value: A): A =>
+  JSON.parse(JSON.stringify(value)) as A;
 
 const resolveLocalCredentialUrl = (input: {
   baseUrl: string;
@@ -205,6 +222,7 @@ export const createExecutorToolMap = (input: {
   workspaceId: WorkspaceId;
   accountId: AccountId;
   sourceAuthService: RuntimeSourceAuthService;
+  runtimeLocalWorkspace: RuntimeLocalWorkspaceState | null;
 }): ToolMap => ({
   "executor.sources.add": toTool({
     tool: {
@@ -281,10 +299,11 @@ export const createExecutorToolMap = (input: {
               }
               : undefined,
           ),
+          input.runtimeLocalWorkspace,
         );
 
         if (result.kind === "connected") {
-          return result.source;
+          return toSerializableValue(result.source);
         }
 
         if (result.kind === "credential_required") {
@@ -313,6 +332,7 @@ export const createExecutorToolMap = (input: {
                 invocation: context?.invocation,
                 onElicitation: context?.onElicitation,
               }),
+              input.runtimeLocalWorkspace,
             );
 
             pendingArgs = pendingResult.credentialSlot === "import"
@@ -342,10 +362,11 @@ export const createExecutorToolMap = (input: {
                   }
                   : undefined,
               ),
+              input.runtimeLocalWorkspace,
             );
 
             if (completed.kind === "connected") {
-              return completed.source;
+              return toSerializableValue(completed.source);
             }
 
             if (completed.kind === "credential_required") {
@@ -385,19 +406,22 @@ export const createExecutorToolMap = (input: {
               elicitationId: result.sessionId,
             },
           }),
+          input.runtimeLocalWorkspace,
         );
 
         if (response.action !== "accept") {
           throw new Error(`Source add was not completed for ${result.source.id}`);
         }
 
-        return await runEffect(
+        const connected = await runEffect(
           input.sourceAuthService.getSourceById({
             workspaceId: input.workspaceId,
             sourceId: result.source.id,
             actorAccountId: input.accountId,
           }),
+          input.runtimeLocalWorkspace,
         );
+        return toSerializableValue(connected);
       },
     },
     metadata: {

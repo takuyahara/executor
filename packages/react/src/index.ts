@@ -661,6 +661,7 @@ const createOptimisticSource = (input: {
   return {
     id: `src_optimistic_${crypto.randomUUID()}` as Source["id"],
     workspaceId: input.workspaceId,
+    configKey: null,
     name: input.payload.name,
     kind: input.payload.kind,
     endpoint: input.payload.endpoint,

@@ -35,6 +35,7 @@ const basePolicy = (
   patch: Partial<Policy> = {},
 ): Policy => ({
   id: PolicyIdSchema.make(`pol_${Math.random().toString(36).slice(2, 8)}`),
+  configKey: null,
   scopeType: "workspace",
   organizationId,
   workspaceId,

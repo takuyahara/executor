@@ -16,7 +16,7 @@ import { SourceRecipeSchemaBundleIdSchema } from "#schema";
 import {
   ControlPlaneNotFoundError,
   ControlPlaneStorageError,
-} from "#api";
+} from "../api/errors";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -26,6 +26,7 @@ import {
   getSourceAdapterForOperation,
 } from "./source-adapters";
 import {
+  loadSourceWithRecipe,
   recipeToolMetadata,
   recipeToolPath,
 } from "./source-recipes-runtime";
@@ -110,41 +111,29 @@ const loadSourceRecipeRecord = (input: {
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
     Effect.gen(function* () {
-      const sourceRecord = yield* sourceInspectOps.bundle.child("record").mapStorage(
-        store.sources.getByWorkspaceAndId(input.workspaceId, input.sourceId),
-      );
-      if (Option.isNone(sourceRecord)) {
-        return yield* Effect.fail(
-          sourceInspectOps.bundle.notFound(
-            "Source not found",
-            `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
-          ),
-        );
-      }
-
-      const source = yield* loadSourceById(store, {
+      const recipe = yield* loadSourceWithRecipe({
+        rows: store,
         workspaceId: input.workspaceId,
         sourceId: input.sourceId,
       }).pipe(
         Effect.mapError((cause) =>
-          sourceInspectOps.bundle.unknownStorage(
-            cause,
-            "Failed loading source",
-          ),
+          cause instanceof Error && cause.message.startsWith("Source not found:")
+            ? sourceInspectOps.bundle.notFound(
+                "Source not found",
+                `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
+              )
+            : sourceInspectOps.bundle.unknownStorage(
+                cause,
+                "Failed loading source recipe",
+              ),
         ),
-      );
-      const operations = yield* sourceInspectOps.bundle.child("operations").mapStorage(
-        store.sourceRecipeOperations.listByRevisionId(sourceRecord.value.recipeRevisionId),
-      );
-      const schemaBundles = yield* sourceInspectOps.bundle.child("schema_bundles").mapStorage(
-        store.sourceRecipeSchemaBundles.listByRevisionId(sourceRecord.value.recipeRevisionId),
       );
 
       return {
-        source,
-        operations,
-        schemaBundleId: schemaBundles.find((bundle) => bundle.bundleKind === "json_schema_ref_map")?.id
-          ?? schemaBundles[0]?.id
+        source: recipe.source,
+        operations: recipe.operations,
+        schemaBundleId: recipe.schemaBundles.find((bundle) => bundle.bundleKind === "json_schema_ref_map")?.id
+          ?? recipe.schemaBundles[0]?.id
           ?? null,
       };
     }),
@@ -403,27 +392,27 @@ export const getSourceInspectionSchemaBundle = (input: {
 }) =>
   Effect.flatMap(ControlPlaneStore, (store) =>
     Effect.gen(function* () {
-      const sourceRecord = yield* sourceInspectOps.tool.child("bundle_record").mapStorage(
-        store.sources.getByWorkspaceAndId(input.workspaceId, input.sourceId),
-      );
-      if (Option.isNone(sourceRecord)) {
-        return yield* Effect.fail(
-          sourceInspectOps.tool.notFound(
-            "Source not found",
-            `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
-          ),
-        );
-      }
-
-      const schemaBundle = yield* sourceInspectOps.tool.child("schema_bundle").mapStorage(
-        store.sourceRecipeSchemaBundles.getById(
-          SourceRecipeSchemaBundleIdSchema.make(input.schemaBundleId),
+      const recipe = yield* loadSourceWithRecipe({
+        rows: store,
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId,
+      }).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error && cause.message.startsWith("Source not found:")
+            ? sourceInspectOps.tool.notFound(
+                "Source not found",
+                `workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
+              )
+            : sourceInspectOps.tool.unknownStorage(
+                cause,
+                "Failed loading source recipe",
+              ),
         ),
       );
-      if (
-        Option.isNone(schemaBundle)
-        || schemaBundle.value.recipeRevisionId !== sourceRecord.value.recipeRevisionId
-      ) {
+      const schemaBundle = recipe.schemaBundles.find(
+        (candidate) => candidate.id === SourceRecipeSchemaBundleIdSchema.make(input.schemaBundleId),
+      );
+      if (!schemaBundle) {
         return yield* Effect.fail(
           sourceInspectOps.tool.notFound(
             "Schema bundle not found",
@@ -433,10 +422,10 @@ export const getSourceInspectionSchemaBundle = (input: {
       }
 
       return {
-        id: schemaBundle.value.id,
-        kind: schemaBundle.value.bundleKind,
-        hash: schemaBundle.value.contentHash,
-        refsJson: schemaBundle.value.refsJson,
+        id: schemaBundle.id,
+        kind: schemaBundle.bundleKind,
+        hash: schemaBundle.contentHash,
+        refsJson: schemaBundle.refsJson,
       } satisfies SourceInspectionSchemaBundle;
     }),
   ).pipe(

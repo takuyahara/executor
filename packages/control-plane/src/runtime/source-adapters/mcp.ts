@@ -187,7 +187,7 @@ export const persistMcpRecipeRevisionFromManifestEntries = (input: {
     });
   });
 
-const materializationFromMcpManifestEntries = (input: {
+export const materializationFromMcpManifestEntries = (input: {
   recipeRevisionId: SourceRecipeRevisionId;
   endpoint: string;
   manifestEntries: readonly McpToolManifestEntry[];

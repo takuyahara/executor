@@ -95,7 +95,10 @@ const closeScope = (scope: Scope.CloseableScope) =>
 
 const startControlPlaneServer = async (): Promise<ApiServer> => {
   const runtime = await Effect.runPromise(
-    createSqlControlPlaneRuntime({ localDataDir: ":memory:" }),
+    createSqlControlPlaneRuntime({
+      localDataDir: ":memory:",
+      workspaceRoot: mkdtempSync(join(tmpdir(), "executor-react-test-")),
+    }),
   );
   const scope = await Effect.runPromise(Scope.make());
 
@@ -743,3 +746,6 @@ describe("executor-react source hooks", () => {
     }),
   );
 });
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";

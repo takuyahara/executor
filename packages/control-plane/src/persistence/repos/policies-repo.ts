@@ -86,7 +86,8 @@ export const createPoliciesRepo = (
 
   insert: (policy: Policy) =>
     client.use("rows.policies.insert", async (db) => {
-      await db.insert(tables.policiesTable).values(policy);
+      const { configKey: _configKey, ...row } = policy;
+      await db.insert(tables.policiesTable).values(row);
     }),
 
   update: (
@@ -94,9 +95,10 @@ export const createPoliciesRepo = (
     patch: Partial<Omit<Policy, "id" | "scopeType" | "organizationId" | "workspaceId" | "createdAt">>,
   ) =>
     client.use("rows.policies.update", async (db) => {
+      const { configKey: _configKey, ...rowPatch } = patch;
       const rows = await db
         .update(tables.policiesTable)
-        .set(patch)
+        .set(rowPatch)
         .where(eq(tables.policiesTable.id, policyId))
         .returning();
 

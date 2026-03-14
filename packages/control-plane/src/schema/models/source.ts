@@ -97,6 +97,7 @@ export const StoredSourceRecordSchema = Schema.transform(
   Schema.Struct({
     id: SourceIdSchema,
     workspaceId: WorkspaceIdSchema,
+    configKey: Schema.NullOr(Schema.String),
     recipeId: SourceRecipeIdSchema,
     recipeRevisionId: SourceRecipeRevisionIdSchema,
     name: Schema.String,
@@ -117,6 +118,7 @@ export const StoredSourceRecordSchema = Schema.transform(
     decode: (row, _input) => ({
       id: row.sourceId,
       workspaceId: row.workspaceId,
+      configKey: null,
       recipeId: row.recipeId,
       recipeRevisionId: row.recipeRevisionId,
       name: row.name,
@@ -156,6 +158,7 @@ export const StoredSourceRecordSchema = Schema.transform(
 export const SourceSchema = Schema.Struct({
   id: SourceIdSchema,
   workspaceId: WorkspaceIdSchema,
+  configKey: Schema.NullOr(Schema.String),
   name: Schema.String,
   kind: SourceKindSchema,
   endpoint: Schema.String,

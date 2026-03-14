@@ -2,14 +2,30 @@ import type { SqlControlPlaneRows } from "#persistence";
 import type {
   AccountId,
   Source,
+  SourceStatus,
 } from "#schema";
 import * as Effect from "effect/Effect";
 
+import {
+  buildLocalSourceArtifact,
+  writeLocalSourceArtifact,
+} from "./local-source-artifacts";
+import {
+  getRuntimeLocalWorkspaceOption,
+} from "./local-runtime-context";
+import {
+  loadLocalWorkspaceState,
+  writeLocalWorkspaceState,
+  type LocalWorkspaceState,
+} from "./local-workspace-state";
 import { resolveSourceAuthMaterial } from "./source-auth-material";
 import {
   getSourceAdapterForSource,
 } from "./source-adapters";
-import { persistMcpRecipeRevisionFromManifestEntries } from "./source-adapters/mcp";
+import {
+  materializationFromMcpManifestEntries,
+  persistMcpRecipeRevisionFromManifestEntries,
+} from "./source-adapters/mcp";
 import type {
   ResolveSecretMaterial as ResolveSourceSecretMaterial,
 } from "./secret-material-providers";
@@ -27,6 +43,106 @@ export const syncSourceMaterialization = (input: {
   resolveSecretMaterial: ResolveSourceSecretMaterial;
 }): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
+    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
+    if (
+      runtimeLocalWorkspace !== null
+      && runtimeLocalWorkspace.installation.workspaceId === input.source.workspaceId
+      && input.source.configKey !== null
+    ) {
+      if (!shouldIndexSource(input.source)) {
+        const state = yield* Effect.tryPromise({
+          try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
+          catch: (cause) =>
+            cause instanceof Error ? cause : new Error(String(cause)),
+        });
+        const existingSourceState = state.sources[input.source.configKey];
+        const nextState: LocalWorkspaceState = {
+          ...state,
+          sources: {
+            ...state.sources,
+            [input.source.configKey]: {
+              id: input.source.id,
+              status: (input.source.enabled ? input.source.status : "draft") as SourceStatus,
+              lastError: null,
+              sourceHash: input.source.sourceHash,
+              createdAt: existingSourceState?.createdAt ?? input.source.createdAt,
+              updatedAt: Date.now(),
+            },
+          },
+        };
+        yield* Effect.tryPromise({
+          try: () =>
+            writeLocalWorkspaceState({
+              context: runtimeLocalWorkspace.context,
+              state: nextState,
+            }),
+          catch: (cause) =>
+            cause instanceof Error ? cause : new Error(String(cause)),
+        });
+        return;
+      }
+
+      const adapter = getSourceAdapterForSource(input.source);
+      const materialization = yield* adapter.materializeSource({
+        source: input.source,
+        resolveSecretMaterial: input.resolveSecretMaterial,
+        resolveAuthMaterialForSlot: (slot) =>
+          resolveSourceAuthMaterial({
+            rows: input.rows,
+            source: input.source,
+            slot,
+            actorAccountId: input.actorAccountId,
+            resolveSecretMaterial: input.resolveSecretMaterial,
+          }),
+      });
+
+      yield* Effect.tryPromise({
+        try: () =>
+          writeLocalSourceArtifact({
+            context: runtimeLocalWorkspace.context,
+            configKey: input.source.configKey!,
+            artifact: buildLocalSourceArtifact({
+              source: input.source,
+              configKey: input.source.configKey!,
+              materialization,
+            }),
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+
+      const state = yield* Effect.tryPromise({
+        try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+      const existingSourceState = state.sources[input.source.configKey];
+      const nextState: LocalWorkspaceState = {
+        ...state,
+        sources: {
+          ...state.sources,
+          [input.source.configKey]: {
+            id: input.source.id,
+            status: "connected",
+            lastError: null,
+            sourceHash: materialization.sourceHash,
+            createdAt: existingSourceState?.createdAt ?? input.source.createdAt,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+      yield* Effect.tryPromise({
+        try: () =>
+          writeLocalWorkspaceState({
+              context: runtimeLocalWorkspace.context,
+              state: nextState,
+            }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+      return;
+    }
+
     if (!shouldIndexSource(input.source)) {
       return;
     }
@@ -58,4 +174,35 @@ export const persistMcpRecipeMaterializationFromManifest = (input: {
     typeof persistMcpRecipeRevisionFromManifestEntries
   >[0]["manifestEntries"];
 }): Effect.Effect<void, Error, never> =>
-  persistMcpRecipeRevisionFromManifestEntries(input);
+  Effect.gen(function* () {
+    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
+    if (
+      runtimeLocalWorkspace !== null
+      && runtimeLocalWorkspace.installation.workspaceId === input.source.workspaceId
+      && input.source.configKey !== null
+    ) {
+      const materialization = materializationFromMcpManifestEntries({
+        recipeRevisionId: "src_recipe_rev_materialization" as never,
+        endpoint: input.source.endpoint,
+        manifestEntries: input.manifestEntries,
+      });
+
+      yield* Effect.tryPromise({
+        try: () =>
+          writeLocalSourceArtifact({
+            context: runtimeLocalWorkspace.context,
+            configKey: input.source.configKey!,
+            artifact: buildLocalSourceArtifact({
+              source: input.source,
+              configKey: input.source.configKey!,
+              materialization,
+            }),
+          }),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+      });
+      return;
+    }
+
+    return yield* persistMcpRecipeRevisionFromManifestEntries(input);
+  });

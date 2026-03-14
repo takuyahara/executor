@@ -52,6 +52,7 @@ const makeOpenApiSource = (input: {
 }): Source => ({
   id: input.sourceId,
   workspaceId: input.workspaceId,
+  configKey: null,
   name: input.name ?? "GitHub",
   kind: "openapi",
   endpoint: input.endpoint ?? "https://api.github.com",

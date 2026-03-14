@@ -232,6 +232,7 @@ export const createSourceFromPayload = (input: {
     return yield* validateSourceByKind({
       id: input.sourceId,
       workspaceId: input.workspaceId,
+      configKey: null,
       name: input.payload.name.trim(),
       kind: input.payload.kind,
       endpoint: input.payload.endpoint.trim(),
@@ -352,6 +353,7 @@ export const splitSourceForStorage = (input: {
   const sourceRecord: StoredSourceRecord = {
     id: input.source.id,
     workspaceId: input.source.workspaceId,
+    configKey: input.source.configKey,
     recipeId: input.recipeId,
     recipeRevisionId: input.recipeRevisionId,
     name: input.source.name,
@@ -406,6 +408,7 @@ export const projectSourceFromStorage = (input: {
     return {
       id: input.sourceRecord.id,
       workspaceId: input.sourceRecord.workspaceId,
+      configKey: input.sourceRecord.configKey,
       name: input.sourceRecord.name,
       kind: input.sourceRecord.kind,
       endpoint: input.sourceRecord.endpoint,

@@ -140,6 +140,7 @@ const seedWorkspaceSourceState = (input: {
     yield* input.persistence.rows.sources.insert({
       id: input.sourceId,
       workspaceId: input.workspaceId,
+      configKey: null,
       recipeId,
       recipeRevisionId,
       name: "Github",
@@ -277,6 +278,7 @@ describe("control-plane-persistence-drizzle", () => {
       yield* persistence.rows.sources.insert({
         id: SourceIdSchema.make("src_1"),
         workspaceId,
+        configKey: null,
         recipeId: SourceRecipeIdSchema.make("src_recipe_1"),
         recipeRevisionId: SourceRecipeRevisionIdSchema.make("src_recipe_rev_1"),
         name: "Github",
@@ -295,6 +297,7 @@ describe("control-plane-persistence-drizzle", () => {
 
       yield* persistence.rows.policies.insert({
         id: PolicyIdSchema.make("pol_1"),
+        configKey: null,
         scopeType: "workspace",
         organizationId,
         workspaceId,
@@ -860,6 +863,7 @@ describe("control-plane-persistence-drizzle", () => {
       yield* persistence.rows.sources.insert({
         id: SourceIdSchema.make("src_shared_removed"),
         workspaceId: removedWorkspaceId,
+        configKey: null,
         recipeId: sharedRecipeId,
         recipeRevisionId: sharedRecipeRevisionId,
         name: "Github Removed",
@@ -878,6 +882,7 @@ describe("control-plane-persistence-drizzle", () => {
       yield* persistence.rows.sources.insert({
         id: SourceIdSchema.make("src_shared_remaining"),
         workspaceId: remainingWorkspaceId,
+        configKey: null,
         recipeId: sharedRecipeId,
         recipeRevisionId: sharedRecipeRevisionId,
         name: "Github Remaining",
