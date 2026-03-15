@@ -1,58 +1,34 @@
 import {
-  allowAllToolInteractions,
   applyCookiePlacementsToHeaders,
   applyHttpQueryPlacementsToUrl,
   applyJsonBodyPlacements,
-  makeToolInvokerFromTools,
-  typeSignatureFromSchemaJson,
 } from "@executor/codemode-core";
-import type {
-  GraphqlToolManifest,
-} from "../graphql-tools";
 import {
   buildGraphqlToolPresentation,
   compileGraphqlToolDefinitions,
-  createGraphqlToolFromPersistedOperation,
-  decodeGraphqlSchemaRefTableJson,
   extractGraphqlManifest,
-  GraphqlToolProviderDataSchema,
   GRAPHQL_INTROSPECTION_QUERY,
+  type GraphqlToolProviderData,
 } from "../graphql-tools";
-import type {
-  Source,
-  SourceRecipeRevisionId,
-  StoredSourceRecipeDocumentRecord,
-  StoredSourceRecipeOperationRecord,
-  StoredSourceRecipeSchemaBundleRecord,
-} from "#schema";
-import {
-  StringMapSchema,
-  SourceRecipeSchemaBundleIdSchema,
-} from "#schema";
-import * as Either from "effect/Either";
+import type { Source } from "#schema";
+import { StringMapSchema } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { namespaceFromSourceName } from "../source-names";
 import {
-  contentHash,
-  normalizeSearchText,
-} from "../source-recipe-support";
-import type {
-  SourceAdapter,
-  SourceAdapterMaterialization,
-} from "./types";
+  createGraphqlCatalogSnapshot,
+  type GraphqlCatalogOperationInput,
+} from "../source-catalog-snapshot";
+import type { SourceAdapter } from "./types";
 import {
   ConnectHttpAuthSchema,
   ConnectHttpImportAuthSchema,
-  createStandardToolDescriptor,
   decodeBindingConfig,
   decodeSourceBindingPayload,
   emptySourceBindingState,
   encodeBindingConfig,
   isSourceCredentialRequiredError,
   OptionalNullableStringSchema,
-  parseJsonValue,
   SourceCredentialRequiredError,
   SourceConnectCommonFieldsSchema,
 } from "./shared";
@@ -90,12 +66,6 @@ const GraphqlSourceBindingPayloadSchema = Schema.Struct({
 });
 
 const GRAPHQL_BINDING_CONFIG_VERSION = 1;
-
-const GRAPHQL_MATERIALIZATION_REVISION_ID = "src_recipe_rev_materialization" as SourceRecipeRevisionId;
-
-const decodeGraphqlToolProviderDataJson = Schema.decodeUnknownEither(
-  Schema.parseJson(GraphqlToolProviderDataSchema),
-);
 
 const bindingHasAnyField = (
   value: unknown,
@@ -198,91 +168,28 @@ const fetchGraphqlIntrospectionDocumentWithHeaders = (input: {
       cause instanceof Error ? cause : new Error(String(cause)),
   });
 
-const toGraphqlSchemaBundleRecord = (input: {
-  recipeRevisionId: SourceRecipeRevisionId;
-  manifest: Parameters<typeof buildGraphqlToolPresentation>[0]["manifest"];
-  now: number;
-}): StoredSourceRecipeSchemaBundleRecord | null => {
-  const refEntries = Object.entries(input.manifest.schemaRefTable ?? {});
-  if (refEntries.length === 0) {
-    return null;
-  }
-
-  const refs = Object.fromEntries(
-    refEntries.map(([ref, rawValue]) => {
-      try {
-        return [ref, JSON.parse(rawValue) as unknown];
-      } catch {
-        return [ref, rawValue];
-      }
-    }),
-  );
-  const refsJson = JSON.stringify(refs);
-
-  return {
-    id: SourceRecipeSchemaBundleIdSchema.make(
-      `src_recipe_bundle_${crypto.randomUUID()}`,
-    ),
-    recipeRevisionId: input.recipeRevisionId,
-    bundleKind: "json_schema_ref_map",
-    refsJson,
-    contentHash: contentHash(refsJson),
-    createdAt: input.now,
-    updatedAt: input.now,
-  };
-};
-
-const toGraphqlRecipeOperationRecord = (input: {
-  recipeRevisionId: SourceRecipeRevisionId;
+const graphqlCatalogOperationFromDefinition = (input: {
   definition: ReturnType<typeof compileGraphqlToolDefinitions>[number];
   manifest: Parameters<typeof buildGraphqlToolPresentation>[0]["manifest"];
-  now: number;
-}): StoredSourceRecipeOperationRecord => {
+}): GraphqlCatalogOperationInput => {
   const presentation = buildGraphqlToolPresentation({
     manifest: input.manifest,
     definition: input.definition,
   });
 
   return {
-    id: `src_recipe_op_${crypto.randomUUID()}`,
-    recipeRevisionId: input.recipeRevisionId,
-    operationKey: input.definition.toolId,
-    transportKind: "graphql",
     toolId: input.definition.toolId,
     title: input.definition.name,
     description: input.definition.description,
-    operationKind:
+    effect:
       input.definition.operationType === "query"
         ? "read"
-        : input.definition.operationType === "mutation"
-          ? "write"
-          : "unknown",
-    searchText: normalizeSearchText(
-      input.definition.toolId,
-      input.definition.name,
-      input.definition.description,
-      input.definition.rawToolId,
-      input.definition.group,
-      input.definition.leaf,
-      input.definition.fieldName,
-      input.definition.operationType,
-      input.definition.operationName,
-      input.definition.searchTerms.join(" "),
-    ),
-    inputSchemaJson: presentation.inputSchemaJson ?? null,
-    outputSchemaJson: presentation.outputSchemaJson ?? null,
-    providerKind: "graphql",
-    providerDataJson: presentation.providerDataJson,
-    createdAt: input.now,
-    updatedAt: input.now,
+        : "write",
+    inputSchema: presentation.inputSchema,
+    outputSchema: presentation.outputSchema,
+    providerData: presentation.providerData as GraphqlToolProviderData,
   };
 };
-
-const primaryDocument = (
-  documents: readonly StoredSourceRecipeDocumentRecord[],
-): StoredSourceRecipeDocumentRecord | null =>
-  documents.find((document) => document.documentKind === "graphql_introspection")
-  ?? null;
 
 export const graphqlSourceAdapter: SourceAdapter = {
   key: "graphql",
@@ -291,8 +198,6 @@ export const graphqlSourceAdapter: SourceAdapter = {
   bindingConfigVersion: GRAPHQL_BINDING_CONFIG_VERSION,
   providerKey: "generic_graphql",
   defaultImportAuthPolicy: "reuse_runtime",
-  primaryDocumentKind: "graphql_introspection",
-  primarySchemaBundleKind: "json_schema_ref_map",
   connectPayloadSchema: GraphqlConnectPayloadSchema,
   executorAddInputSchema: GraphqlExecutorAddInputSchema,
   executorAddHelpText: [
@@ -349,68 +254,7 @@ export const graphqlSourceAdapter: SourceAdapter = {
     }),
   shouldAutoProbe: (source) =>
     source.enabled && (source.status === "draft" || source.status === "probing"),
-  parseManifest: ({ source, manifestJson }) =>
-    parseJsonValue<GraphqlToolManifest>({
-      label: `GraphQL manifest for ${source.id}`,
-      value: manifestJson,
-    }),
-  describePersistedOperation: ({ operation, path }) =>
-    Effect.gen(function* () {
-      const decoded = operation.providerDataJson
-        ? decodeGraphqlToolProviderDataJson(operation.providerDataJson)
-        : Either.left(new Error("Missing providerDataJson"));
-      if (Either.isLeft(decoded)) {
-        return yield* Effect.fail(
-          new Error(`Invalid GraphQL provider data for ${path}`),
-        );
-      }
-
-      const providerData = decoded.right;
-
-      return {
-        method: null,
-        pathTemplate: null,
-        rawToolId: providerData.rawToolId,
-        operationId: providerData.operationName,
-        group: providerData.group,
-        leaf: providerData.leaf,
-        tags: [],
-        searchText: normalizeSearchText(
-          path,
-          operation.toolId,
-          operation.title ?? undefined,
-          operation.description ?? undefined,
-          providerData.rawToolId ?? undefined,
-          providerData.group ?? undefined,
-          providerData.leaf ?? undefined,
-          providerData.fieldName ?? undefined,
-          providerData.operationType ?? undefined,
-          providerData.operationName ?? undefined,
-          operation.searchText,
-        ),
-        interaction: providerData.operationType === "query" ? "auto" : "required",
-        approvalLabel: providerData.operationType
-          ? `GraphQL ${providerData.operationType} ${path}`
-          : `GraphQL ${path}`,
-      } as const;
-    }),
-  searchNamespace: ({ source }) =>
-    source.namespace ?? namespaceFromSourceName(source.name),
-  createToolDescriptor: ({ source, operation, path, includeSchemas, schemaBundleId }) =>
-    createStandardToolDescriptor({
-      source,
-      operation,
-      path,
-      includeSchemas,
-      interaction: operation.operationKind === "read" ? "auto" : "required",
-      outputType: typeSignatureFromSchemaJson(
-        operation.outputSchemaJson ?? undefined,
-        "unknown",
-        320,
-      ),
-      schemaBundleId,
-    }),
-  materializeSource: ({ source, resolveAuthMaterialForSlot }) =>
+  syncCatalog: ({ source, resolveAuthMaterialForSlot }) =>
     Effect.gen(function* () {
       const bindingConfig = yield* graphqlBindingConfigFromSource(source);
       const auth = yield* resolveAuthMaterialForSlot("import");
@@ -447,94 +291,24 @@ export const graphqlSourceAdapter: SourceAdapter = {
 
       const definitions = compileGraphqlToolDefinitions(manifest);
       const now = Date.now();
-      const schemaBundle = toGraphqlSchemaBundleRecord({
-        recipeRevisionId: GRAPHQL_MATERIALIZATION_REVISION_ID,
-        manifest,
-        now,
-      });
 
       return {
-        manifestJson: JSON.stringify(manifest),
-        manifestHash: manifest.sourceHash,
-        sourceHash: manifest.sourceHash,
-        documents: [
-          {
-            id: `src_recipe_doc_${crypto.randomUUID()}`,
-            recipeRevisionId: GRAPHQL_MATERIALIZATION_REVISION_ID,
+        snapshot: createGraphqlCatalogSnapshot({
+          source,
+          documents: [{
             documentKind: "graphql_introspection",
             documentKey: source.endpoint,
             contentText: graphqlDocument,
-            contentHash: contentHash(graphqlDocument),
             fetchedAt: now,
-            createdAt: now,
-            updatedAt: now,
-          },
-        ],
-        schemaBundles: schemaBundle ? [schemaBundle] : [],
-        operations: definitions.map((definition) =>
-          toGraphqlRecipeOperationRecord({
-            recipeRevisionId: GRAPHQL_MATERIALIZATION_REVISION_ID,
-            definition,
-            manifest,
-            now,
-          }),
-        ),
-      } satisfies SourceAdapterMaterialization;
-    }),
-  invokePersistedTool: ({
-    source,
-    path,
-    operation,
-    schemaBundle,
-    auth,
-    args,
-    context,
-    onElicitation,
-  }) =>
-    Effect.gen(function* () {
-      const bindingConfig = yield* graphqlBindingConfigFromSource(source);
-      const schemaRefTable = schemaBundle
-        ? decodeGraphqlSchemaRefTableJson(schemaBundle.refsJson)
-        : Either.right({});
-
-      if (Either.isLeft(schemaRefTable)) {
-        return yield* Effect.fail(
-          new Error(`Invalid GraphQL schema bundle for ${path}`),
-        );
-      }
-      if (!operation.providerDataJson) {
-        return yield* Effect.fail(
-          new Error(`Missing GraphQL provider data for ${path}`),
-        );
-      }
-
-      const tool = createGraphqlToolFromPersistedOperation({
-        path,
-        sourceKey: source.id,
-        endpoint: source.endpoint,
-        description: operation.description ?? operation.title ?? undefined,
-        inputSchemaJson: operation.inputSchemaJson ?? undefined,
-        outputSchemaJson: operation.outputSchemaJson ?? undefined,
-        providerDataJson: operation.providerDataJson,
-        schemaRefTable: schemaRefTable.right,
-        defaultHeaders: bindingConfig.defaultHeaders ?? {},
-        credentialPlacements: auth,
-      });
-
-      return yield* makeToolInvokerFromTools({
-        tools: {
-          [path]: tool,
-        },
-        onToolInteraction: allowAllToolInteractions,
-        onElicitation,
-      }).invoke({
-        path,
-        args,
-        context,
-      }).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-        ),
-      );
+          }],
+          operations: definitions.map((definition) =>
+            graphqlCatalogOperationFromDefinition({
+              definition,
+              manifest,
+            })
+          ),
+        }),
+        sourceHash: manifest.sourceHash,
+      };
     }),
 };

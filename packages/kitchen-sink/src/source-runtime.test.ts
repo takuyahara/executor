@@ -67,8 +67,8 @@ type StoredToolArtifactRecord = {
   description: string | null;
   searchNamespace: string;
   searchText: string;
-  inputSchemaJson: string | null;
-  outputSchemaJson: string | null;
+  inputSchema: unknown | null;
+  outputSchema: unknown | null;
   providerKind: "openapi";
   openApiMethod: "get" | "put" | "post" | "delete" | "patch" | "head" | "options" | "trace";
   openApiPathTemplate: string | null;
@@ -89,10 +89,10 @@ const toDescriptor = (
   sourceKey: artifact.sourceId,
   description: artifact.description ?? artifact.title ?? undefined,
   interaction: "auto" as const,
-  inputType: includeSchemas && artifact.inputSchemaJson ? "object" : undefined,
-  outputType: includeSchemas && artifact.outputSchemaJson ? "output" : undefined,
-  inputSchemaJson: includeSchemas ? artifact.inputSchemaJson ?? undefined : undefined,
-  outputSchemaJson: includeSchemas ? artifact.outputSchemaJson ?? undefined : undefined,
+  inputType: includeSchemas && artifact.inputSchema ? "object" : undefined,
+  outputType: includeSchemas && artifact.outputSchema ? "output" : undefined,
+  inputSchema: includeSchemas ? artifact.inputSchema ?? undefined : undefined,
+  outputSchema: includeSchemas ? artifact.outputSchema ?? undefined : undefined,
 });
 
 type SourceCallContext = {
@@ -359,7 +359,6 @@ const createWorkspaceToolCatalog = (input: {
         path,
       }).then((artifact) => (artifact ? toDescriptor(artifact, includeSchemas) : null))
     ),
-  getSchemaBundle: () => Effect.succeed(null),
   searchTools: ({ query, namespace, limit }) =>
     Effect.promise(() =>
       input.toolStore.list({
@@ -522,8 +521,8 @@ const openApiArtifact = (input: {
   method: NonNullable<StoredToolArtifactRecord["openApiMethod"]>;
   pathTemplate: string;
   operationHash?: string;
-  inputSchemaJson?: string | null;
-  outputSchemaJson?: string | null;
+  inputSchema?: unknown | null;
+  outputSchema?: unknown | null;
 }): StoredToolArtifactRecord => {
   const path = input.path as string;
   const description =
@@ -545,8 +544,8 @@ const openApiArtifact = (input: {
       input.method.toUpperCase(),
       input.pathTemplate,
     ),
-    inputSchemaJson: input.inputSchemaJson ?? null,
-    outputSchemaJson: input.outputSchemaJson ?? null,
+    inputSchema: input.inputSchema ?? null,
+    outputSchema: input.outputSchema ?? null,
     providerKind: "openapi",
     openApiMethod: input.method,
     openApiPathTemplate: input.pathTemplate,
@@ -783,7 +782,7 @@ describe("source runtime", () => {
           "Workflow:",
           '1) const matches = await tools.discover({ query: "<intent>", limit: 12 });',
           "2) const details = await tools.describe.tool({ path, includeSchemas: true });",
-          "3) If details.schemaBundleId is present, fetch it once with tools.describe.schemaBundle({ id }).",
+          "3) Read details.inputSchema/details.outputSchema when you need the projected shape.",
           "4) Call selected tools.<path>(input).",
           "Do not use fetch; use tools.* only.",
         ].join("\n"),
@@ -834,7 +833,7 @@ describe("source runtime", () => {
               description: "GET /repos/{owner}/{repo}",
               interaction: "auto",
               inputType: "{ owner: string, repo: string }",
-              outputType: "unknown",
+              outputType: "void",
             },
           ],
           total: 1,
@@ -853,7 +852,7 @@ describe("source runtime", () => {
           "Workflow:",
           '1) const matches = await tools.discover({ query: "<intent>", limit: 12 });',
           "2) const details = await tools.describe.tool({ path, includeSchemas: true });",
-          "3) If details.schemaBundleId is present, fetch it once with tools.describe.schemaBundle({ id }).",
+          "3) Read details.inputSchema/details.outputSchema when you need the projected shape.",
           "4) Call selected tools.<path>(input).",
           "Do not use fetch; use tools.* only.",
         ].join("\n"),

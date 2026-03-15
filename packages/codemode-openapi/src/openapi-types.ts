@@ -58,8 +58,8 @@ export const OpenApiInvocationPayloadSchema = Schema.Struct({
 });
 
 export const DiscoveryTypingPayloadSchema = Schema.Struct({
-  inputSchemaJson: Schema.optional(Schema.String),
-  outputSchemaJson: Schema.optional(Schema.String),
+  inputSchema: Schema.optional(Schema.Unknown),
+  outputSchema: Schema.optional(Schema.Unknown),
   refHintKeys: Schema.optional(Schema.Array(Schema.String)),
 });
 

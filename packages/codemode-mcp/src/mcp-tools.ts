@@ -93,13 +93,13 @@ const isExecutionSuspendedCause = (cause: unknown): boolean =>
 const toDetails = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
-const inputSchemaFromManifest = (inputSchemaJson: string | undefined) => {
-  if (!inputSchemaJson) {
+const inputSchemaFromManifest = (inputSchema: unknown) => {
+  if (inputSchema === undefined || inputSchema === null) {
     return unknownInputSchema;
   }
 
   try {
-    return standardSchemaFromJsonSchema(JSON.parse(inputSchemaJson), {
+    return standardSchemaFromJsonSchema(inputSchema, {
       vendor: "mcp",
       fallback: unknownInputSchema,
     });
@@ -470,7 +470,7 @@ export const createMcpToolsFromManifest = (input: {
         toTool({
           tool: {
             description: entry.description ?? `MCP tool: ${entry.toolName}`,
-            inputSchema: inputSchemaFromManifest(entry.inputSchemaJson),
+            inputSchema: inputSchemaFromManifest(entry.inputSchema),
             execute: async (args: unknown, executionContext?: ToolExecutionContext) => {
               const exit = await Effect.runPromiseExit(
                 withConnectionEffect({
@@ -504,8 +504,12 @@ export const createMcpToolsFromManifest = (input: {
           },
           metadata: {
             sourceKey,
-            inputSchemaJson: entry.inputSchemaJson,
-            outputSchemaJson: entry.outputSchemaJson,
+            ...(entry.inputSchema !== undefined
+              ? { inputSchema: entry.inputSchema }
+              : {}),
+            ...(entry.outputSchema !== undefined
+              ? { outputSchema: entry.outputSchema }
+              : {}),
           },
         }),
       ] as const;

@@ -1,4 +1,4 @@
-import type { Source, StoredSourceRecipeOperationRecord } from "#schema";
+import type { Source } from "#schema";
 import * as Schema from "effect/Schema";
 
 import { graphqlSourceAdapter } from "./graphql";
@@ -66,10 +66,6 @@ export const getSourceAdapterForSource = (source: Pick<Source, "kind">): SourceA
 
 export const sourceBindingStateFromSource = (source: Source) =>
   getSourceAdapterForSource(source).bindingStateFromSource(source);
-
-export const getSourceAdapterForOperation = (
-  operation: Pick<StoredSourceRecipeOperationRecord, "providerKind">,
-): SourceAdapter => getSourceAdapter(operation.providerKind);
 
 export const hasSourceAdapterFamily = (
   key: string,

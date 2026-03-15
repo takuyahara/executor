@@ -80,14 +80,13 @@ export type ToolMetadata = {
   elicitation?: ElicitationRequest;
   inputType?: string;
   outputType?: string;
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
-  schemaBundleId?: string;
-  exampleInputJson?: string;
-  exampleOutputJson?: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  exampleInput?: unknown;
+  exampleOutput?: unknown;
   sourceKey?: string;
   providerKind?: string;
-  providerDataJson?: string;
+  providerData?: unknown;
 };
 
 export type ToolExecutionContext = {
@@ -134,13 +133,12 @@ export type ToolDescriptor = {
   elicitation?: ElicitationRequest;
   inputType?: string;
   outputType?: string;
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
-  schemaBundleId?: string;
-  exampleInputJson?: string;
-  exampleOutputJson?: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  exampleInput?: unknown;
+  exampleOutput?: unknown;
   providerKind?: string;
-  providerDataJson?: string;
+  providerData?: unknown;
 };
 
 export const ToolDescriptorSchema = Schema.Struct({
@@ -153,27 +151,12 @@ export const ToolDescriptorSchema = Schema.Struct({
   elicitation: Schema.optional(Schema.Unknown),
   inputType: Schema.optional(Schema.String),
   outputType: Schema.optional(Schema.String),
-  inputSchemaJson: Schema.optional(Schema.String),
-  outputSchemaJson: Schema.optional(Schema.String),
-  schemaBundleId: Schema.optional(Schema.String),
-  exampleInputJson: Schema.optional(Schema.String),
-  exampleOutputJson: Schema.optional(Schema.String),
+  inputSchema: Schema.optional(Schema.Unknown),
+  outputSchema: Schema.optional(Schema.Unknown),
+  exampleInput: Schema.optional(Schema.Unknown),
+  exampleOutput: Schema.optional(Schema.Unknown),
   providerKind: Schema.optional(Schema.String),
-  providerDataJson: Schema.optional(Schema.String),
-});
-
-export type ToolSchemaBundle = {
-  id: string;
-  kind: string;
-  hash: string;
-  refsJson: string;
-};
-
-export const ToolSchemaBundleSchema = Schema.Struct({
-  id: Schema.String,
-  kind: Schema.String,
-  hash: Schema.String,
-  refsJson: Schema.String,
+  providerData: Schema.optional(Schema.Unknown),
 });
 
 export type ToolNamespace = {
@@ -217,10 +200,6 @@ export interface ToolCatalog {
     includeSchemas: boolean;
   }): Effect.Effect<ToolDescriptor | null, unknown>;
 
-  getSchemaBundle(input: {
-    id: string;
-  }): Effect.Effect<ToolSchemaBundle | null, unknown>;
-
   searchTools(input: {
     query: string;
     namespace?: string;
@@ -249,9 +228,6 @@ export type DescribePrimitive = {
     path: ToolPath;
     includeSchemas?: boolean;
   }): Effect.Effect<ToolDescriptor | null, unknown>;
-  schemaBundle(input: {
-    id: string;
-  }): Effect.Effect<ToolSchemaBundle | null, unknown>;
 };
 
 export type DiscoverPrimitive = (input: {

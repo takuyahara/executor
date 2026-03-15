@@ -8,13 +8,13 @@ export {
 } from "./openapi-extraction";
 export {
   compileOpenApiToolDefinitions,
-  openApiProviderDataJsonFromDefinition,
+  openApiProviderDataFromDefinition,
   OpenApiToolDefinitionSchema,
   type OpenApiToolDefinition,
 } from "./openapi-definitions";
 export {
   buildOpenApiToolPresentation,
-  openApiOutputTypeSignatureFromSchemaJson,
+  openApiOutputTypeSignatureFromSchema,
   type OpenApiToolPresentation,
 } from "./openapi-tool-presentation";
 export {
@@ -23,7 +23,7 @@ export {
   createOpenApiToolsFromManifest,
   createOpenApiToolsFromSpec,
 } from "./openapi-tools";
-export { resolveSchemaJsonWithRefHints, resolveTypingSchemasWithRefHints } from "./openapi-schema-refs";
+export { resolveSchemaWithRefHints, resolveTypingSchemasWithRefHints } from "./openapi-schema-refs";
 export {
   OPEN_API_HTTP_METHODS,
   OPEN_API_PARAMETER_LOCATIONS,

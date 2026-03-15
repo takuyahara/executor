@@ -27,7 +27,7 @@ import {
   type ResolveExecutionEnvironment,
   resolveLocalWorkspaceContext,
   SourceIdSchema,
-  SourceRecipeRevisionIdSchema,
+  SourceCatalogRevisionIdSchema,
   writeLocalSourceArtifact,
   writeProjectLocalExecutorConfig,
 } from "@executor/control-plane";
@@ -144,7 +144,7 @@ const writeConfiguredLocalMcpSource = (input: {
     };
 
     const materialization = materializationFromMcpManifestEntries({
-      recipeRevisionId: SourceRecipeRevisionIdSchema.make("src_recipe_rev_materialization"),
+      catalogRevisionId: SourceCatalogRevisionIdSchema.make("src_catalog_rev_materialization"),
       endpoint: input.endpoint,
       manifestEntries: [{
         toolId: "gated_echo",

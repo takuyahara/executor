@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
+    "./ir": "./src/ir/index.ts",
     "./schema": "./src/schema/index.ts"
   },
   "imports": {

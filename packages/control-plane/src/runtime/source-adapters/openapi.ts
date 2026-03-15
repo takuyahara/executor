@@ -4,55 +4,34 @@ import {
   HttpClientRequest,
 } from "@effect/platform";
 import {
-  allowAllToolInteractions,
   applyCookiePlacementsToHeaders,
   applyHttpQueryPlacementsToUrl,
-  makeToolInvokerFromTools,
 } from "@executor/codemode-core";
 import {
   buildOpenApiToolPresentation,
   compileOpenApiToolDefinitions,
-  createOpenApiToolFromDefinition,
+  type OpenApiToolProviderData,
   extractOpenApiManifest,
-  openApiOutputTypeSignatureFromSchemaJson,
-  OpenApiRefHintTableSchema,
-  OpenApiToolProviderDataSchema,
-  type OpenApiToolManifest,
 } from "@executor/codemode-openapi";
-import type {
-  Source,
-  SourceRecipeRevisionId,
-  StoredSourceRecipeDocumentRecord,
-  StoredSourceRecipeOperationRecord,
-  StoredSourceRecipeSchemaBundleRecord,
-} from "#schema";
-import {
-  StringMapSchema,
-  SourceRecipeSchemaBundleIdSchema,
-} from "#schema";
-import * as Either from "effect/Either";
+import type { Source } from "#schema";
+import { StringMapSchema } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
-  contentHash,
-  normalizeSearchText,
-} from "../source-recipe-support";
-import type {
-  SourceAdapter,
-  SourceAdapterMaterialization,
-} from "./types";
+  createOpenApiCatalogSnapshot,
+  type OpenApiCatalogOperationInput,
+} from "../source-catalog-snapshot";
+import type { SourceAdapter } from "./types";
 import {
   ConnectHttpAuthSchema,
   ConnectHttpImportAuthSchema,
-  createStandardToolDescriptor,
   decodeBindingConfig,
   decodeSourceBindingPayload,
   emptySourceBindingState,
   encodeBindingConfig,
   isSourceCredentialRequiredError,
   OptionalNullableStringSchema,
-  parseJsonValue,
   SourceCredentialRequiredError,
   SourceConnectCommonFieldsSchema,
 } from "./shared";
@@ -97,16 +76,6 @@ type OpenApiBindingConfig = {
 };
 
 const OPENAPI_BINDING_CONFIG_VERSION = 1;
-
-const OPENAPI_MATERIALIZATION_REVISION_ID = "src_recipe_rev_materialization" as SourceRecipeRevisionId;
-
-const decodeOpenApiProviderDataJson = Schema.decodeUnknownEither(
-  Schema.parseJson(OpenApiToolProviderDataSchema),
-);
-
-const decodeOpenApiRefHintTableJson = Schema.decodeUnknownEither(
-  Schema.parseJson(OpenApiRefHintTableSchema),
-);
 
 const bindingHasAnyField = (
   value: unknown,
@@ -198,136 +167,29 @@ const fetchOpenApiDocumentWithHeaders = (input: {
     );
   }).pipe(Effect.provide(FetchHttpClient.layer));
 
-const toOpenApiRecipeOperationRecord = (input: {
-  recipeRevisionId: SourceRecipeRevisionId;
-  definition: ReturnType<typeof compileOpenApiToolDefinitions>[number];
-  now: number;
-}): StoredSourceRecipeOperationRecord => {
+const openApiCatalogOperationFromDefinition = (
+  definition: ReturnType<typeof compileOpenApiToolDefinitions>[number],
+): OpenApiCatalogOperationInput => {
   const presentation = buildOpenApiToolPresentation({
-    definition: input.definition,
+    definition,
   });
-  const method = input.definition.method.toUpperCase();
+  const method = definition.method.toUpperCase();
 
   return {
-    id: `src_recipe_op_${crypto.randomUUID()}`,
-    recipeRevisionId: input.recipeRevisionId,
-    operationKey: input.definition.toolId,
-    transportKind: "http",
-    toolId: input.definition.toolId,
-    title: input.definition.name,
-    description: input.definition.description,
-    operationKind:
+    toolId: definition.toolId,
+    title: definition.name,
+    description: definition.description,
+    effect:
       method === "GET" || method === "HEAD"
         ? "read"
         : method === "DELETE"
           ? "delete"
           : "write",
-    searchText: normalizeSearchText(
-      input.definition.toolId,
-      input.definition.name,
-      input.definition.description,
-      input.definition.rawToolId,
-      input.definition.operationId ?? undefined,
-      input.definition.method,
-      input.definition.path,
-      input.definition.group,
-      input.definition.leaf,
-      input.definition.tags.join(" "),
-    ),
-  inputSchemaJson: presentation.inputSchemaJson ?? null,
-  outputSchemaJson: presentation.outputSchemaJson ?? null,
-  providerKind: "openapi",
-  providerDataJson: presentation.providerDataJson,
-  createdAt: input.now,
-  updatedAt: input.now,
-};
-};
-
-const toOpenApiSchemaBundleRecord = (input: {
-  recipeRevisionId: SourceRecipeRevisionId;
-  refTable: Readonly<Record<string, string>> | undefined;
-  now: number;
-}): StoredSourceRecipeSchemaBundleRecord | null => {
-  const refEntries = Object.entries(input.refTable ?? {});
-  if (refEntries.length === 0) {
-    return null;
-  }
-
-  const refs = Object.fromEntries(
-    refEntries.map(([ref, rawValue]) => {
-      try {
-        return [ref, JSON.parse(rawValue) as unknown];
-      } catch {
-        return [ref, rawValue];
-      }
-    }),
-  );
-  const refsJson = JSON.stringify(refs);
-
-  return {
-    id: SourceRecipeSchemaBundleIdSchema.make(
-      `src_recipe_bundle_${crypto.randomUUID()}`,
-    ),
-    recipeRevisionId: input.recipeRevisionId,
-    bundleKind: "json_schema_ref_map",
-    refsJson,
-    contentHash: contentHash(refsJson),
-    createdAt: input.now,
-    updatedAt: input.now,
+    inputSchema: presentation.inputSchema,
+    outputSchema: presentation.outputSchema,
+    providerData: presentation.providerData as OpenApiToolProviderData,
   };
 };
-
-const openApiDefinitionFromPersistedOperation = (input: {
-  source: Source;
-  path: string;
-  operation: StoredSourceRecipeOperationRecord;
-}) => {
-  const decoded = input.operation.providerDataJson
-    ? decodeOpenApiProviderDataJson(input.operation.providerDataJson)
-    : Either.left(new Error("Missing providerDataJson"));
-
-  if (Either.isLeft(decoded)) {
-    throw new Error(`Invalid OpenAPI provider data for ${input.path}`);
-  }
-
-  return {
-    toolId: input.operation.toolId,
-    rawToolId: decoded.right.rawToolId,
-    ...(decoded.right.operationId
-      ? { operationId: decoded.right.operationId }
-      : {}),
-    name: input.operation.title ?? input.operation.toolId,
-    description:
-      input.operation.description ??
-      `${decoded.right.method.toUpperCase()} ${decoded.right.path}`,
-    group: decoded.right.group,
-    leaf: decoded.right.leaf,
-    tags: decoded.right.tags,
-    ...(decoded.right.versionSegment
-      ? { versionSegment: decoded.right.versionSegment }
-      : {}),
-    method: decoded.right.method,
-    path: decoded.right.path,
-    invocation: decoded.right.invocation,
-    operationHash: decoded.right.operationHash,
-    typing: {
-      ...(input.operation.inputSchemaJson
-        ? { inputSchemaJson: input.operation.inputSchemaJson }
-        : {}),
-      ...(input.operation.outputSchemaJson
-        ? { outputSchemaJson: input.operation.outputSchemaJson }
-        : {}),
-    },
-    ...(decoded.right.documentation
-      ? { documentation: decoded.right.documentation }
-      : {}),
-  };
-};
-
-const primaryDocument = (
-  documents: readonly StoredSourceRecipeDocumentRecord[],
-): StoredSourceRecipeDocumentRecord | null =>
-  documents.find((document) => document.documentKind === "openapi") ?? null;
 
 export const openApiSourceAdapter: SourceAdapter = {
   key: "openapi",
@@ -336,8 +198,6 @@ export const openApiSourceAdapter: SourceAdapter = {
   bindingConfigVersion: OPENAPI_BINDING_CONFIG_VERSION,
   providerKey: "generic_http",
   defaultImportAuthPolicy: "reuse_runtime",
-  primaryDocumentKind: "openapi",
-  primarySchemaBundleKind: "json_schema_ref_map",
   connectPayloadSchema: OpenApiConnectPayloadSchema,
   executorAddInputSchema: OpenApiExecutorAddInputSchema,
   executorAddHelpText: [
@@ -398,65 +258,7 @@ export const openApiSourceAdapter: SourceAdapter = {
     }),
   shouldAutoProbe: (source) =>
     source.enabled && (source.status === "draft" || source.status === "probing"),
-  parseManifest: ({ source, manifestJson }) =>
-    parseJsonValue<OpenApiToolManifest>({
-      label: `OpenAPI manifest for ${source.id}`,
-      value: manifestJson,
-    }),
-  describePersistedOperation: ({ operation, path }) =>
-    Effect.gen(function* () {
-      const decoded = operation.providerDataJson
-        ? decodeOpenApiProviderDataJson(operation.providerDataJson)
-        : Either.left(new Error("Missing providerDataJson"));
-      if (Either.isLeft(decoded)) {
-        return yield* Effect.fail(
-          new Error(`Invalid OpenAPI provider data for ${path}`),
-        );
-      }
-
-      const providerData = decoded.right;
-      const method = providerData.method.toUpperCase();
-
-      return {
-        method: providerData.method,
-        pathTemplate: providerData.path,
-        rawToolId: providerData.rawToolId,
-        operationId: providerData.operationId ?? null,
-        group: providerData.group,
-        leaf: providerData.leaf,
-        tags: providerData.tags,
-        searchText: normalizeSearchText(
-          path,
-          operation.toolId,
-          operation.title ?? undefined,
-          operation.description ?? undefined,
-          providerData.rawToolId,
-          providerData.operationId ?? undefined,
-          method,
-          providerData.path,
-          providerData.group,
-          providerData.leaf,
-          providerData.tags.join(" "),
-          operation.searchText,
-        ),
-        interaction: method === "GET" || method === "HEAD" ? "auto" : "required",
-        approvalLabel: `${method} ${providerData.path}`,
-      } as const;
-    }),
-  createToolDescriptor: ({ source, operation, path, includeSchemas, schemaBundleId }) =>
-    createStandardToolDescriptor({
-      source,
-      operation,
-      path,
-      includeSchemas,
-      interaction: operation.operationKind === "read" ? "auto" : "required",
-      outputType: openApiOutputTypeSignatureFromSchemaJson(
-        operation.outputSchemaJson ?? undefined,
-        320,
-      ),
-      schemaBundleId,
-    }),
-  materializeSource: ({ source, resolveAuthMaterialForSlot }) =>
+  syncCatalog: ({ source, resolveAuthMaterialForSlot }) =>
     Effect.gen(function* () {
       const bindingConfig = yield* openApiBindingConfigFromSource(source);
 
@@ -491,89 +293,19 @@ export const openApiSourceAdapter: SourceAdapter = {
 
       const definitions = compileOpenApiToolDefinitions(manifest);
       const now = Date.now();
-      const schemaBundle = toOpenApiSchemaBundleRecord({
-        recipeRevisionId: OPENAPI_MATERIALIZATION_REVISION_ID,
-        refTable: manifest.refHintTable,
-        now,
-      });
 
       return {
-        manifestJson: JSON.stringify(manifest),
-        manifestHash: manifest.sourceHash,
-        sourceHash: manifest.sourceHash,
-        documents: [
-          {
-            id: `src_recipe_doc_${crypto.randomUUID()}`,
-            recipeRevisionId: OPENAPI_MATERIALIZATION_REVISION_ID,
+        snapshot: createOpenApiCatalogSnapshot({
+          source,
+          documents: [{
             documentKind: "openapi",
             documentKey: bindingConfig.specUrl,
             contentText: openApiDocument,
-            contentHash: contentHash(openApiDocument),
             fetchedAt: now,
-            createdAt: now,
-            updatedAt: now,
-          },
-        ],
-        schemaBundles: schemaBundle ? [schemaBundle] : [],
-        operations: definitions.map((definition) =>
-          toOpenApiRecipeOperationRecord({
-            recipeRevisionId: OPENAPI_MATERIALIZATION_REVISION_ID,
-            definition,
-            now,
-          }),
-        ),
-      } satisfies SourceAdapterMaterialization;
-    }),
-  invokePersistedTool: ({
-    source,
-    path,
-    operation,
-    schemaBundle,
-    auth,
-    args,
-    context,
-    onElicitation,
-  }) =>
-    Effect.gen(function* () {
-      const bindingConfig = yield* openApiBindingConfigFromSource(source);
-      const refHintTable = schemaBundle
-        ? decodeOpenApiRefHintTableJson(schemaBundle.refsJson)
-        : Either.right({});
-
-      if (Either.isLeft(refHintTable)) {
-        return yield* Effect.fail(
-          new Error(`Invalid OpenAPI schema bundle for ${path}`),
-        );
-      }
-
-      const tool = createOpenApiToolFromDefinition({
-        definition: openApiDefinitionFromPersistedOperation({
-          source,
-          path,
-          operation,
+          }],
+          operations: definitions.map(openApiCatalogOperationFromDefinition),
         }),
-        path,
-        sourceKey: source.id,
-        baseUrl: source.endpoint,
-        defaultHeaders: bindingConfig.defaultHeaders ?? {},
-        credentialPlacements: auth,
-        refHintTable: refHintTable.right,
-      });
-
-      return yield* makeToolInvokerFromTools({
-        tools: {
-          [path]: tool,
-        },
-        onToolInteraction: allowAllToolInteractions,
-        onElicitation,
-      }).invoke({
-        path,
-        args,
-        context,
-      }).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-        ),
-      );
+        sourceHash: manifest.sourceHash,
+      };
     }),
 };

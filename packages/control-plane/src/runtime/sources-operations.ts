@@ -25,7 +25,7 @@ import {
   operationErrors,
 } from "./operation-errors";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
-import { RuntimeSourceMaterializationService } from "./source-materialization";
+import { RuntimeSourceCatalogSyncService } from "./source-catalog-sync";
 import {
   RuntimeSourceStoreService,
 } from "./source-store";
@@ -51,7 +51,7 @@ const syncArtifactsForSource = (input: {
     | typeof sourceOps.update;
 }) =>
   Effect.gen(function* () {
-    const materializationService = yield* RuntimeSourceMaterializationService;
+    const catalogSyncService = yield* RuntimeSourceCatalogSyncService;
 
     // For HTTP-backed source kinds that can validate themselves from a remote
     // document, automatically attempt to probe and connect. This mirrors the
@@ -63,7 +63,7 @@ const syncArtifactsForSource = (input: {
       : input.source;
 
     const synced = yield* Effect.either(
-      materializationService.sync({
+      catalogSyncService.sync({
         source: sourceForSync,
         actorAccountId: input.actorAccountId,
       }),

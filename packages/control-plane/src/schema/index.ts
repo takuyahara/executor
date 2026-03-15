@@ -4,7 +4,7 @@ export * from "./ids";
 
 export * from "./models/auth";
 export * from "./models/source";
-export * from "./models/source-recipe";
+export * from "./models/source-catalog";
 export * from "./models/auth-artifact";
 export * from "./models/auth-lease";
 export * from "./models/source-oauth-client";

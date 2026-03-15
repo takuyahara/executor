@@ -56,7 +56,7 @@ const withStaticServer = async <T>(content: string, handler: (baseUrl: string) =
 };
 
 describe("google discovery source adapter", () => {
-  it("materializes a real Google Sheets discovery doc into recipe content", () =>
+  it("syncs a real Google Sheets discovery doc into snapshot content", () =>
     Effect.tryPromise({
       try: async () => {
         const discoveryDocument = await fetchLiveDiscoveryDocument();
@@ -86,8 +86,8 @@ describe("google discovery source adapter", () => {
             }),
           );
 
-          const materialization = await Effect.runPromise(
-            googleDiscoverySourceAdapter.materializeSource({
+          const syncResult = await Effect.runPromise(
+            googleDiscoverySourceAdapter.syncCatalog({
               source,
               resolveSecretMaterial: () => Effect.fail(new Error("unexpected secret lookup")),
               resolveAuthMaterialForSlot: () =>
@@ -103,12 +103,12 @@ describe("google discovery source adapter", () => {
             }),
           );
 
-          expect(materialization.documents[0]?.documentKind).toBe("google_discovery");
-          expect(materialization.schemaBundles.length).toBeGreaterThan(0);
-          expect(materialization.operations.length).toBeGreaterThan(50);
+          expect(Object.values(syncResult.snapshot.catalog.documents)[0]?.kind).toBe("google-discovery");
+          expect(Object.keys(syncResult.snapshot.catalog.resources)).not.toHaveLength(0);
+          expect(Object.keys(syncResult.snapshot.catalog.capabilities).length).toBeGreaterThan(50);
           expect(
-            materialization.operations.some(
-              (operation) => operation.toolId === "spreadsheets.values.get",
+            Object.values(syncResult.snapshot.catalog.capabilities).some((capability) =>
+              capability.surface.toolPath.join(".") === "google.sheets.spreadsheets.values.get"
             ),
           ).toBe(true);
         });

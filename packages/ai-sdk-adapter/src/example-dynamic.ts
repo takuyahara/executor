@@ -35,9 +35,6 @@ const catalog: ToolCatalog = {
       outputType: "object",
     });
   },
-  getSchemaBundle() {
-    return Effect.succeed(null);
-  },
   searchTools({ limit }) {
     return Effect.succeed(
       [

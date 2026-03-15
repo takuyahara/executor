@@ -2,18 +2,14 @@ import { Schema } from "effect";
 
 import { SourceSchema } from "./source";
 
-export const SourceInspectionPipelineKindSchema = Schema.Literal(
-  "openapi",
-  "graphql",
-  "persisted",
-);
+export const SourceInspectionPipelineKindSchema = Schema.Literal("ir");
 
 export const SourceInspectionToolSummarySchema = Schema.Struct({
   path: Schema.String,
   sourceKey: Schema.String,
   title: Schema.optional(Schema.String),
   description: Schema.optional(Schema.String),
-  providerKind: Schema.String,
+  protocol: Schema.String,
   toolId: Schema.String,
   rawToolId: Schema.NullOr(Schema.String),
   operationId: Schema.NullOr(Schema.String),
@@ -43,19 +39,11 @@ export const SourceInspectionToolDetailSchema = Schema.Struct({
   summary: SourceInspectionToolSummarySchema,
   definitionJson: Schema.NullOr(Schema.String),
   documentationJson: Schema.NullOr(Schema.String),
-  providerDataJson: Schema.NullOr(Schema.String),
-  inputSchemaJson: Schema.NullOr(Schema.String),
-  outputSchemaJson: Schema.NullOr(Schema.String),
-  schemaBundleId: Schema.NullOr(Schema.String),
-  exampleInputJson: Schema.NullOr(Schema.String),
-  exampleOutputJson: Schema.NullOr(Schema.String),
-});
-
-export const SourceInspectionSchemaBundleSchema = Schema.Struct({
-  id: Schema.String,
-  kind: Schema.String,
-  hash: Schema.String,
-  refsJson: Schema.String,
+  nativeJson: Schema.NullOr(Schema.String),
+  callSchemaJson: Schema.NullOr(Schema.String),
+  resultSchemaJson: Schema.NullOr(Schema.String),
+  exampleCallJson: Schema.NullOr(Schema.String),
+  exampleResultJson: Schema.NullOr(Schema.String),
 });
 
 export const SourceInspectionDiscoverPayloadSchema = Schema.Struct({
@@ -89,8 +77,6 @@ export type SourceInspectionToolListItem =
 export type SourceInspection = typeof SourceInspectionSchema.Type;
 export type SourceInspectionToolDetail =
   typeof SourceInspectionToolDetailSchema.Type;
-export type SourceInspectionSchemaBundle =
-  typeof SourceInspectionSchemaBundleSchema.Type;
 export type SourceInspectionDiscoverPayload =
   typeof SourceInspectionDiscoverPayloadSchema.Type;
 export type SourceInspectionDiscoverResultItem =

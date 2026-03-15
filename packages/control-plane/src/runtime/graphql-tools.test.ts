@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage } from "node:http";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "@effect/vitest";
 
 import { createGraphqlToolFromPersistedOperation } from "./graphql-tools";
 
@@ -91,7 +91,7 @@ describe("graphql-tools", () => {
       path: "source.graphql.raw",
       sourceKey: "src_graphql",
       endpoint: server.baseUrl,
-      providerDataJson: JSON.stringify({
+      providerData: {
         kind: "graphql",
         toolKind: "request",
         toolId: "raw",
@@ -105,7 +105,7 @@ describe("graphql-tools", () => {
         queryTypeName: "Query",
         mutationTypeName: "Mutation",
         subscriptionTypeName: null,
-      }),
+      },
       credentialPlacements: {
         headers: {
           authorization: "Token top-secret",

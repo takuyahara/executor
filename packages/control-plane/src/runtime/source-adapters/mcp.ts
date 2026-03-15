@@ -1,10 +1,7 @@
 import {
-  allowAllToolInteractions,
   applyCookiePlacementsToHeaders,
-  makeToolInvokerFromTools,
 } from "@executor/codemode-core";
 import {
-  createMcpToolsFromManifest,
   createSdkMcpConnector,
   discoverMcpToolsFromConnector,
   type McpToolManifest,
@@ -12,8 +9,6 @@ import {
 } from "@executor/codemode-mcp";
 import type {
   Source,
-  SourceRecipeRevisionId,
-  StoredSourceRecipeOperationRecord,
 } from "#schema";
 import {
   SourceTransportSchema,
@@ -23,21 +18,22 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
-  contentHash,
-  normalizeSearchText,
-  type SourceRecipeMaterialization,
-} from "../source-recipe-support";
-import { namespaceFromSourceName } from "../source-names";
-import type { SourceAdapter, SourceAdapterMaterialization } from "./types";
+  createMcpCatalogSnapshot,
+  type McpCatalogOperationInput,
+} from "../source-catalog-snapshot";
 import {
-  createStandardToolDescriptor,
+  contentHash,
+  type SourceCatalogSyncResult,
+} from "../source-catalog-support";
+import { namespaceFromSourceName } from "../source-names";
+import type { SourceAdapter } from "./types";
+import {
   decodeBindingConfig,
   decodeSourceBindingPayload,
   emptySourceBindingState,
   encodeBindingConfig,
   McpConnectFieldsSchema,
   OptionalNullableStringSchema,
-  parseJsonValue,
   SourceConnectCommonFieldsSchema,
 } from "./shared";
 
@@ -87,17 +83,6 @@ const McpSourceBindingPayloadSchema = Schema.Struct({
 
 const MCP_BINDING_CONFIG_VERSION = 1;
 
-const McpToolProviderDataSchema = Schema.Struct({
-  kind: Schema.Literal("mcp"),
-  toolId: Schema.String,
-  toolName: Schema.String,
-  description: Schema.NullOr(Schema.String),
-});
-
-const decodeMcpToolProviderDataJson = Schema.decodeUnknownEither(
-  Schema.parseJson(McpToolProviderDataSchema),
-);
-
 const bindingHasAnyField = (
   value: unknown,
   fields: readonly string[],
@@ -137,43 +122,25 @@ const mcpBindingConfigFromSource = (
     } satisfies McpBindingConfig;
   });
 
-const toMcpRecipeOperationRecord = (input: {
-  recipeRevisionId: SourceRecipeRevisionId;
-  entry: McpToolManifestEntry;
-  now: number;
-}): StoredSourceRecipeOperationRecord => ({
-  id: `src_recipe_op_${crypto.randomUUID()}`,
-  recipeRevisionId: input.recipeRevisionId,
-  operationKey: input.entry.toolId,
-  transportKind: "mcp",
-  toolId: input.entry.toolId,
-  title: input.entry.toolName,
-  description: input.entry.description ?? null,
-  operationKind: "unknown",
-  searchText: normalizeSearchText(
-    input.entry.toolId,
-    input.entry.toolName,
-    input.entry.description ?? undefined,
-    "mcp",
-  ),
-  inputSchemaJson: input.entry.inputSchemaJson ?? null,
-  outputSchemaJson: input.entry.outputSchemaJson ?? null,
-  providerKind: "mcp",
-  providerDataJson: JSON.stringify({
-    kind: "mcp",
-    toolId: input.entry.toolId,
-    toolName: input.entry.toolName,
-    description: input.entry.description ?? null,
-  }),
-  createdAt: input.now,
-  updatedAt: input.now,
+const mcpCatalogOperationFromManifestEntry = (entry: McpToolManifestEntry): McpCatalogOperationInput => ({
+  toolId: entry.toolId,
+  title: entry.toolName,
+  description: entry.description ?? null,
+  effect: "action",
+  inputSchema: entry.inputSchema,
+  outputSchema: entry.outputSchema,
+  providerData: {
+    toolId: entry.toolId,
+    toolName: entry.toolName,
+    description: entry.description ?? null,
+  },
 });
 
-export const materializationFromMcpManifestEntries = (input: {
-  recipeRevisionId: SourceRecipeRevisionId;
+export const catalogSyncResultFromMcpManifestEntries = (input: {
+  source: Source;
   endpoint: string;
   manifestEntries: readonly McpToolManifestEntry[];
-}): SourceRecipeMaterialization => {
+}): SourceCatalogSyncResult => {
   const now = Date.now();
   const manifest: McpToolManifest = {
     version: 1,
@@ -183,30 +150,17 @@ export const materializationFromMcpManifestEntries = (input: {
   const manifestHash = contentHash(manifestJson);
 
   return {
-    manifestJson,
-    manifestHash,
-    sourceHash: manifestHash,
-    documents: [
-      {
-        id: `src_recipe_doc_${crypto.randomUUID()}`,
-        recipeRevisionId: input.recipeRevisionId,
+    snapshot: createMcpCatalogSnapshot({
+      source: input.source,
+      documents: [{
         documentKind: "mcp_manifest",
         documentKey: input.endpoint,
         contentText: manifestJson,
-        contentHash: manifestHash,
         fetchedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
-    schemaBundles: [],
-    operations: input.manifestEntries.map((entry) =>
-      toMcpRecipeOperationRecord({
-        recipeRevisionId: input.recipeRevisionId,
-        entry,
-        now,
-      })
-    ),
+      }],
+      operations: input.manifestEntries.map(mcpCatalogOperationFromManifestEntry),
+    }),
+    sourceHash: manifestHash,
   };
 };
 
@@ -217,8 +171,6 @@ export const mcpSourceAdapter: SourceAdapter = {
   bindingConfigVersion: MCP_BINDING_CONFIG_VERSION,
   providerKey: "generic_mcp",
   defaultImportAuthPolicy: "reuse_runtime",
-  primaryDocumentKind: "mcp_manifest",
-  primarySchemaBundleKind: null,
   connectPayloadSchema: McpConnectPayloadSchema,
   executorAddInputSchema: McpExecutorAddInputSchema,
   executorAddHelpText: [
@@ -280,53 +232,7 @@ export const mcpSourceAdapter: SourceAdapter = {
       };
     }),
   shouldAutoProbe: () => false,
-  parseManifest: ({ source, manifestJson }) =>
-    parseJsonValue<McpToolManifest>({
-      label: `MCP manifest for ${source.id}`,
-      value: manifestJson,
-    }),
-  describePersistedOperation: ({ operation, path }) =>
-    Effect.gen(function* () {
-      const decoded = operation.providerDataJson
-        ? decodeMcpToolProviderDataJson(operation.providerDataJson)
-        : null;
-      if (decoded && decoded._tag === "Left") {
-        return yield* Effect.fail(
-          new Error(`Invalid MCP provider data for ${path}`),
-        );
-      }
-
-      const providerData = decoded?._tag === "Right" ? decoded.right : null;
-
-      return {
-        method: null,
-        pathTemplate: null,
-        rawToolId: providerData?.toolId ?? null,
-        operationId: null,
-        group: null,
-        leaf: null,
-        tags: [],
-        searchText: normalizeSearchText(
-          path,
-          operation.toolId,
-          providerData?.toolName ?? operation.title ?? undefined,
-          providerData?.description ?? operation.description ?? undefined,
-          operation.searchText,
-        ),
-        interaction: "auto",
-        approvalLabel: null,
-      } as const;
-    }),
-  createToolDescriptor: ({ source, operation, path, includeSchemas, schemaBundleId }) =>
-    createStandardToolDescriptor({
-      source,
-      operation,
-      path,
-      includeSchemas,
-      interaction: "auto",
-      schemaBundleId,
-    }),
-  materializeSource: ({ source, resolveAuthMaterialForSlot }) =>
+  syncCatalog: ({ source, resolveAuthMaterialForSlot }) =>
     Effect.gen(function* () {
       const bindingConfig = yield* mcpBindingConfigFromSource(source);
       const auth = yield* resolveAuthMaterialForSlot("import");
@@ -362,64 +268,10 @@ export const mcpSourceAdapter: SourceAdapter = {
         ),
       );
 
-      return materializationFromMcpManifestEntries({
-        recipeRevisionId: "src_recipe_rev_materialization" as SourceRecipeRevisionId,
+      return catalogSyncResultFromMcpManifestEntries({
+        source,
         endpoint: source.endpoint,
         manifestEntries: discovered.manifest.tools,
-      }) satisfies SourceAdapterMaterialization;
-    }),
-  invokePersistedTool: ({
-    source,
-    path,
-    manifestJson,
-    auth,
-    args,
-    context,
-    onElicitation,
-  }) =>
-    Effect.gen(function* () {
-      const bindingConfig = yield* mcpBindingConfigFromSource(source);
-      const manifest = yield* parseJsonValue<McpToolManifest>({
-        label: `MCP manifest for ${source.id}`,
-        value: manifestJson,
       });
-      if (manifest === null) {
-        return yield* Effect.fail(
-          new Error(`Missing MCP manifest for ${source.id}`),
-        );
-      }
-
-      const tools = createMcpToolsFromManifest({
-        manifest,
-        connect: createSdkMcpConnector({
-          endpoint: source.endpoint,
-          transport: bindingConfig.transport ?? undefined,
-          queryParams: {
-            ...(bindingConfig.queryParams ?? {}),
-            ...auth.queryParams,
-          },
-          headers: headersWithAuthCookies({
-            headers: bindingConfig.headers ?? {},
-            authHeaders: auth.headers,
-            authCookies: auth.cookies,
-          }),
-        }),
-        namespace: source.namespace ?? namespaceFromSourceName(source.name),
-        sourceKey: source.id,
-      });
-
-      return yield* makeToolInvokerFromTools({
-        tools,
-        onToolInteraction: allowAllToolInteractions,
-        onElicitation,
-      }).invoke({
-        path,
-        args,
-        context,
-      }).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-        ),
-      );
     }),
 };

@@ -23,7 +23,7 @@ import {
   type OpenApiToolDefinition,
 } from "./openapi-definitions";
 import { buildOpenApiToolPresentation } from "./openapi-tool-presentation";
-import { resolveSchemaJsonWithRefHints } from "./openapi-schema-refs";
+import { resolveSchemaWithRefHints } from "./openapi-schema-refs";
 import {
   extractOpenApiManifest,
   type OpenApiExtractionError,
@@ -262,21 +262,21 @@ const summarizeHttpResponseBody = (body: unknown): string | null => {
   }
 };
 
-const inputSchemaFromTypingJson = (input: {
-  inputSchemaJson: string | undefined;
+const inputSchemaFromTyping = (input: {
+  inputSchema: unknown;
   refHintTable?: Readonly<OpenApiRefHintTable>;
 }) => {
-  const resolvedSchemaJson = resolveSchemaJsonWithRefHints(
-    input.inputSchemaJson,
+  const resolvedSchema = resolveSchemaWithRefHints(
+    input.inputSchema,
     input.refHintTable,
-  ) ?? input.inputSchemaJson;
+  ) ?? input.inputSchema;
 
-  if (!resolvedSchemaJson) {
+  if (resolvedSchema === undefined || resolvedSchema === null) {
     return unknownInputSchema;
   }
 
   try {
-    return standardSchemaFromJsonSchema(JSON.parse(resolvedSchemaJson), {
+    return standardSchemaFromJsonSchema(resolvedSchema, {
       vendor: "openapi",
       fallback: unknownInputSchema,
     });
@@ -469,8 +469,8 @@ export const createOpenApiToolFromDefinition = (
   return toTool({
     tool: {
       description: input.definition.description,
-      inputSchema: inputSchemaFromTypingJson({
-        inputSchemaJson: presentation.inputSchemaJson ?? input.definition.typing?.inputSchemaJson,
+      inputSchema: inputSchemaFromTyping({
+        inputSchema: presentation.inputSchema ?? input.definition.typing?.inputSchema,
         refHintTable: input.refHintTable,
       }),
       execute: async (args: unknown) => {
@@ -526,12 +526,20 @@ export const createOpenApiToolFromDefinition = (
       sourceKey: input.sourceKey,
       inputType: presentation.inputType,
       outputType: presentation.outputType,
-      inputSchemaJson: presentation.inputSchemaJson,
-      outputSchemaJson: presentation.outputSchemaJson,
-      exampleInputJson: presentation.exampleInputJson,
-      exampleOutputJson: presentation.exampleOutputJson,
+      ...((presentation.inputSchema ?? input.definition.typing?.inputSchema) !== undefined
+        ? { inputSchema: presentation.inputSchema ?? input.definition.typing?.inputSchema }
+        : {}),
+      ...((presentation.outputSchema ?? input.definition.typing?.outputSchema) !== undefined
+        ? { outputSchema: presentation.outputSchema ?? input.definition.typing?.outputSchema }
+        : {}),
+      ...(presentation.exampleInput !== undefined
+        ? { exampleInput: presentation.exampleInput }
+        : {}),
+      ...(presentation.exampleOutput !== undefined
+        ? { exampleOutput: presentation.exampleOutput }
+        : {}),
       providerKind: "openapi",
-      providerDataJson: presentation.providerDataJson,
+      providerData: presentation.providerData,
     },
   });
 };

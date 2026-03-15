@@ -26,8 +26,8 @@ type ParsedInputSchema = {
   required?: Array<string>;
 };
 
-const parseInputSchema = (inputSchemaJson: string | undefined): ParsedInputSchema | null =>
-  inputSchemaJson ? (JSON.parse(inputSchemaJson) as ParsedInputSchema) : null;
+const parseInputSchema = (inputSchema: unknown): ParsedInputSchema | null =>
+  inputSchema ? (inputSchema as ParsedInputSchema) : null;
 
 const expectedTools = [
   {
@@ -89,7 +89,7 @@ describe("openapi-extraction real specs", () => {
         expect(tool?.path).toBe(expectedTool.path);
         expect(tool?.tags).toEqual(expectedTool.tags);
 
-        const inputSchema = parseInputSchema(tool?.typing?.inputSchemaJson);
+        const inputSchema = parseInputSchema(tool?.typing?.inputSchema);
         expect(inputSchema?.type).toBe("object");
         expect(Object.keys(inputSchema?.properties ?? {})).toEqual(
           expect.arrayContaining([...expectedTool.requiredInputs]),

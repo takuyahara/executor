@@ -3,12 +3,9 @@ import { Schema } from "effect";
 export const AccountIdSchema = Schema.String.pipe(Schema.brand("AccountId"));
 export const WorkspaceIdSchema = Schema.String.pipe(Schema.brand("WorkspaceId"));
 export const SourceIdSchema = Schema.String.pipe(Schema.brand("SourceId"));
-export const SourceRecipeIdSchema = Schema.String.pipe(Schema.brand("SourceRecipeId"));
-export const SourceRecipeRevisionIdSchema = Schema.String.pipe(
-  Schema.brand("SourceRecipeRevisionId"),
-);
-export const SourceRecipeSchemaBundleIdSchema = Schema.String.pipe(
-  Schema.brand("SourceRecipeSchemaBundleId"),
+export const SourceCatalogIdSchema = Schema.String.pipe(Schema.brand("SourceCatalogId"));
+export const SourceCatalogRevisionIdSchema = Schema.String.pipe(
+  Schema.brand("SourceCatalogRevisionId"),
 );
 export const SourceAuthSessionIdSchema = Schema.String.pipe(
   Schema.brand("SourceAuthSessionId"),
@@ -38,9 +35,8 @@ export const ExecutionStepIdSchema = Schema.String.pipe(
 export type AccountId = typeof AccountIdSchema.Type;
 export type WorkspaceId = typeof WorkspaceIdSchema.Type;
 export type SourceId = typeof SourceIdSchema.Type;
-export type SourceRecipeId = typeof SourceRecipeIdSchema.Type;
-export type SourceRecipeRevisionId = typeof SourceRecipeRevisionIdSchema.Type;
-export type SourceRecipeSchemaBundleId = typeof SourceRecipeSchemaBundleIdSchema.Type;
+export type SourceCatalogId = typeof SourceCatalogIdSchema.Type;
+export type SourceCatalogRevisionId = typeof SourceCatalogRevisionIdSchema.Type;
 export type SourceAuthSessionId = typeof SourceAuthSessionIdSchema.Type;
 export type AuthArtifactId = typeof AuthArtifactIdSchema.Type;
 export type AuthLeaseId = typeof AuthLeaseIdSchema.Type;

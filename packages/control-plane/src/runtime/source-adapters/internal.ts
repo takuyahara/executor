@@ -4,7 +4,6 @@ import type { Source } from "#schema";
 
 import type { SourceAdapter } from "./types";
 import {
-  createStandardToolDescriptor,
   decodeBindingConfig,
   decodeSourceBindingPayload,
   emptySourceBindingState,
@@ -58,8 +57,6 @@ export const internalSourceAdapter: SourceAdapter = {
   bindingConfigVersion: INTERNAL_BINDING_CONFIG_VERSION,
   providerKey: "generic_internal",
   defaultImportAuthPolicy: "none",
-  primaryDocumentKind: null,
-  primarySchemaBundleKind: null,
   connectPayloadSchema: null,
   executorAddInputSchema: null,
   executorAddHelpText: null,
@@ -102,40 +99,28 @@ export const internalSourceAdapter: SourceAdapter = {
       };
     }),
   shouldAutoProbe: () => false,
-  parseManifest: () => Effect.succeed(null),
-  describePersistedOperation: ({ operation, path }) =>
-    Effect.succeed({
-      method: null,
-      pathTemplate: null,
-      rawToolId: null,
-      operationId: null,
-      group: null,
-      leaf: null,
-      tags: [],
-      searchText: [path, operation.toolId, operation.title ?? "", operation.description ?? "", operation.searchText]
-        .filter((part) => part.length > 0)
-        .join(" ")
-        .toLowerCase(),
-      interaction: "auto",
-      approvalLabel: null,
-    } as const),
-  createToolDescriptor: ({ source, operation, path, includeSchemas, schemaBundleId }) =>
-    createStandardToolDescriptor({
-      source,
-      operation,
-      path,
-      includeSchemas,
-      interaction: "auto",
-      schemaBundleId,
-    }),
-  materializeSource: () => Effect.succeed({
-    manifestJson: null,
-    manifestHash: null,
+  syncCatalog: () => Effect.succeed({
+    snapshot: {
+      version: "ir.v1.snapshot",
+      import: {
+        sourceKind: "custom",
+        adapterKey: "internal",
+        importerVersion: "ir.v1.internal",
+        importedAt: new Date().toISOString(),
+        sourceConfigHash: "internal",
+      },
+      catalog: {
+        version: "ir.v1",
+        documents: {},
+        resources: {},
+        scopes: {},
+        symbols: {},
+        capabilities: {},
+        executables: {},
+        responseSets: {},
+        diagnostics: {},
+      },
+    },
     sourceHash: null,
-    documents: [],
-    schemaBundles: [],
-    operations: [],
   }),
-  invokePersistedTool: ({ path }) =>
-    Effect.fail(new Error(`Unsupported stored tool provider for ${path}`)),
 };

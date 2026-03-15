@@ -14,8 +14,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import {
-  stableSourceRecipeId,
-  stableSourceRecipeRevisionId,
+  stableSourceCatalogId,
+  stableSourceCatalogRevisionId,
   splitSourceForStorage,
 } from "./source-definitions";
 import {
@@ -407,8 +407,8 @@ const buildLocalSourceRecord = (input: {
     const sourceRecord = {
       id: baseSource.id,
       workspaceId: baseSource.workspaceId,
-      recipeId: artifact?.recipeId ?? stableSourceRecipeId(baseSource),
-      recipeRevisionId: artifact?.revision.id ?? stableSourceRecipeRevisionId(baseSource),
+      catalogId: artifact?.catalogId ?? stableSourceCatalogId(baseSource),
+      catalogRevisionId: artifact?.revision.id ?? stableSourceCatalogRevisionId(baseSource),
       name: baseSource.name,
       kind: baseSource.kind,
       endpoint: baseSource.endpoint,
@@ -855,8 +855,8 @@ const persistSourceWithDeps = (
 
     const { runtimeAuthArtifact, importAuthArtifact } = splitSourceForStorage({
       source: nextSource,
-      recipeId: stableSourceRecipeId(nextSource),
-      recipeRevisionId: stableSourceRecipeRevisionId(nextSource),
+      catalogId: stableSourceCatalogId(nextSource),
+      catalogRevisionId: stableSourceCatalogRevisionId(nextSource),
       actorAccountId: options.actorAccountId,
       existingRuntimeAuthArtifactId: existingRuntimeAuthArtifact?.id ?? null,
       existingImportAuthArtifactId: existingImportAuthArtifact?.id ?? null,

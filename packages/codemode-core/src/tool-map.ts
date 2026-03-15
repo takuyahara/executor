@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as JSONSchema from "effect/JSONSchema";
-import { typeSignatureFromSchemaJson } from "./schema-types";
+import { typeSignatureFromSchema } from "./schema-types";
 
 import type {
   ElicitationRequest,
@@ -336,7 +336,7 @@ export const toExecutorTool = wrapTool;
 const isToolDefinition = (value: ToolInput): value is ToolDefinition =>
   typeof value === "object" && value !== null && "tool" in value;
 
-const stringifySchema = (value: unknown): string | undefined => {
+const deriveSchemaValue = (value: unknown): unknown | undefined => {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -347,20 +347,20 @@ const stringifySchema = (value: unknown): string | undefined => {
       && value !== null
       && "~standard" in value
     ) {
-      return JSON.stringify(JSONSchema.make(value as any));
+      return JSONSchema.make(value as any);
     }
 
-    return JSON.stringify(value);
+    return value;
   } catch {
     return undefined;
   }
 };
 
-const inferTypeFromSchemaJson = (
-  schemaJson: string | undefined,
+const inferTypeFromSchemaValue = (
+  schema: unknown,
   fallback: string,
   maxLength: number = 240,
-): string => typeSignatureFromSchemaJson(schemaJson, fallback, maxLength);
+): string => typeSignatureFromSchema(schema, fallback, maxLength);
 
 export function createToolsFromRecord(input: {
   tools: Record<string, ExecutableTool>;
@@ -418,13 +418,13 @@ export function toolDescriptorsFromTools(input: {
   return resolvedTools.map((entry) => {
     const metadata = entry.metadata;
     const definition = entry.tool;
-    const inputSchemaJson =
-      metadata?.inputSchemaJson
-      ?? stringifySchema(definition.inputSchema)
-      ?? stringifySchema(definition.parameters);
-    const outputSchemaJson =
-      metadata?.outputSchemaJson
-      ?? stringifySchema(definition.outputSchema);
+    const inputSchema =
+      metadata?.inputSchema
+      ?? deriveSchemaValue(definition.inputSchema)
+      ?? deriveSchemaValue(definition.parameters);
+    const outputSchema =
+      metadata?.outputSchema
+      ?? deriveSchemaValue(definition.outputSchema);
 
     return {
       path: entry.path,
@@ -433,21 +433,20 @@ export function toolDescriptorsFromTools(input: {
       interaction: metadata?.interaction,
       elicitation: metadata?.elicitation,
       inputType:
-        metadata?.inputType ?? inferTypeFromSchemaJson(inputSchemaJson, "unknown"),
+        metadata?.inputType ?? inferTypeFromSchemaValue(inputSchema, "unknown"),
       outputType:
-        metadata?.outputType ?? inferTypeFromSchemaJson(outputSchemaJson, "unknown"),
-      inputSchemaJson,
-      outputSchemaJson,
-      ...(metadata?.schemaBundleId ? { schemaBundleId: metadata.schemaBundleId } : {}),
-      ...(metadata?.exampleInputJson
-        ? { exampleInputJson: metadata.exampleInputJson }
+        metadata?.outputType ?? inferTypeFromSchemaValue(outputSchema, "unknown"),
+      ...(inputSchema !== undefined ? { inputSchema } : {}),
+      ...(outputSchema !== undefined ? { outputSchema } : {}),
+      ...(metadata?.exampleInput !== undefined
+        ? { exampleInput: metadata.exampleInput }
         : {}),
-      ...(metadata?.exampleOutputJson
-        ? { exampleOutputJson: metadata.exampleOutputJson }
+      ...(metadata?.exampleOutput !== undefined
+        ? { exampleOutput: metadata.exampleOutput }
         : {}),
       ...(metadata?.providerKind ? { providerKind: metadata.providerKind } : {}),
-      ...(metadata?.providerDataJson
-        ? { providerDataJson: metadata.providerDataJson }
+      ...(metadata?.providerData !== undefined
+        ? { providerData: metadata.providerData }
         : {}),
     } satisfies ToolDescriptor;
   });

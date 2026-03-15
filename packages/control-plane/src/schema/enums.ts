@@ -16,21 +16,13 @@ export {
   type SecretRef,
 } from "./models/auth-artifact";
 export {
-  SourceRecipeAdapterKeySchema,
-  SourceRecipeDocumentKindSchema,
-  SourceRecipeKindSchema,
-  SourceRecipeOperationKindSchema,
-  SourceRecipeOperationProviderKindSchema,
-  SourceRecipeTransportKindSchema,
-  SourceRecipeVisibilitySchema,
-  type SourceRecipeAdapterKey,
-  type SourceRecipeDocumentKind,
-  type SourceRecipeKind,
-  type SourceRecipeOperationKind,
-  type SourceRecipeOperationProviderKind,
-  type SourceRecipeTransportKind,
-  type SourceRecipeVisibility,
-} from "./models/source-recipe";
+  SourceCatalogAdapterKeySchema,
+  SourceCatalogKindSchema,
+  SourceCatalogVisibilitySchema,
+  type SourceCatalogAdapterKey,
+  type SourceCatalogKind,
+  type SourceCatalogVisibility,
+} from "./models/source-catalog";
 export {
   SourceAuthInferenceSchema,
   SourceDiscoveryAuthKindSchema,

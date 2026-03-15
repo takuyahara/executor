@@ -68,9 +68,9 @@ import {
 } from "./secret-material-providers";
 import { upsertOauth2AuthorizedUserLeaseFromTokenResponse } from "./auth-leases";
 import {
-  RuntimeSourceMaterializationService,
-  type RuntimeSourceMaterializationShape,
-} from "./source-materialization";
+  RuntimeSourceCatalogSyncService,
+  type RuntimeSourceCatalogSyncShape,
+} from "./source-catalog-sync";
 import {
   buildOAuth2AuthorizationUrl,
   createPkceCodeVerifier,
@@ -978,7 +978,7 @@ const startOauth2PkceSourceCredentialSetup = (input: {
 const connectMcpSourceInternal = (input: {
   rows: ControlPlaneStoreShape;
   sourceStore: RuntimeSourceStore;
-  sourceMaterialization: RuntimeSourceMaterializationShape;
+  sourceCatalogSync: RuntimeSourceCatalogSyncShape;
   getLocalServerBaseUrl?: () => string | undefined;
   baseUrl?: string | null;
   workspaceId: WorkspaceId;
@@ -1087,7 +1087,7 @@ const connectMcpSourceInternal = (input: {
     const persistedDraft = yield* input.sourceStore.persistSource(draftSource, {
       actorAccountId: input.actorAccountId,
     });
-    yield* input.sourceMaterialization.sync({
+    yield* input.sourceCatalogSync.sync({
       source: persistedDraft,
       actorAccountId: input.actorAccountId,
     });
@@ -1110,7 +1110,7 @@ const connectMcpSourceInternal = (input: {
             auth: { kind: "none" },
           });
           const indexed = yield* Effect.either(
-            input.sourceMaterialization.persistMcpRecipeMaterializationFromManifest({
+            input.sourceCatalogSync.persistMcpCatalogSnapshotFromManifest({
               source: connected,
               manifestEntries: result.manifest.tools,
             }),
@@ -1206,7 +1206,7 @@ const connectMcpSourceInternal = (input: {
 const addExecutorHttpSource = (input: {
   rows: ControlPlaneStoreShape;
   sourceStore: RuntimeSourceStore;
-  sourceMaterialization: RuntimeSourceMaterializationShape;
+  sourceCatalogSync: RuntimeSourceCatalogSyncShape;
   sourceInput: Extract<ExecutorAddSourceInput, { kind: "openapi" | "graphql" }>;
   storeSecretMaterial: StoreSecretMaterial;
   resolveSecretMaterial: ResolveSecretMaterial;
@@ -1358,7 +1358,7 @@ const addExecutorHttpSource = (input: {
     }
 
     const synced = yield* Effect.either(
-      input.sourceMaterialization.sync({
+      input.sourceCatalogSync.sync({
         source: {
           ...persistedDraft,
           status: "connected",
@@ -1409,7 +1409,7 @@ const addExecutorHttpSource = (input: {
 const addExecutorGoogleDiscoverySource = (input: {
   rows: ControlPlaneStoreShape;
   sourceStore: RuntimeSourceStore;
-  sourceMaterialization: RuntimeSourceMaterializationShape;
+  sourceCatalogSync: RuntimeSourceCatalogSyncShape;
   sourceInput: Extract<ExecutorAddSourceInput, { kind: "google_discovery" }>;
   storeSecretMaterial: StoreSecretMaterial;
   resolveSecretMaterial: ResolveSecretMaterial;
@@ -1578,7 +1578,7 @@ const addExecutorGoogleDiscoverySource = (input: {
     }
 
     const synced = yield* Effect.either(
-      input.sourceMaterialization.sync({
+      input.sourceCatalogSync.sync({
         source: {
           ...persistedDraft,
           status: "connected",
@@ -1671,7 +1671,7 @@ type RuntimeSourceAuthDependencies = {
   rows: ControlPlaneStoreShape;
   liveExecutionManager: LiveExecutionManager;
   sourceStore: RuntimeSourceStore;
-  sourceMaterialization: RuntimeSourceMaterializationShape;
+  sourceCatalogSync: RuntimeSourceCatalogSyncShape;
   resolveSecretMaterial: ResolveSecretMaterial;
   storeSecretMaterial: StoreSecretMaterial;
   getLocalServerBaseUrl?: () => string | undefined;
@@ -1721,7 +1721,7 @@ const createRuntimeSourceConnectionService = (
           ? addExecutorGoogleDiscoverySource({
               rows: input.rows,
               sourceStore: input.sourceStore,
-              sourceMaterialization: input.sourceMaterialization,
+              sourceCatalogSync: input.sourceCatalogSync,
               sourceInput,
               storeSecretMaterial: input.storeSecretMaterial,
               resolveSecretMaterial: input.resolveSecretMaterial,
@@ -1732,7 +1732,7 @@ const createRuntimeSourceConnectionService = (
           ? addExecutorHttpSource({
               rows: input.rows,
               sourceStore: input.sourceStore,
-              sourceMaterialization: input.sourceMaterialization,
+              sourceCatalogSync: input.sourceCatalogSync,
               sourceInput: sourceInput as Extract<
                 ExecutorAddSourceInput,
                 { kind: "openapi" | "graphql" }
@@ -1745,7 +1745,7 @@ const createRuntimeSourceConnectionService = (
           : connectMcpSourceInternal({
               rows: input.rows,
               sourceStore: input.sourceStore,
-              sourceMaterialization: input.sourceMaterialization,
+              sourceCatalogSync: input.sourceCatalogSync,
               getLocalServerBaseUrl: input.getLocalServerBaseUrl,
               workspaceId: sourceInput.workspaceId,
               actorAccountId: sourceInput.actorAccountId,
@@ -1767,7 +1767,7 @@ const createRuntimeSourceConnectionService = (
         connectMcpSourceInternal({
           rows: input.rows,
           sourceStore: input.sourceStore,
-          sourceMaterialization: input.sourceMaterialization,
+          sourceCatalogSync: input.sourceCatalogSync,
           getLocalServerBaseUrl: input.getLocalServerBaseUrl,
           workspaceId: sourceInput.workspaceId,
           actorAccountId: sourceInput.actorAccountId,
@@ -2028,7 +2028,7 @@ const createRuntimeSourceOAuthSessionService = (
           status: "error",
           lastError: reason,
         });
-        yield* input.sourceMaterialization.sync({
+        yield* input.sourceCatalogSync.sync({
           source: failedSource,
           actorAccountId: session.actorAccountId,
         });
@@ -2201,7 +2201,7 @@ const createRuntimeSourceOAuthSessionService = (
         );
       }
       const indexed = yield* Effect.either(
-        input.sourceMaterialization.sync({
+        input.sourceCatalogSync.sync({
           source: connectedSource,
           actorAccountId: session.actorAccountId,
         }),
@@ -2272,7 +2272,7 @@ export const RuntimeSourceAuthServiceLive = (input: {
       const rows = yield* ControlPlaneStore;
       const liveExecutionManager = yield* LiveExecutionManagerService;
       const sourceStore = yield* RuntimeSourceStoreService;
-      const sourceMaterialization = yield* RuntimeSourceMaterializationService;
+      const sourceCatalogSync = yield* RuntimeSourceCatalogSyncService;
       const resolveSecretMaterial = yield* SecretMaterialResolverService;
       const storeSecretMaterial = yield* SecretMaterialStorerService;
       const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
@@ -2281,7 +2281,7 @@ export const RuntimeSourceAuthServiceLive = (input: {
         rows,
         liveExecutionManager,
         sourceStore,
-        sourceMaterialization,
+        sourceCatalogSync,
         resolveSecretMaterial,
         storeSecretMaterial,
         getLocalServerBaseUrl: input.getLocalServerBaseUrl,

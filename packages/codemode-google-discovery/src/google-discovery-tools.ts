@@ -27,10 +27,10 @@ import {
 } from "./google-discovery-types";
 
 const decodeGoogleDiscoveryToolProviderDataJson = Schema.decodeUnknownEither(
-  Schema.parseJson(GoogleDiscoveryToolProviderDataSchema),
+  GoogleDiscoveryToolProviderDataSchema,
 );
 
-export const googleDiscoveryProviderDataJsonFromDefinition = (
+export const googleDiscoveryProviderDataFromDefinition = (
   input: {
     service: string;
     version: string;
@@ -38,8 +38,7 @@ export const googleDiscoveryProviderDataJsonFromDefinition = (
     servicePath: string;
     definition: GoogleDiscoveryManifestMethod;
   },
-): string =>
-  JSON.stringify({
+): typeof GoogleDiscoveryToolProviderDataSchema.Type => ({
     kind: "google_discovery",
     service: input.service,
     version: input.version,
@@ -115,19 +114,14 @@ const setNestedSchemaProperty = (
 };
 
 const materializeSchemaWithRefDefinitions = (input: {
-  schemaJson: string | undefined;
+  schema: unknown;
   refTable?: Readonly<Record<string, unknown>>;
 }): Record<string, unknown> => {
-  if (!input.schemaJson) {
+  if (input.schema === undefined || input.schema === null) {
     return {};
   }
 
-  let rootSchema: Record<string, unknown>;
-  try {
-    rootSchema = asRecord(JSON.parse(input.schemaJson) as unknown);
-  } catch {
-    return {};
-  }
+  const rootSchema = asRecord(input.schema);
 
   if (!input.refTable || Object.keys(input.refTable).length === 0) {
     return rootSchema;
@@ -250,14 +244,14 @@ const buildGoogleDiscoveryRequest = (input: {
   defaultHeaders: Readonly<Record<string, string>>;
   credentialPlacements: HttpRequestPlacements;
   baseUrl?: string | undefined;
-  providerDataJson: string;
+  providerData: typeof GoogleDiscoveryToolProviderDataSchema.Type;
 }): {
   method: string;
   url: URL;
   headers: Record<string, string>;
   body?: string;
 } => {
-  const providerData = decodeGoogleDiscoveryToolProviderDataJson(input.providerDataJson);
+  const providerData = decodeGoogleDiscoveryToolProviderDataJson(input.providerData);
   if (providerData._tag === "Left") {
     throw new Error("Invalid Google Discovery provider data");
   }
@@ -365,28 +359,12 @@ export type CreateGoogleDiscoveryToolFromDefinitionInput = {
 export const createGoogleDiscoveryToolFromDefinition = (
   input: CreateGoogleDiscoveryToolFromDefinitionInput,
 ) => {
-  const providerDataJson = JSON.stringify({
-    kind: "google_discovery",
+  const providerData = googleDiscoveryProviderDataFromDefinition({
     service: input.service,
     version: input.version,
-    toolId: input.definition.toolId,
-    rawToolId: input.definition.rawToolId,
-    methodId: input.definition.methodId,
-    group: input.definition.group,
-    leaf: input.definition.leaf,
-    invocation: {
-      method: input.definition.method,
-      path: input.definition.path,
-      flatPath: input.definition.flatPath,
-      rootUrl: input.rootUrl,
-      servicePath: input.servicePath,
-      parameters: input.definition.parameters,
-      requestSchemaId: input.definition.requestSchemaId,
-      responseSchemaId: input.definition.responseSchemaId,
-      scopes: input.definition.scopes,
-      supportsMediaUpload: input.definition.supportsMediaUpload,
-      supportsMediaDownload: input.definition.supportsMediaDownload,
-    },
+    rootUrl: input.rootUrl,
+    servicePath: input.servicePath,
+    definition: input.definition,
   });
   const credentialPlacements = normalizeCredentialPlacements({
     credentialHeaders: input.credentialHeaders,
@@ -403,7 +381,7 @@ export const createGoogleDiscoveryToolFromDefinition = (
     }),
   );
   const inputSchema = materializeSchemaWithRefDefinitions({
-    schemaJson: input.definition.inputSchemaJson,
+    schema: input.definition.inputSchema,
     refTable,
   });
 
@@ -411,15 +389,15 @@ export const createGoogleDiscoveryToolFromDefinition = (
     interaction: input.definition.method === "get" || input.definition.method === "head"
       ? "auto"
       : "required",
-    ...(input.definition.inputSchemaJson
-      ? { inputSchemaJson: input.definition.inputSchemaJson }
+    ...(input.definition.inputSchema !== undefined
+      ? { inputSchema: input.definition.inputSchema }
       : {}),
-    ...(input.definition.outputSchemaJson
-      ? { outputSchemaJson: input.definition.outputSchemaJson }
+    ...(input.definition.outputSchema !== undefined
+      ? { outputSchema: input.definition.outputSchema }
       : {}),
     sourceKey: input.sourceKey,
     providerKind: "google_discovery",
-    providerDataJson,
+    providerData,
   };
 
   return toTool({
@@ -435,7 +413,7 @@ export const createGoogleDiscoveryToolFromDefinition = (
               defaultHeaders: input.defaultHeaders ?? {},
               credentialPlacements,
               baseUrl: input.baseUrl,
-              providerDataJson,
+              providerData,
             });
             let clientRequest = HttpClientRequest.make(
               request.method as Parameters<typeof HttpClientRequest.make>[0],

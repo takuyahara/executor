@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
 import {
@@ -13,8 +13,8 @@ import {
   createSourceFromPayload,
   projectSourceFromStorage,
   splitSourceForStorage,
-  stableSourceRecipeId,
-  stableSourceRecipeRevisionId,
+  stableSourceCatalogId,
+  stableSourceCatalogRevisionId,
   updateSourceFromPayload,
 } from "./source-definitions";
 import { namespaceFromSourceName } from "./source-names";
@@ -63,7 +63,7 @@ const makeSource = (overrides: Partial<Source> = {}): Source => ({
 });
 
 describe("source-definitions", () => {
-  describe("stable recipe ids", () => {
+  describe("stable catalog ids", () => {
     it("is deterministic across calls and ignores source name/workspace", () => {
       const source = makeSource();
       const renamed = makeSource({
@@ -73,26 +73,26 @@ describe("source-definitions", () => {
         workspaceId: WorkspaceIdSchema.make("ws_source_definitions_other"),
       });
 
-      expect(stableSourceRecipeId(source)).toBe(stableSourceRecipeId(source));
-      expect(stableSourceRecipeRevisionId(source)).toBe(stableSourceRecipeRevisionId(source));
-      expect(stableSourceRecipeId(renamed)).toBe(stableSourceRecipeId(source));
-      expect(stableSourceRecipeRevisionId(renamed)).toBe(stableSourceRecipeRevisionId(source));
-      expect(stableSourceRecipeId(differentWorkspace)).toBe(stableSourceRecipeId(source));
-      expect(stableSourceRecipeRevisionId(differentWorkspace)).toBe(
-        stableSourceRecipeRevisionId(source),
+      expect(stableSourceCatalogId(source)).toBe(stableSourceCatalogId(source));
+      expect(stableSourceCatalogRevisionId(source)).toBe(stableSourceCatalogRevisionId(source));
+      expect(stableSourceCatalogId(renamed)).toBe(stableSourceCatalogId(source));
+      expect(stableSourceCatalogRevisionId(renamed)).toBe(stableSourceCatalogRevisionId(source));
+      expect(stableSourceCatalogId(differentWorkspace)).toBe(stableSourceCatalogId(source));
+      expect(stableSourceCatalogRevisionId(differentWorkspace)).toBe(
+        stableSourceCatalogRevisionId(source),
       );
     });
 
-    it("changes recipe and revision ids when the source config changes", () => {
+    it("changes catalog and revision ids when the source config changes", () => {
       const source = makeSource();
       const changedEndpoint = makeSource({
         endpoint: "https://example.com",
         binding: openApiBinding("https://example.com/openapi.json"),
       });
 
-      expect(stableSourceRecipeId(changedEndpoint)).not.toBe(stableSourceRecipeId(source));
-      expect(stableSourceRecipeRevisionId(changedEndpoint)).not.toBe(
-        stableSourceRecipeRevisionId(source),
+      expect(stableSourceCatalogId(changedEndpoint)).not.toBe(stableSourceCatalogId(source));
+      expect(stableSourceCatalogRevisionId(changedEndpoint)).not.toBe(
+        stableSourceCatalogRevisionId(source),
       );
     });
   });
@@ -358,14 +358,14 @@ describe("source-definitions", () => {
           },
         },
       });
-      const recipeId = stableSourceRecipeId(source);
-      const recipeRevisionId = stableSourceRecipeRevisionId(source);
+      const catalogId = stableSourceCatalogId(source);
+      const catalogRevisionId = stableSourceCatalogRevisionId(source);
       const existingCredentialId = CredentialIdSchema.make("cred_existing");
 
       const { sourceRecord, runtimeAuthArtifact } = splitSourceForStorage({
         source,
-        recipeId,
-        recipeRevisionId,
+        catalogId,
+        catalogRevisionId,
         existingRuntimeAuthArtifactId: existingCredentialId,
       });
 
@@ -426,8 +426,8 @@ describe("source-definitions", () => {
       for (const source of [withRefresh, withoutRefresh]) {
         const { sourceRecord, runtimeAuthArtifact } = splitSourceForStorage({
           source,
-          recipeId: stableSourceRecipeId(source),
-          recipeRevisionId: stableSourceRecipeRevisionId(source),
+          catalogId: stableSourceCatalogId(source),
+          catalogRevisionId: stableSourceCatalogRevisionId(source),
         });
         const projected = await Effect.runPromise(projectSourceFromStorage({
           sourceRecord,
@@ -445,8 +445,8 @@ describe("source-definitions", () => {
       });
       const { sourceRecord, runtimeAuthArtifact } = splitSourceForStorage({
         source,
-        recipeId: stableSourceRecipeId(source),
-        recipeRevisionId: stableSourceRecipeRevisionId(source),
+        catalogId: stableSourceCatalogId(source),
+        catalogRevisionId: stableSourceCatalogRevisionId(source),
       });
 
       expect(runtimeAuthArtifact).toBeNull();

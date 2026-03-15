@@ -3,18 +3,17 @@ import { FileSystem } from "@effect/platform";
 
 import {
   SourceIdSchema,
-  SourceRecipeIdSchema,
-  StoredSourceRecipeDocumentRecordSchema,
-  StoredSourceRecipeOperationRecordSchema,
-  StoredSourceRecipeRevisionRecordSchema,
-  StoredSourceRecipeSchemaBundleRecordSchema,
+  SourceCatalogIdSchema,
+  StoredSourceCatalogRevisionRecordSchema,
   TimestampMsSchema,
   type Source,
-  type SourceRecipeId,
+  type SourceCatalogId,
 } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { CatalogSnapshotV1Schema } from "../ir/model";
+import type { SourceCatalogSyncResult } from "./source-catalog-support";
 import type { ResolvedLocalWorkspaceContext } from "./local-config";
 import {
   LocalFileSystemError,
@@ -22,25 +21,20 @@ import {
   unknownLocalErrorDetails,
 } from "./local-errors";
 import {
-  createSourceRecipeRevisionRecord,
-  stableSourceRecipeId,
+  createSourceCatalogRevisionRecord,
+  stableSourceCatalogId,
 } from "./source-definitions";
-import {
-  contentHash,
-  type SourceRecipeMaterialization,
-} from "./source-recipe-support";
+import { contentHash } from "./source-catalog-support";
 
-const LOCAL_SOURCE_ARTIFACT_VERSION = 1 as const;
+const LOCAL_SOURCE_ARTIFACT_VERSION = 2 as const;
 
 export const LocalSourceArtifactSchema = Schema.Struct({
   version: Schema.Literal(LOCAL_SOURCE_ARTIFACT_VERSION),
   sourceId: SourceIdSchema,
-  recipeId: SourceRecipeIdSchema,
+  catalogId: SourceCatalogIdSchema,
   generatedAt: TimestampMsSchema,
-  revision: StoredSourceRecipeRevisionRecordSchema,
-  documents: Schema.Array(StoredSourceRecipeDocumentRecordSchema),
-  schemaBundles: Schema.Array(StoredSourceRecipeSchemaBundleRecordSchema),
-  operations: Schema.Array(StoredSourceRecipeOperationRecordSchema),
+  revision: StoredSourceCatalogRevisionRecordSchema,
+  snapshot: CatalogSnapshotV1Schema,
 });
 
 export type LocalSourceArtifact = typeof LocalSourceArtifactSchema.Type;
@@ -65,90 +59,32 @@ const localSourceArtifactPath = (input: {
     `${input.sourceId}.json`,
   );
 
-const canonicalMaterializationHash = (input: {
-  materialization: SourceRecipeMaterialization;
-}): string => {
-  const documents = [...input.materialization.documents]
-    .map((document) => ({
-      documentKind: document.documentKind,
-      documentKey: document.documentKey,
-      contentHash: document.contentHash,
-    }))
-    .sort((left, right) =>
-      left.documentKind.localeCompare(right.documentKind)
-      || left.documentKey.localeCompare(right.documentKey)
-      || left.contentHash.localeCompare(right.contentHash)
-    );
-  const schemaBundles = [...input.materialization.schemaBundles]
-    .map((bundle) => ({
-      bundleKind: bundle.bundleKind,
-      contentHash: bundle.contentHash,
-    }))
-    .sort((left, right) =>
-      left.bundleKind.localeCompare(right.bundleKind)
-      || left.contentHash.localeCompare(right.contentHash)
-    );
-  const operations = [...input.materialization.operations]
-    .map((operation) => ({
-      operationKey: operation.operationKey,
-      transportKind: operation.transportKind,
-      toolId: operation.toolId,
-      title: operation.title,
-      description: operation.description,
-      operationKind: operation.operationKind,
-      searchText: operation.searchText,
-      inputSchemaJson: operation.inputSchemaJson,
-      outputSchemaJson: operation.outputSchemaJson,
-      providerKind: operation.providerKind,
-      providerDataJson: operation.providerDataJson,
-    }))
-    .sort((left, right) => left.operationKey.localeCompare(right.operationKey));
-
-  return contentHash(JSON.stringify({
-    schemaVersion: 1,
-    manifestHash: input.materialization.manifestHash,
-    manifestJson: input.materialization.manifestJson,
-    documents,
-    schemaBundles,
-    operations,
-  }));
-};
-
-const bindRevisionId = <T extends { recipeRevisionId: string }>(
-  items: readonly T[],
-  recipeRevisionId: string,
-): T[] =>
-  items.map((item) => ({
-    ...item,
-    recipeRevisionId,
-  }));
+const snapshotHash = (snapshot: SourceCatalogSyncResult["snapshot"]): string =>
+  contentHash(JSON.stringify(snapshot));
 
 export const buildLocalSourceArtifact = (input: {
   source: Source;
-  materialization: SourceRecipeMaterialization;
+  syncResult: SourceCatalogSyncResult;
 }): LocalSourceArtifact => {
-  const recipeId: SourceRecipeId = stableSourceRecipeId(input.source);
-  const now = Date.now();
-  const revision = createSourceRecipeRevisionRecord({
+  const catalogId: SourceCatalogId = stableSourceCatalogId(input.source);
+  const generatedAt = Date.now();
+  const hash = snapshotHash(input.syncResult.snapshot);
+  const revision = createSourceCatalogRevisionRecord({
     source: input.source,
-    recipeId,
+    catalogId,
     revisionNumber: 1,
-    manifestJson: input.materialization.manifestJson,
-    manifestHash: input.materialization.manifestHash,
-    materializationHash: canonicalMaterializationHash({
-      materialization: input.materialization,
-    }),
+    importMetadataJson: JSON.stringify(input.syncResult.snapshot.import),
+    importMetadataHash: hash,
+    snapshotHash: hash,
   });
 
   return {
     version: LOCAL_SOURCE_ARTIFACT_VERSION,
     sourceId: input.source.id,
-    recipeId,
-    generatedAt: now,
+    catalogId,
+    generatedAt,
     revision,
-    documents: bindRevisionId(input.materialization.documents, revision.id),
-    schemaBundles: bindRevisionId(input.materialization.schemaBundles, revision.id),
-    operations: bindRevisionId(input.materialization.operations, revision.id),
+    snapshot: input.syncResult.snapshot,
   };
 };
 
@@ -175,13 +111,12 @@ export const readLocalSourceArtifact = (input: {
     );
     return yield* Effect.try({
       try: () => decodeLocalSourceArtifact(JSON.parse(content) as unknown),
-      catch: (cause) => {
-        return new LocalSourceArtifactDecodeError({
+      catch: (cause) =>
+        new LocalSourceArtifactDecodeError({
           message: `Invalid local source artifact at ${path}: ${unknownLocalErrorDetails(cause)}`,
           path,
           details: unknownLocalErrorDetails(cause),
-        });
-      },
+        }),
     });
   });
 

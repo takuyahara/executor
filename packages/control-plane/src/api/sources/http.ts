@@ -16,7 +16,6 @@ import {
 import {
   discoverSourceInspectionTools,
   getSourceInspection,
-  getSourceInspectionSchemaBundle,
   getSourceInspectionToolDetail,
 } from "../../runtime/source-inspection";
 import {
@@ -746,17 +745,6 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
               workspaceId: path.workspaceId,
               sourceId: path.sourceId,
               toolPath: path.toolPath,
-            }),
-          ),
-        ),
-      )
-      .handle("inspectionSchemaBundle", ({ path }) =>
-        resolveRequestedLocalWorkspace("sources.inspection_schema_bundle", path.workspaceId).pipe(
-          Effect.zipRight(
-            getSourceInspectionSchemaBundle({
-              workspaceId: path.workspaceId,
-              sourceId: path.sourceId,
-              schemaBundleId: path.schemaBundleId,
             }),
           ),
         ),

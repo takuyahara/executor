@@ -6,7 +6,6 @@ import { toTool } from "./tool-map";
 import {
   ToolDescriptorSchema,
   ToolNamespaceSchema,
-  ToolSchemaBundleSchema,
   type ToolCatalog,
   type ToolMap,
   type ToolPath,
@@ -50,16 +49,6 @@ const describeToolInputSchema = Schema.standardSchemaV1(
 
 const describeToolOutputSchema = Schema.standardSchemaV1(
   Schema.NullOr(ToolDescriptorSchema),
-);
-
-const describeSchemaBundleInputSchema = Schema.standardSchemaV1(
-  Schema.Struct({
-    id: Schema.String,
-  }),
-);
-
-const describeSchemaBundleOutputSchema = Schema.standardSchemaV1(
-  Schema.NullOr(ToolSchemaBundleSchema),
 );
 
 const discoverInputSchema = Schema.standardSchemaV1(
@@ -172,24 +161,6 @@ export const createSystemToolMap = (
           getPrimitives().describe.tool({
             path: asToolPath(path),
             ...(includeSchemas !== undefined ? { includeSchemas } : {}),
-          }),
-        ),
-    },
-    metadata: {
-      sourceKey,
-      interaction: "auto",
-    },
-  });
-
-  tools["describe.schemaBundle"] = toTool({
-    tool: {
-      description: "Get a shared schema bundle by id",
-      inputSchema: describeSchemaBundleInputSchema,
-      outputSchema: describeSchemaBundleOutputSchema,
-      execute: ({ id }: { id: string }) =>
-        Effect.runPromise(
-          getPrimitives().describe.schemaBundle({
-            id,
           }),
         ),
     },

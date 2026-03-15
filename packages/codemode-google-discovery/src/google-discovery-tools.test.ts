@@ -117,8 +117,8 @@ describe("google discovery tools", () => {
       expect(definitions.length).toBeGreaterThan(10);
       expect(valuesGet).toBeDefined();
       expect(valuesGet?.method).toBe("get");
-      expect(valuesGet?.inputSchemaJson).toContain("\"spreadsheetId\"");
-      expect(valuesGet?.outputSchemaJson).toContain("\"values\"");
+      expect(JSON.stringify(valuesGet?.inputSchema)).toContain("\"spreadsheetId\"");
+      expect(JSON.stringify(valuesGet?.outputSchema)).toContain("\"values\"");
       expect(Object.keys(manifest.schemaRefTable ?? {})).toContain(
         "#/$defs/google/ValueRange",
       );

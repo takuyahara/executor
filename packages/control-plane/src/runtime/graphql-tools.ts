@@ -10,7 +10,7 @@ import {
   type ToolMap,
   type ToolMetadata,
   type ToolPath,
-  typeSignatureFromSchemaJson,
+  typeSignatureFromSchema,
 } from "@executor/codemode-core";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -51,9 +51,9 @@ type GraphqlManifestToolBase = {
   rawToolId: string | null;
   toolName: string;
   description: string | null;
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
-  exampleInputJson?: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  exampleInput?: unknown;
 };
 
 export type GraphqlRequestToolManifestEntry = GraphqlManifestToolBase & {
@@ -102,10 +102,10 @@ export type GraphqlToolDefinition = {
 export type GraphqlToolPresentation = {
   inputType: string;
   outputType: string;
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
-  exampleInputJson?: string;
-  providerDataJson: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  exampleInput?: unknown;
+  providerData: GraphqlToolProviderData;
 };
 
 const GraphqlToolKindSchema = Schema.Literal("request", "field");
@@ -883,11 +883,11 @@ const outputEnvelopeSchemaForField = (
   };
 };
 
-const exampleInputJsonForField = (
+const exampleInputForField = (
   args: readonly GraphQLArgument[],
-): string | undefined => {
+): Record<string, unknown> | undefined => {
   if (args.length === 0) {
-    return JSON.stringify({});
+    return {};
   }
 
   const requiredArgs = args.filter(
@@ -902,7 +902,7 @@ const exampleInputJsonForField = (
     ]),
   );
 
-  return JSON.stringify(example);
+  return example;
 };
 
 const buildGraphqlFieldOperationDocument = (input: {
@@ -958,11 +958,11 @@ const requestToolManifestEntry = (
   rawToolId: "request",
   toolName: "GraphQL request",
   description: `Execute a raw GraphQL request against ${sourceName}.`,
-  inputSchemaJson: JSON.stringify(GRAPHQL_REQUEST_INPUT_SCHEMA),
-  outputSchemaJson: JSON.stringify(GRAPHQL_REQUEST_OUTPUT_SCHEMA),
-  exampleInputJson: JSON.stringify({
+  inputSchema: GRAPHQL_REQUEST_INPUT_SCHEMA,
+  outputSchema: GRAPHQL_REQUEST_OUTPUT_SCHEMA,
+  exampleInput: {
     query: "query { __typename }",
-  }),
+  },
 });
 
 type GraphqlFieldToolDraft = Omit<GraphqlFieldToolManifestEntry, "toolId"> & {
@@ -1030,11 +1030,13 @@ const fieldToolDraftsFromRootType = (input: {
     .filter((field) => !field.name.startsWith("__"))
     .map((field) => {
       const leaf = toCamelCase(field.name);
-      const outputSchemaJson = JSON.stringify(
-        outputEnvelopeSchemaForField(field.type, input.bundleBuilder),
+      const outputSchema = outputEnvelopeSchemaForField(
+        field.type,
+        input.bundleBuilder,
       );
-      const inputSchemaJson = JSON.stringify(
-        inputSchemaForFieldArguments(field.args, input.bundleBuilder),
+      const inputSchema = inputSchemaForFieldArguments(
+        field.args,
+        input.bundleBuilder,
       );
       const { operationName, operationDocument } =
         buildGraphqlFieldOperationDocument({
@@ -1061,9 +1063,9 @@ const fieldToolDraftsFromRootType = (input: {
         operationType: input.operationType,
         operationName,
         operationDocument,
-        inputSchemaJson,
-        outputSchemaJson,
-        exampleInputJson: exampleInputJsonForField(field.args),
+        inputSchema,
+        outputSchema,
+        exampleInput: exampleInputForField(field.args),
         searchTerms: [
           input.operationType,
           field.name,
@@ -1143,26 +1145,26 @@ export const buildGraphqlToolPresentation = (input: {
   const entry = input.manifest.tools.find(
     (tool) => tool.toolId === input.definition.toolId,
   );
-  const inputSchemaJson = entry?.inputSchemaJson;
-  const outputSchemaJson = entry?.outputSchemaJson;
+  const inputSchema = entry?.inputSchema;
+  const outputSchema = entry?.outputSchema;
 
   return {
-    inputType: typeSignatureFromSchemaJson(
-      inputSchemaJson,
+    inputType: typeSignatureFromSchema(
+      inputSchema,
       "unknown",
       Infinity,
     ),
-    outputType: typeSignatureFromSchemaJson(
-      outputSchemaJson,
+    outputType: typeSignatureFromSchema(
+      outputSchema,
       "unknown",
       Infinity,
     ),
-    ...(inputSchemaJson ? { inputSchemaJson } : {}),
-    ...(outputSchemaJson ? { outputSchemaJson } : {}),
-    ...(entry?.exampleInputJson
-      ? { exampleInputJson: entry.exampleInputJson }
+    ...(inputSchema !== undefined ? { inputSchema } : {}),
+    ...(outputSchema !== undefined ? { outputSchema } : {}),
+    ...(entry?.exampleInput !== undefined
+      ? { exampleInput: entry.exampleInput }
       : {}),
-    providerDataJson: JSON.stringify({
+    providerData: {
       kind: "graphql",
       toolKind: entry?.kind ?? "request",
       toolId: input.definition.toolId,
@@ -1176,12 +1178,12 @@ export const buildGraphqlToolPresentation = (input: {
       queryTypeName: input.manifest.queryTypeName,
       mutationTypeName: input.manifest.mutationTypeName,
       subscriptionTypeName: input.manifest.subscriptionTypeName,
-    } satisfies GraphqlToolProviderData),
+    } satisfies GraphqlToolProviderData,
   };
 };
 
-const decodeGraphqlToolProviderDataJson = Schema.decodeUnknownEither(
-  Schema.parseJson(GraphqlToolProviderDataSchema),
+const decodeGraphqlToolProviderData = Schema.decodeUnknownEither(
+  GraphqlToolProviderDataSchema,
 );
 
 export const decodeGraphqlSchemaRefTableJson = Schema.decodeUnknownEither(
@@ -1218,19 +1220,14 @@ const setNestedSchemaProperty = (
 };
 
 const materializeSchemaWithRefDefinitions = (input: {
-  schemaJson: string | undefined;
+  schema: unknown;
   refTable?: Readonly<Record<string, unknown>>;
 }): Record<string, unknown> => {
-  if (!input.schemaJson) {
+  if (input.schema === undefined || input.schema === null) {
     return {};
   }
 
-  let rootSchema: Record<string, unknown>;
-  try {
-    rootSchema = asRecord(JSON.parse(input.schemaJson) as unknown);
-  } catch {
-    return {};
-  }
+  const rootSchema = asRecord(input.schema);
 
   if (!input.refTable || Object.keys(input.refTable).length === 0) {
     return rootSchema;
@@ -1269,17 +1266,17 @@ export const createGraphqlToolFromPersistedOperation = (input: {
   sourceKey: string;
   endpoint: string;
   description?: string;
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
-  exampleInputJson?: string;
-  providerDataJson: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  exampleInput?: unknown;
+  providerData: unknown;
   schemaRefTable?: Readonly<Record<string, unknown>>;
   defaultHeaders?: Readonly<Record<string, string>>;
   credentialHeaders?: Readonly<Record<string, string>>;
   credentialPlacements?: HttpRequestPlacements;
 }) => {
-  const decodedProviderData = decodeGraphqlToolProviderDataJson(
-    input.providerDataJson,
+  const decodedProviderData = decodeGraphqlToolProviderData(
+    input.providerData,
   );
   if (decodedProviderData._tag === "Left") {
     throw new Error("Invalid GraphQL provider data");
@@ -1287,7 +1284,7 @@ export const createGraphqlToolFromPersistedOperation = (input: {
 
   const providerData = decodedProviderData.right;
   const inputSchema = materializeSchemaWithRefDefinitions({
-    schemaJson: input.inputSchemaJson,
+    schema: input.inputSchema,
     refTable: input.schemaRefTable,
   });
 
@@ -1298,28 +1295,28 @@ export const createGraphqlToolFromPersistedOperation = (input: {
         : providerData.operationType === "query"
           ? "auto"
           : "required",
-    inputType: typeSignatureFromSchemaJson(
-      input.inputSchemaJson,
+    inputType: typeSignatureFromSchema(
+      input.inputSchema,
       "unknown",
       Infinity,
     ),
-    outputType: typeSignatureFromSchemaJson(
-      input.outputSchemaJson,
+    outputType: typeSignatureFromSchema(
+      input.outputSchema,
       "unknown",
       Infinity,
     ),
-    ...(input.inputSchemaJson
-      ? { inputSchemaJson: input.inputSchemaJson }
+    ...(input.inputSchema !== undefined
+      ? { inputSchema: input.inputSchema }
       : {}),
-    ...(input.outputSchemaJson
-      ? { outputSchemaJson: input.outputSchemaJson }
+    ...(input.outputSchema !== undefined
+      ? { outputSchema: input.outputSchema }
       : {}),
-    ...(input.exampleInputJson
-      ? { exampleInputJson: input.exampleInputJson }
+    ...(input.exampleInput !== undefined
+      ? { exampleInput: input.exampleInput }
       : {}),
     sourceKey: input.sourceKey,
     providerKind: "graphql",
-    providerDataJson: input.providerDataJson,
+    providerData,
   };
 
   return toTool({
@@ -1387,17 +1384,17 @@ export const graphqlToolDescriptorFromDefinition = (input: {
       input.definition.operationType === "query" ? "auto" : "required",
     inputType: presentation.inputType,
     outputType: presentation.outputType,
-    ...(input.includeSchemas && presentation.inputSchemaJson
-      ? { inputSchemaJson: presentation.inputSchemaJson }
+    ...(input.includeSchemas && presentation.inputSchema !== undefined
+      ? { inputSchema: presentation.inputSchema }
       : {}),
-    ...(input.includeSchemas && presentation.outputSchemaJson
-      ? { outputSchemaJson: presentation.outputSchemaJson }
+    ...(input.includeSchemas && presentation.outputSchema !== undefined
+      ? { outputSchema: presentation.outputSchema }
       : {}),
-    ...(presentation.exampleInputJson
-      ? { exampleInputJson: presentation.exampleInputJson }
+    ...(presentation.exampleInput !== undefined
+      ? { exampleInput: presentation.exampleInput }
       : {}),
     providerKind: "graphql",
-    providerDataJson: presentation.providerDataJson,
+    providerData: presentation.providerData,
   };
 };
 
@@ -1572,10 +1569,10 @@ export const createGraphqlToolsFromManifest = (input: {
           sourceKey: input.sourceKey,
           endpoint,
           description: definition.description,
-          inputSchemaJson: presentation.inputSchemaJson,
-          outputSchemaJson: presentation.outputSchemaJson,
-          exampleInputJson: presentation.exampleInputJson,
-          providerDataJson: presentation.providerDataJson,
+          inputSchema: presentation.inputSchema,
+          outputSchema: presentation.outputSchema,
+          exampleInput: presentation.exampleInput,
+          providerData: presentation.providerData,
           schemaRefTable: input.manifest.schemaRefTable,
           defaultHeaders: input.defaultHeaders,
           credentialHeaders: input.credentialHeaders,

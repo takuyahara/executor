@@ -5,7 +5,7 @@ export {
 export {
   createGoogleDiscoveryToolFromDefinition,
   decodeGoogleDiscoverySchemaRefTableJson,
-  googleDiscoveryProviderDataJsonFromDefinition,
+  googleDiscoveryProviderDataFromDefinition,
   type CreateGoogleDiscoveryToolFromDefinitionInput,
 } from "./google-discovery-tools";
 export {

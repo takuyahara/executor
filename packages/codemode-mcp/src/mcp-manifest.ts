@@ -7,8 +7,8 @@ export type McpToolManifestEntry = {
   toolId: string;
   toolName: string;
   description: string | null;
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
 };
 
 export type McpToolManifest = {
@@ -32,18 +32,6 @@ const uniqueToolId = (value: string, byBase: Map<string, number>): string => {
   byBase.set(base, count);
 
   return count === 1 ? base : `${base}_${count}`;
-};
-
-const stringifyJson = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return undefined;
-  }
 };
 
 const ListedMcpToolSchema = Schema.Struct({
@@ -85,10 +73,8 @@ export const extractMcpToolManifestFromListToolsResult = (
         toolId: uniqueToolId(toolName, byBase),
         toolName,
         description: tool.description ?? null,
-        inputSchemaJson:
-          stringifyJson(tool.inputSchema)
-          ?? stringifyJson(tool.parameters),
-        outputSchemaJson: stringifyJson(tool.outputSchema),
+        inputSchema: tool.inputSchema ?? tool.parameters,
+        outputSchema: tool.outputSchema,
       };
     })
     .filter((tool): tool is McpToolManifestEntry => tool !== null);

@@ -3,55 +3,55 @@ import * as Either from "effect/Either";
 import * as Schema from "effect/Schema";
 
 import {
-  StoredSourceRecipeOperationRecordSchema,
+  SourceInspectionToolDetailSchema,
+  StoredSourceCatalogRevisionRecordSchema,
 } from "./index";
 
 describe("control-plane-schema", () => {
-  it("accepts canonical source recipe operation rows and rejects invalid transport kinds", () => {
-    const decode = Schema.decodeUnknownEither(StoredSourceRecipeOperationRecordSchema);
+  it("accepts snapshot-native inspection detail rows", () => {
+    const decode = Schema.decodeUnknownEither(SourceInspectionToolDetailSchema);
 
-    const operationRecord = decode({
-      id: "src_recipe_op_1",
-      recipeRevisionId: "src_recipe_rev_1",
-      operationKey: "getRepo",
-      transportKind: "http",
-      toolId: "getRepo",
-      title: "Get Repo",
-      description: "Read a repository",
-      operationKind: "read",
-      searchText: "get repo",
-      inputSchemaJson: null,
-      outputSchemaJson: null,
-      providerKind: "openapi",
-      providerDataJson: JSON.stringify({
-        kind: "openapi",
-      }),
+    const detail = decode({
+      summary: {
+        path: "github.issues.list",
+        sourceKey: "src_1",
+        protocol: "http",
+        toolId: "list",
+        rawToolId: "issues.list",
+        operationId: "listIssues",
+        group: "issues",
+        leaf: "list",
+        tags: ["issues"],
+        method: "GET",
+        pathTemplate: "/issues",
+      },
+      definitionJson: "{}",
+      documentationJson: "{}",
+      nativeJson: "{}",
+      callSchemaJson: null,
+      resultSchemaJson: null,
+      exampleCallJson: null,
+      exampleResultJson: null,
+    });
+
+    expect(Either.isRight(detail)).toBe(true);
+  });
+
+  it("rejects malformed catalog revisions", () => {
+    const decode = Schema.decodeUnknownEither(StoredSourceCatalogRevisionRecordSchema);
+
+    const invalidRevision = decode({
+      id: "src_catalog_rev_1",
+      catalogId: "src_catalog_1",
+      revisionNumber: "1",
+      sourceConfigJson: "{}",
+      importMetadataJson: null,
+      importMetadataHash: null,
+      snapshotHash: null,
       createdAt: 1,
       updatedAt: 1,
     });
 
-    expect(Either.isRight(operationRecord)).toBe(true);
-
-    const invalidRecord = decode({
-      id: "src_recipe_op_2",
-      recipeRevisionId: "src_recipe_rev_1",
-      operationKey: "viewer",
-      transportKind: "ftp",
-      toolId: "viewer",
-      title: "Viewer",
-      description: null,
-      operationKind: "read",
-      searchText: "viewer",
-      inputSchemaJson: null,
-      outputSchemaJson: null,
-      providerKind: "graphql",
-      providerDataJson: JSON.stringify({
-        kind: "graphql",
-      }),
-      createdAt: 1,
-      updatedAt: 1,
-    });
-
-    expect(Either.isLeft(invalidRecord)).toBe(true);
+    expect(Either.isLeft(invalidRevision)).toBe(true);
   });
 });

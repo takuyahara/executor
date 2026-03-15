@@ -1,10 +1,4 @@
 import type {
-  OnElicitation,
-  ToolDescriptor,
-  ToolSchemaBundle,
-} from "@executor/codemode-core";
-import type {
-  AccountId,
   CredentialSlot,
   OAuth2ClientAuthenticationMethod,
   SourceOauthClientInput,
@@ -12,10 +6,6 @@ import type {
   SourceBinding,
   SourceImportAuthPolicy,
   SourceTransport,
-  StoredSourceRecipeDocumentRecord,
-  StoredSourceRecipeOperationRecord,
-  StoredSourceRecipeSchemaBundleRecord,
-  StoredSourceRecipeRevisionRecord,
   StoredSourceRecord,
   StringMap,
 } from "#schema";
@@ -24,6 +14,7 @@ import * as Schema from "effect/Schema";
 
 import type { ResolvedSourceAuthMaterial } from "../source-auth-material";
 import type { ResolveSecretMaterial } from "../secret-material-providers";
+import type { SourceCatalogSyncResult } from "../source-catalog-support";
 
 export type SourceAdapterFamily = "http_api" | "mcp" | "internal";
 export type SourceAdapterInputSchema = Schema.Schema<any, any, never>;
@@ -47,28 +38,6 @@ export type SourceAdapterSyncInput = {
   >;
 };
 
-export type SourceAdapterMaterialization = {
-  manifestJson: string | null;
-  manifestHash: string | null;
-  sourceHash: string | null;
-  documents: readonly StoredSourceRecipeDocumentRecord[];
-  schemaBundles: readonly StoredSourceRecipeSchemaBundleRecord[];
-  operations: readonly StoredSourceRecipeOperationRecord[];
-};
-
-export type SourceAdapterPersistedOperationMetadata = {
-  method: string | null;
-  pathTemplate: string | null;
-  rawToolId: string | null;
-  operationId: string | null;
-  group: string | null;
-  leaf: string | null;
-  tags: readonly string[];
-  searchText: string;
-  interaction: "auto" | "required";
-  approvalLabel: string | null;
-};
-
 export type SourceAdapterOauth2SetupConfig = {
   providerKey: string;
   authorizationEndpoint: string;
@@ -80,20 +49,6 @@ export type SourceAdapterOauth2SetupConfig = {
   authorizationParams?: Readonly<Record<string, string>>;
 };
 
-export type SourceAdapterInvokePersistedToolInput = {
-  workspaceId: Source["workspaceId"];
-  accountId: AccountId;
-  source: Source;
-  path: string;
-  operation: StoredSourceRecipeOperationRecord;
-  schemaBundle: ToolSchemaBundle | null;
-  manifestJson: string | null;
-  auth: ResolvedSourceAuthMaterial;
-  args: unknown;
-  context?: Record<string, unknown>;
-  onElicitation?: OnElicitation;
-};
-
 export type SourceAdapter = {
   key: string;
   displayName: string;
@@ -101,8 +56,6 @@ export type SourceAdapter = {
   bindingConfigVersion: number;
   providerKey: string;
   defaultImportAuthPolicy: SourceImportAuthPolicy;
-  primaryDocumentKind: string | null;
-  primarySchemaBundleKind: string | null;
   connectPayloadSchema: SourceAdapterInputSchema | null;
   executorAddInputSchema: SourceAdapterInputSchema | null;
   executorAddHelpText: readonly string[] | null;
@@ -115,30 +68,9 @@ export type SourceAdapter = {
   sourceConfigFromSource: (source: Source) => Record<string, unknown>;
   validateSource: (source: Source) => Effect.Effect<Source, Error, never>;
   shouldAutoProbe: (source: Source) => boolean;
-  parseManifest: (input: {
-    source: Pick<Source, "id" | "kind">;
-    manifestJson: string | null;
-  }) => Effect.Effect<unknown | null, Error, never>;
-  describePersistedOperation: (input: {
-    source: Source;
-    path: string;
-    operation: StoredSourceRecipeOperationRecord;
-  }) => Effect.Effect<SourceAdapterPersistedOperationMetadata, Error, never>;
-  searchNamespace?: (input: {
-    source: Source;
-    path: string;
-    operation: StoredSourceRecipeOperationRecord;
-  }) => string;
-  createToolDescriptor: (input: {
-    source: Source;
-    operation: StoredSourceRecipeOperationRecord;
-    path: string;
-    schemaBundleId?: string | null;
-    includeSchemas: boolean;
-  }) => ToolDescriptor;
-  materializeSource: (
+  syncCatalog: (
     input: SourceAdapterSyncInput,
-  ) => Effect.Effect<SourceAdapterMaterialization, Error, never>;
+  ) => Effect.Effect<SourceCatalogSyncResult, Error, never>;
   getOauth2SetupConfig?: (input: {
     source: Source;
     slot: CredentialSlot;
@@ -146,7 +78,4 @@ export type SourceAdapter = {
   normalizeOauthClientInput?: (
     input: SourceOauthClientInput,
   ) => Effect.Effect<SourceOauthClientInput, Error, never>;
-  invokePersistedTool: (
-    input: SourceAdapterInvokePersistedToolInput,
-  ) => Effect.Effect<unknown, Error, never>;
 };

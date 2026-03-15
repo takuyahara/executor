@@ -11,19 +11,19 @@ import type {
   Source,
   SourceAuth,
   SourceImportAuthPolicy,
-  SourceRecipeAdapterKey,
-  SourceRecipeId,
-  SourceRecipeKind,
-  SourceRecipeRevisionId,
+  SourceCatalogAdapterKey,
+  SourceCatalogId,
+  SourceCatalogKind,
+  SourceCatalogRevisionId,
   StoredSourceRecord,
-  StoredSourceRecipeRecord,
-  StoredSourceRecipeRevisionRecord,
+  StoredSourceCatalogRecord,
+  StoredSourceCatalogRevisionRecord,
   WorkspaceId,
 } from "#schema";
 import {
   AuthArtifactIdSchema,
-  SourceRecipeIdSchema,
-  SourceRecipeRevisionIdSchema,
+  SourceCatalogIdSchema,
+  SourceCatalogRevisionIdSchema,
 } from "#schema";
 import * as Effect from "effect/Effect";
  
@@ -42,45 +42,45 @@ const trimOrNull = (value: string | null | undefined): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-type SourceRecipeSourceConfig = Record<string, unknown>;
+type SourceCatalogSourceConfig = Record<string, unknown>;
 
-const sourceConfigFromSource = (source: Source): SourceRecipeSourceConfig =>
+const sourceConfigFromSource = (source: Source): SourceCatalogSourceConfig =>
   getSourceAdapterForSource(source).sourceConfigFromSource(source);
 
-const sourceRecipeKindFromSource = (source: Source): SourceRecipeKind => {
+const sourceCatalogKindFromSource = (source: Source): SourceCatalogKind => {
   const adapter = getSourceAdapterForSource(source);
   return adapter.family;
 };
 
-const sourceRecipeAdapterKeyFromSource = (source: Source): SourceRecipeAdapterKey => {
+const sourceCatalogAdapterKeyFromSource = (source: Source): SourceCatalogAdapterKey => {
   return getSourceAdapterForSource(source).key;
 };
 
-const sourceRecipeProviderKeyFromSource = (source: Source): string => {
+const sourceCatalogProviderKeyFromSource = (source: Source): string => {
   return getSourceAdapterForSource(source).providerKey;
 };
 
 const stableHash = (value: string): string =>
   sha256Hex(value).slice(0, 24);
 
-const sourceRecipeSignature = (source: Source): string =>
+const sourceCatalogSignature = (source: Source): string =>
   JSON.stringify({
-    recipeKind: sourceRecipeKindFromSource(source),
-    adapterKey: sourceRecipeAdapterKeyFromSource(source),
-    providerKey: sourceRecipeProviderKeyFromSource(source),
+    catalogKind: sourceCatalogKindFromSource(source),
+    adapterKey: sourceCatalogAdapterKeyFromSource(source),
+    providerKey: sourceCatalogProviderKeyFromSource(source),
     sourceConfig: sourceConfigFromSource(source),
   });
 
 export const sourceConfigSignature = (source: Source): string =>
   JSON.stringify(sourceConfigFromSource(source));
 
-export const stableSourceRecipeId = (source: Source): SourceRecipeId =>
-  SourceRecipeIdSchema.make(`src_recipe_${stableHash(sourceRecipeSignature(source))}`);
+export const stableSourceCatalogId = (source: Source): SourceCatalogId =>
+  SourceCatalogIdSchema.make(`src_catalog_${stableHash(sourceCatalogSignature(source))}`);
 
-export const stableSourceRecipeRevisionId = (
+export const stableSourceCatalogRevisionId = (
   source: Source,
-): SourceRecipeRevisionId =>
-  SourceRecipeRevisionIdSchema.make(`src_recipe_rev_${stableHash(sourceConfigSignature(source))}`);
+): SourceCatalogRevisionId =>
+  SourceCatalogRevisionIdSchema.make(`src_catalog_rev_${stableHash(sourceConfigSignature(source))}`);
 
 const normalizeAuth = (
   auth: SourceAuth | undefined,
@@ -298,15 +298,15 @@ export const updateSourceFromPayload = (input: {
     });
   });
 
-export const createSourceRecipeRecord = (input: {
+export const createSourceCatalogRecord = (input: {
   source: Source;
-  recipeId?: SourceRecipeId | null;
-  latestRevisionId: SourceRecipeRevisionId;
-}): StoredSourceRecipeRecord => ({
-  id: input.recipeId ?? stableSourceRecipeId(input.source),
-  kind: sourceRecipeKindFromSource(input.source),
-  adapterKey: sourceRecipeAdapterKeyFromSource(input.source),
-  providerKey: sourceRecipeProviderKeyFromSource(input.source),
+  catalogId?: SourceCatalogId | null;
+  latestRevisionId: SourceCatalogRevisionId;
+}): StoredSourceCatalogRecord => ({
+  id: input.catalogId ?? stableSourceCatalogId(input.source),
+  kind: sourceCatalogKindFromSource(input.source),
+  adapterKey: sourceCatalogAdapterKeyFromSource(input.source),
+  providerKey: sourceCatalogProviderKeyFromSource(input.source),
   name: input.source.name,
   summary: null,
   visibility: "workspace",
@@ -315,32 +315,32 @@ export const createSourceRecipeRecord = (input: {
   updatedAt: input.source.updatedAt,
 });
 
-export const createSourceRecipeRevisionRecord = (input: {
+export const createSourceCatalogRevisionRecord = (input: {
   source: Source;
-  recipeId: SourceRecipeId;
-  recipeRevisionId?: SourceRecipeRevisionId | null;
+  catalogId: SourceCatalogId;
+  catalogRevisionId?: SourceCatalogRevisionId | null;
   revisionNumber: number;
-  manifestJson?: string | null;
-  manifestHash?: string | null;
-  materializationHash?: string | null;
-}): StoredSourceRecipeRevisionRecord => ({
+  importMetadataJson?: string | null;
+  importMetadataHash?: string | null;
+  snapshotHash?: string | null;
+}): StoredSourceCatalogRevisionRecord => ({
   id:
-    input.recipeRevisionId
-    ?? stableSourceRecipeRevisionId(input.source),
-  recipeId: input.recipeId,
+    input.catalogRevisionId
+    ?? stableSourceCatalogRevisionId(input.source),
+  catalogId: input.catalogId,
   revisionNumber: input.revisionNumber,
   sourceConfigJson: sourceConfigSignature(input.source),
-  manifestJson: input.manifestJson ?? null,
-  manifestHash: input.manifestHash ?? null,
-  materializationHash: input.materializationHash ?? null,
+  importMetadataJson: input.importMetadataJson ?? null,
+  importMetadataHash: input.importMetadataHash ?? null,
+  snapshotHash: input.snapshotHash ?? null,
   createdAt: input.source.createdAt,
   updatedAt: input.source.updatedAt,
 });
 
 export const splitSourceForStorage = (input: {
   source: Source;
-  recipeId: SourceRecipeId;
-  recipeRevisionId: SourceRecipeRevisionId;
+  catalogId: SourceCatalogId;
+  catalogRevisionId: SourceCatalogRevisionId;
   actorAccountId?: AccountId | null;
   existingRuntimeAuthArtifactId?: AuthArtifact["id"] | null;
   existingImportAuthArtifactId?: AuthArtifact["id"] | null;
@@ -352,8 +352,8 @@ export const splitSourceForStorage = (input: {
   const sourceRecord: StoredSourceRecord = {
     id: input.source.id,
     workspaceId: input.source.workspaceId,
-    recipeId: input.recipeId,
-    recipeRevisionId: input.recipeRevisionId,
+    catalogId: input.catalogId,
+    catalogRevisionId: input.catalogRevisionId,
     name: input.source.name,
     kind: input.source.kind,
     endpoint: input.source.endpoint,

@@ -32,7 +32,7 @@ import {
   loadLocalWorkspaceState,
   writeLocalWorkspaceState,
 } from "./local-workspace-state";
-import type { SourceRecipeMaterialization } from "./source-recipe-support";
+import type { SourceCatalogSyncResult } from "./source-catalog-support";
 import type { Source } from "#schema";
 
 export type InstallationStoreShape = {
@@ -80,7 +80,7 @@ export class WorkspaceStateStore extends Context.Tag(
 export type SourceArtifactStoreShape = {
   build: (input: {
     source: Source;
-    materialization: SourceRecipeMaterialization;
+    syncResult: SourceCatalogSyncResult;
   }) => LocalSourceArtifact;
   read: (input: {
     context: ResolvedLocalWorkspaceContext;

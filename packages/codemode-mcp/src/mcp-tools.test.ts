@@ -230,7 +230,7 @@ describe("codemode-mcp", () => {
 
       const toolDefinition = resolveToolDefinition(discovered.tools["source.mcp.echo"]!);
       expect(toolDefinition.metadata?.sourceKey).toBe("mcp.demo");
-      expect(toolDefinition.metadata?.inputSchemaJson).toContain("value");
+      expect(JSON.stringify(toolDefinition.metadata?.inputSchema)).toContain("value");
 
       const invoke = resolveToolExecutor(discovered.tools, "source.mcp.echo");
       const invocationResult = yield* Effect.promise(() => invoke({ value: "hello" }));

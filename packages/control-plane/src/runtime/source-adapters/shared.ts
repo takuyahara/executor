@@ -1,10 +1,4 @@
 import {
-  type ToolDescriptor,
-  type ToolPath,
-  type ToolSchemaBundle,
-  typeSignatureFromSchemaJson,
-} from "@executor/codemode-core";
-import {
   SourceOauthClientInputSchema,
   type CredentialSlot,
   SecretRefSchema,
@@ -15,10 +9,8 @@ import {
 } from "#schema";
 import type {
   SecretRef,
-  Source,
   SourceBinding,
   SourceTransport,
-  StoredSourceRecipeOperationRecord,
   StringMap,
 } from "#schema";
 import * as Effect from "effect/Effect";
@@ -27,8 +19,6 @@ import * as Schema from "effect/Schema";
 import {
   TrimmedNonEmptyStringSchema,
 } from "../../api/string-schemas";
-
-const asToolPath = (value: string): ToolPath => value as ToolPath;
 
 export const OptionalNullableStringSchema = Schema.optional(
   Schema.NullOr(Schema.String),
@@ -236,43 +226,3 @@ export const decodeSourceBindingPayload = <A>(input: {
           );
         },
       });
-
-export const firstSchemaBundle = (input: {
-  schemaBundles: readonly ToolSchemaBundle[];
-  preferredKind: string | null;
-}): ToolSchemaBundle | null =>
-  (input.preferredKind
-    ? input.schemaBundles.find((schemaBundle) => schemaBundle.kind === input.preferredKind)
-    : null)
-  ?? input.schemaBundles[0]
-  ?? null;
-
-export const createStandardToolDescriptor = (input: {
-  source: Source;
-  operation: StoredSourceRecipeOperationRecord;
-  path: string;
-  includeSchemas: boolean;
-  interaction: "auto" | "required";
-  outputType?: string | undefined;
-  schemaBundleId?: string | null;
-}): ToolDescriptor => ({
-  path: asToolPath(input.path),
-  sourceKey: input.source.id,
-  description: input.operation.description ?? input.operation.title ?? undefined,
-  interaction: input.interaction,
-  inputType: typeSignatureFromSchemaJson(
-    input.operation.inputSchemaJson ?? undefined,
-    "unknown",
-    320,
-  ),
-  ...(input.outputType ? { outputType: input.outputType } : {}),
-  inputSchemaJson: input.includeSchemas ? input.operation.inputSchemaJson ?? undefined : undefined,
-  outputSchemaJson: input.includeSchemas ? input.operation.outputSchemaJson ?? undefined : undefined,
-  ...(input.schemaBundleId ? { schemaBundleId: input.schemaBundleId } : {}),
-  ...(input.operation.providerKind
-    ? { providerKind: input.operation.providerKind }
-    : {}),
-  ...(input.operation.providerDataJson
-    ? { providerDataJson: input.operation.providerDataJson }
-    : {}),
-});

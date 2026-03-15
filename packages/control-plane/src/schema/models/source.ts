@@ -3,8 +3,8 @@ import { Schema } from "effect";
 import { TimestampMsSchema } from "../common";
 import {
   SourceIdSchema,
-  SourceRecipeIdSchema,
-  SourceRecipeRevisionIdSchema,
+  SourceCatalogIdSchema,
+  SourceCatalogRevisionIdSchema,
   WorkspaceIdSchema,
 } from "../ids";
 import { SecretRefSchema } from "./auth-artifact";
@@ -77,8 +77,8 @@ export const SourceBindingSchema = Schema.Struct({
 const SourceStorageRowSchema = Schema.Struct({
   workspaceId: WorkspaceIdSchema,
   sourceId: SourceIdSchema,
-  recipeId: SourceRecipeIdSchema,
-  recipeRevisionId: SourceRecipeRevisionIdSchema,
+  catalogId: SourceCatalogIdSchema,
+  catalogRevisionId: SourceCatalogRevisionIdSchema,
   name: Schema.String,
   kind: SourceKindSchema,
   endpoint: Schema.String,
@@ -98,8 +98,8 @@ export const StoredSourceRecordSchema = Schema.transform(
   Schema.Struct({
     id: SourceIdSchema,
     workspaceId: WorkspaceIdSchema,
-    recipeId: SourceRecipeIdSchema,
-    recipeRevisionId: SourceRecipeRevisionIdSchema,
+    catalogId: SourceCatalogIdSchema,
+    catalogRevisionId: SourceCatalogRevisionIdSchema,
     name: Schema.String,
     kind: SourceKindSchema,
     endpoint: Schema.String,
@@ -118,8 +118,8 @@ export const StoredSourceRecordSchema = Schema.transform(
     decode: (row) => ({
       id: row.sourceId,
       workspaceId: row.workspaceId,
-      recipeId: row.recipeId,
-      recipeRevisionId: row.recipeRevisionId,
+      catalogId: row.catalogId,
+      catalogRevisionId: row.catalogRevisionId,
       name: row.name,
       kind: row.kind,
       endpoint: row.endpoint,
@@ -136,8 +136,8 @@ export const StoredSourceRecordSchema = Schema.transform(
     encode: (source) => ({
       workspaceId: source.workspaceId,
       sourceId: source.id,
-      recipeId: source.recipeId,
-      recipeRevisionId: source.recipeRevisionId,
+      catalogId: source.catalogId,
+      catalogRevisionId: source.catalogRevisionId,
       name: source.name,
       kind: source.kind,
       endpoint: source.endpoint,

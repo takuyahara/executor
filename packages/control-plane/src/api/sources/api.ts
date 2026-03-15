@@ -8,7 +8,6 @@ import {
   SourceIdSchema,
   SourceInspectionDiscoverPayloadSchema,
   SourceInspectionDiscoverResultSchema,
-  SourceInspectionSchemaBundleSchema,
   SourceInspectionSchema,
   SourceInspectionToolDetailSchema,
   SourceImportAuthPolicySchema,
@@ -80,7 +79,6 @@ export type UpdateSourcePayload = typeof UpdateSourcePayloadSchema.Type;
 const workspaceIdParam = HttpApiSchema.param("workspaceId", WorkspaceIdSchema);
 const sourceIdParam = HttpApiSchema.param("sourceId", SourceIdSchema);
 const toolPathParam = HttpApiSchema.param("toolPath", Schema.String);
-const schemaBundleIdParam = HttpApiSchema.param("schemaBundleId", Schema.String);
 
 const CredentialPageUrlParamsSchema = Schema.Struct({
   interactionId: ExecutionInteractionIdSchema,
@@ -236,15 +234,6 @@ export class SourcesApi extends HttpApiGroup.make("sources")
   .add(
     HttpApiEndpoint.get("inspectionTool")`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/tools/${toolPathParam}/inspection`
       .addSuccess(SourceInspectionToolDetailSchema)
-      .addError(ControlPlaneBadRequestError)
-      .addError(ControlPlaneUnauthorizedError)
-      .addError(ControlPlaneForbiddenError)
-      .addError(ControlPlaneNotFoundError)
-      .addError(ControlPlaneStorageError),
-  )
-  .add(
-    HttpApiEndpoint.get("inspectionSchemaBundle")`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/inspection/schema-bundles/${schemaBundleIdParam}`
-      .addSuccess(SourceInspectionSchemaBundleSchema)
       .addError(ControlPlaneBadRequestError)
       .addError(ControlPlaneUnauthorizedError)
       .addError(ControlPlaneForbiddenError)

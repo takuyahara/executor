@@ -27,7 +27,7 @@ import {
   getSourceAdapterForSource,
 } from "./source-adapters";
 import {
-  materializationFromMcpManifestEntries,
+  catalogSyncResultFromMcpManifestEntries,
 } from "./source-adapters/mcp";
 import { SecretMaterialResolverService } from "./secret-material-providers";
 
@@ -36,7 +36,7 @@ const shouldIndexSource = (source: Source): boolean =>
   && source.status === "connected"
   && getSourceAdapterForSource(source).family !== "internal";
 
-type RuntimeSourceMaterializationDeps = {
+type RuntimeSourceCatalogSyncDeps = {
   runtimeLocalWorkspace: RuntimeLocalWorkspaceState;
   workspaceStateStore: WorkspaceStateStoreShape;
   sourceArtifactStore: SourceArtifactStoreShape;
@@ -44,30 +44,30 @@ type RuntimeSourceMaterializationDeps = {
   sourceAuthMaterialService: Effect.Effect.Success<typeof RuntimeSourceAuthMaterialService>;
 };
 
-type SourceMaterializationServices =
+type SourceCatalogSyncServices =
   | RuntimeLocalWorkspaceService
   | WorkspaceStateStore
   | SourceArtifactStore
   | RuntimeSourceAuthMaterialService
   | SecretMaterialResolverService;
 
-export type RuntimeSourceMaterializationShape = {
+export type RuntimeSourceCatalogSyncShape = {
   sync: (input: {
     source: Source;
     actorAccountId?: AccountId | null;
   }) => Effect.Effect<void, Error, never>;
-  persistMcpRecipeMaterializationFromManifest: (input: {
+  persistMcpCatalogSnapshotFromManifest: (input: {
     source: Source;
-    manifestEntries: Parameters<typeof materializationFromMcpManifestEntries>[0]["manifestEntries"];
+    manifestEntries: Parameters<typeof catalogSyncResultFromMcpManifestEntries>[0]["manifestEntries"];
   }) => Effect.Effect<void, Error, never>;
 };
 
-export class RuntimeSourceMaterializationService extends Context.Tag(
-  "#runtime/RuntimeSourceMaterializationService",
-)<RuntimeSourceMaterializationService, RuntimeSourceMaterializationShape>() {}
+export class RuntimeSourceCatalogSyncService extends Context.Tag(
+  "#runtime/RuntimeSourceCatalogSyncService",
+)<RuntimeSourceCatalogSyncService, RuntimeSourceCatalogSyncShape>() {}
 
-const ensureRuntimeMaterializationWorkspace = (
-  deps: RuntimeSourceMaterializationDeps,
+const ensureRuntimeCatalogSyncWorkspace = (
+  deps: RuntimeSourceCatalogSyncDeps,
   workspaceId: Source["workspaceId"],
 ) => {
   if (deps.runtimeLocalWorkspace.installation.workspaceId !== workspaceId) {
@@ -81,15 +81,15 @@ const ensureRuntimeMaterializationWorkspace = (
   return Effect.succeed(deps.runtimeLocalWorkspace.context);
 };
 
-const syncSourceMaterializationWithDeps = (
-  deps: RuntimeSourceMaterializationDeps,
+const syncSourceCatalogWithDeps = (
+  deps: RuntimeSourceCatalogSyncDeps,
   input: {
     source: Source;
     actorAccountId?: AccountId | null;
   },
 ): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
-    const workspaceContext = yield* ensureRuntimeMaterializationWorkspace(
+    const workspaceContext = yield* ensureRuntimeCatalogSyncWorkspace(
       deps,
       input.source.workspaceId,
     );
@@ -118,7 +118,7 @@ const syncSourceMaterializationWithDeps = (
     }
 
     const adapter = getSourceAdapterForSource(input.source);
-    const materialization = yield* adapter.materializeSource({
+    const syncResult = yield* adapter.syncCatalog({
       source: input.source,
       resolveSecretMaterial: deps.resolveSecretMaterial,
       resolveAuthMaterialForSlot: (slot) =>
@@ -133,7 +133,7 @@ const syncSourceMaterializationWithDeps = (
       sourceId: input.source.id,
       artifact: deps.sourceArtifactStore.build({
         source: input.source,
-        materialization,
+        syncResult,
       }),
     });
 
@@ -146,7 +146,7 @@ const syncSourceMaterializationWithDeps = (
         [input.source.id]: {
           status: "connected",
           lastError: null,
-          sourceHash: materialization.sourceHash,
+          sourceHash: syncResult.sourceHash,
           createdAt: existingSourceState?.createdAt ?? input.source.createdAt,
           updatedAt: Date.now(),
         },
@@ -158,20 +158,20 @@ const syncSourceMaterializationWithDeps = (
     });
   });
 
-const persistMcpRecipeMaterializationFromManifestWithDeps = (
-  deps: RuntimeSourceMaterializationDeps,
+const persistMcpCatalogSnapshotFromManifestWithDeps = (
+  deps: RuntimeSourceCatalogSyncDeps,
   input: {
     source: Source;
-    manifestEntries: Parameters<typeof materializationFromMcpManifestEntries>[0]["manifestEntries"];
+    manifestEntries: Parameters<typeof catalogSyncResultFromMcpManifestEntries>[0]["manifestEntries"];
   },
 ): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
-    const workspaceContext = yield* ensureRuntimeMaterializationWorkspace(
+    const workspaceContext = yield* ensureRuntimeCatalogSyncWorkspace(
       deps,
       input.source.workspaceId,
     );
-    const materialization = materializationFromMcpManifestEntries({
-      recipeRevisionId: "src_recipe_rev_materialization" as never,
+    const syncResult = catalogSyncResultFromMcpManifestEntries({
+      source: input.source,
       endpoint: input.source.endpoint,
       manifestEntries: input.manifestEntries,
     });
@@ -181,15 +181,15 @@ const persistMcpRecipeMaterializationFromManifestWithDeps = (
       sourceId: input.source.id,
       artifact: deps.sourceArtifactStore.build({
         source: input.source,
-        materialization,
+        syncResult,
       }),
     });
   });
 
-export const syncSourceMaterialization = (input: {
+export const syncSourceCatalog = (input: {
   source: Source;
   actorAccountId?: AccountId | null;
-}): Effect.Effect<void, Error, SourceMaterializationServices> =>
+}): Effect.Effect<void, Error, SourceCatalogSyncServices> =>
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* RuntimeLocalWorkspaceService;
     const workspaceStateStore = yield* WorkspaceStateStore;
@@ -197,7 +197,7 @@ export const syncSourceMaterialization = (input: {
     const resolveSecretMaterial = yield* SecretMaterialResolverService;
     const sourceAuthMaterialService = yield* RuntimeSourceAuthMaterialService;
 
-    return yield* syncSourceMaterializationWithDeps(
+    return yield* syncSourceCatalogWithDeps(
       {
         runtimeLocalWorkspace,
         workspaceStateStore,
@@ -212,10 +212,10 @@ export const syncSourceMaterialization = (input: {
     );
   });
 
-export const persistMcpRecipeMaterializationFromManifest = (input: {
+export const persistMcpCatalogSnapshotFromManifest = (input: {
   source: Source;
-  manifestEntries: Parameters<typeof materializationFromMcpManifestEntries>[0]["manifestEntries"];
-}): Effect.Effect<void, Error, SourceMaterializationServices> =>
+  manifestEntries: Parameters<typeof catalogSyncResultFromMcpManifestEntries>[0]["manifestEntries"];
+}): Effect.Effect<void, Error, SourceCatalogSyncServices> =>
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* RuntimeLocalWorkspaceService;
     const workspaceStateStore = yield* WorkspaceStateStore;
@@ -223,7 +223,7 @@ export const persistMcpRecipeMaterializationFromManifest = (input: {
     const resolveSecretMaterial = yield* SecretMaterialResolverService;
     const sourceAuthMaterialService = yield* RuntimeSourceAuthMaterialService;
 
-    return yield* persistMcpRecipeMaterializationFromManifestWithDeps(
+    return yield* persistMcpCatalogSnapshotFromManifestWithDeps(
       {
         runtimeLocalWorkspace,
         workspaceStateStore,
@@ -235,8 +235,8 @@ export const persistMcpRecipeMaterializationFromManifest = (input: {
     );
   });
 
-export const RuntimeSourceMaterializationLive = Layer.effect(
-  RuntimeSourceMaterializationService,
+export const RuntimeSourceCatalogSyncLive = Layer.effect(
+  RuntimeSourceCatalogSyncService,
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* RuntimeLocalWorkspaceService;
     const workspaceStateStore = yield* WorkspaceStateStore;
@@ -244,7 +244,7 @@ export const RuntimeSourceMaterializationLive = Layer.effect(
     const resolveSecretMaterial = yield* SecretMaterialResolverService;
     const sourceAuthMaterialService = yield* RuntimeSourceAuthMaterialService;
 
-    const deps: RuntimeSourceMaterializationDeps = {
+    const deps: RuntimeSourceCatalogSyncDeps = {
       runtimeLocalWorkspace,
       workspaceStateStore,
       sourceArtifactStore,
@@ -252,10 +252,10 @@ export const RuntimeSourceMaterializationLive = Layer.effect(
       sourceAuthMaterialService,
     };
 
-    return RuntimeSourceMaterializationService.of({
-      sync: (input) => syncSourceMaterializationWithDeps(deps, input),
-      persistMcpRecipeMaterializationFromManifest: (input) =>
-        persistMcpRecipeMaterializationFromManifestWithDeps(deps, input),
+    return RuntimeSourceCatalogSyncService.of({
+      sync: (input) => syncSourceCatalogWithDeps(deps, input),
+      persistMcpCatalogSnapshotFromManifest: (input) =>
+        persistMcpCatalogSnapshotFromManifestWithDeps(deps, input),
     });
   }),
 );

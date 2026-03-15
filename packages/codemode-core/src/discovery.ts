@@ -13,7 +13,6 @@ import type {
   ToolMap,
   ToolNamespace,
   ToolPath,
-  ToolSchemaBundle,
 } from "./types";
 
 const tokenize = (value: string): string[] =>
@@ -46,8 +45,8 @@ const projectDescriptor = (input: {
 
   return {
     ...descriptor,
-    inputSchemaJson: undefined,
-    outputSchemaJson: undefined,
+    inputSchema: undefined,
+    outputSchema: undefined,
   };
 };
 
@@ -162,7 +161,6 @@ export function createToolCatalogFromTools(input: {
 
 export function createToolCatalogFromEntries(input: {
   entries: ReadonlyArray<ToolCatalogEntry>;
-  getSchemaBundle?: (input: { id: string }) => Effect.Effect<ToolSchemaBundle | null, unknown>;
 }): ToolCatalog {
   const entries = [...input.entries];
   const byPath = new Map(
@@ -213,10 +211,6 @@ export function createToolCatalogFromEntries(input: {
             })
           : null,
       ),
-    getSchemaBundle: ({ id }) =>
-      input.getSchemaBundle
-        ? input.getSchemaBundle({ id })
-        : Effect.succeed(null),
     searchTools: ({ query, namespace, limit }) => {
       const queryTokens = tokenize(query);
 
@@ -277,18 +271,6 @@ export function mergeToolCatalogs(input: {
           const descriptor = yield* catalog.getToolByPath({ path, includeSchemas });
           if (descriptor) {
             return descriptor;
-          }
-        }
-
-        return null;
-      }),
-
-    getSchemaBundle: ({ id }) =>
-      Effect.gen(function* () {
-        for (const catalog of catalogs) {
-          const bundle = yield* catalog.getSchemaBundle({ id });
-          if (bundle) {
-            return bundle;
           }
         }
 
@@ -357,7 +339,6 @@ export function createDiscoveryPrimitivesFromToolCatalog(input: {
   const describe: DescribePrimitive = {
     tool: ({ path, includeSchemas = false }) =>
       catalog.getToolByPath({ path, includeSchemas }),
-    schemaBundle: ({ id }) => catalog.getSchemaBundle({ id }),
   };
 
   const discover: DiscoverPrimitive = ({
@@ -406,9 +387,8 @@ export function createDiscoveryPrimitivesFromToolCatalog(input: {
             outputType: descriptor.outputType,
             ...(includeSchemas
               ? {
-                  inputSchemaJson: descriptor.inputSchemaJson,
-                  outputSchemaJson: descriptor.outputSchemaJson,
-                  schemaBundleId: descriptor.schemaBundleId,
+                  inputSchema: descriptor.inputSchema,
+                  outputSchema: descriptor.outputSchema,
                 }
               : {}),
           };
@@ -471,7 +451,7 @@ export function buildDynamicExecuteDescription(input: {
       "Workflow:",
       '1) const matches = await tools.discover({ query: "<intent>", limit: 12 });',
       "2) const details = await tools.describe.tool({ path, includeSchemas: true });",
-      "3) If details.schemaBundleId is present, fetch it once with tools.describe.schemaBundle({ id }).",
+      "3) Read details.inputSchema/details.outputSchema when you need the projected shape.",
       "4) Call selected tools.<path>(input).",
       "Do not use fetch; use tools.* only.",
     ].join("\n");

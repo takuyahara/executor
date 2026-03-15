@@ -123,3 +123,19 @@ export const typeSignatureFromSchemaJson = (
     return fallback;
   }
 };
+
+export const typeSignatureFromSchema = (
+  schema: unknown,
+  fallback: string,
+  maxLength: number = 220,
+): string => {
+  if (schema === undefined) {
+    return fallback;
+  }
+
+  try {
+    return schemaToTypeSignature(schema, maxLength);
+  } catch {
+    return fallback;
+  }
+};

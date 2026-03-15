@@ -236,10 +236,9 @@ export const compileOpenApiToolDefinitions = (
   );
 };
 
-export const openApiProviderDataJsonFromDefinition = (
+export const openApiProviderDataFromDefinition = (
   definition: OpenApiToolDefinition,
-): string =>
-  JSON.stringify({
+): typeof OpenApiToolProviderDataSchema.Type => ({
     kind: "openapi",
     toolId: definition.toolId,
     rawToolId: definition.rawToolId,

@@ -74,8 +74,8 @@ export const GoogleDiscoveryManifestMethodSchema = Schema.Struct({
   scopes: Schema.Array(Schema.String),
   supportsMediaUpload: Schema.Boolean,
   supportsMediaDownload: Schema.Boolean,
-  inputSchemaJson: Schema.optional(Schema.String),
-  outputSchemaJson: Schema.optional(Schema.String),
+  inputSchema: Schema.optional(Schema.Unknown),
+  outputSchema: Schema.optional(Schema.Unknown),
 });
 
 export const GoogleDiscoverySchemaRefTableSchema = Schema.Record({

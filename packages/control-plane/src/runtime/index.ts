@@ -33,9 +33,9 @@ import { LocalToolRuntimeLoaderLive } from "./local-tools";
 import { synchronizeLocalWorkspaceState } from "./local-workspace-sync";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
 import { RuntimeSourceStoreLive } from "./source-store";
-import { RuntimeSourceRecipeStoreLive } from "./source-recipes-runtime";
+import { RuntimeSourceCatalogStoreLive } from "./source-catalog-runtime";
 import { RuntimeSourceAuthMaterialLive } from "./source-auth-material";
-import { RuntimeSourceMaterializationLive } from "./source-materialization";
+import { RuntimeSourceCatalogSyncLive } from "./source-catalog-sync";
 import {
   RuntimeSourceAuthServiceLive,
 } from "./source-auth-service";
@@ -121,7 +121,7 @@ export const createRuntimeControlPlaneLayer = (
     Layer.provide(baseLayer),
   );
 
-  const sourceRecipeStoreLayer = RuntimeSourceRecipeStoreLive.pipe(
+  const sourceCatalogStoreLayer = RuntimeSourceCatalogStoreLive.pipe(
     Layer.provide(Layer.mergeAll(baseLayer, sourceStoreLayer)),
   );
 
@@ -129,7 +129,7 @@ export const createRuntimeControlPlaneLayer = (
     Layer.provide(Layer.mergeAll(baseLayer, secretMaterialLayer)),
   );
 
-  const sourceMaterializationLayer = RuntimeSourceMaterializationLive.pipe(
+  const sourceCatalogSyncLayer = RuntimeSourceCatalogSyncLive.pipe(
     Layer.provide(
       Layer.mergeAll(baseLayer, secretMaterialLayer, sourceAuthMaterialLayer),
     ),
@@ -143,7 +143,7 @@ export const createRuntimeControlPlaneLayer = (
         baseLayer,
         secretMaterialLayer,
         sourceStoreLayer,
-        sourceMaterializationLayer,
+        sourceCatalogSyncLayer,
       ),
     ),
   );
@@ -156,9 +156,9 @@ export const createRuntimeControlPlaneLayer = (
         baseLayer,
         secretMaterialLayer,
         sourceAuthMaterialLayer,
-        sourceMaterializationLayer,
+        sourceCatalogSyncLayer,
         sourceAuthLayer,
-        sourceRecipeStoreLayer,
+        sourceCatalogStoreLayer,
         localToolRuntimeLayer,
       ),
     ),
@@ -169,8 +169,8 @@ export const createRuntimeControlPlaneLayer = (
     secretMaterialLayer,
     sourceStoreLayer,
     sourceAuthMaterialLayer,
-    sourceMaterializationLayer,
-    sourceRecipeStoreLayer,
+    sourceCatalogSyncLayer,
+    sourceCatalogStoreLayer,
     localToolRuntimeLayer,
     sourceAuthLayer,
     executionResolverLayer,

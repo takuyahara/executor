@@ -90,6 +90,18 @@ const asStringArray = (value: unknown): ReadonlyArray<string> =>
     })
     : [];
 
+const parseJson = (value: string | undefined): unknown | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+};
+
 const contentHash = (value: string): string =>
   sha256Hex(value);
 
@@ -384,17 +396,29 @@ const manifestMethodFromDiscoveryMethod = (input: {
     ...(methodRequestSchemaJson({
       method: input.method,
       topLevelSchemas: input.topLevelSchemas,
-    }) ? { inputSchemaJson: methodRequestSchemaJson({
-      method: input.method,
-      topLevelSchemas: input.topLevelSchemas,
-    }) } : {}),
+    })
+      ? {
+        inputSchema: parseJson(
+          methodRequestSchemaJson({
+            method: input.method,
+            topLevelSchemas: input.topLevelSchemas,
+          }),
+        ),
+      }
+      : {}),
     ...(methodResponseSchemaJson({
       method: input.method,
       topLevelSchemas: input.topLevelSchemas,
-    }) ? { outputSchemaJson: methodResponseSchemaJson({
-      method: input.method,
-      topLevelSchemas: input.topLevelSchemas,
-    }) } : {}),
+    })
+      ? {
+        outputSchema: parseJson(
+          methodResponseSchemaJson({
+            method: input.method,
+            topLevelSchemas: input.topLevelSchemas,
+          }),
+        ),
+      }
+      : {}),
   };
 };
 

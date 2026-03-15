@@ -1,21 +1,15 @@
-import { typeSignatureFromSchemaJson } from "@executor/codemode-core";
+import { typeSignatureFromSchema } from "@executor/codemode-core";
 
 import type {
   OpenApiExample,
+  OpenApiInvocationPayload,
   OpenApiToolDocumentation,
+  OpenApiToolProviderData,
 } from "./openapi-types";
 import {
-  openApiProviderDataJsonFromDefinition,
+  openApiProviderDataFromDefinition,
   type OpenApiToolDefinition,
 } from "./openapi-definitions";
-
-const parseJson = (value: string): unknown | undefined => {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return undefined;
-  }
-};
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -32,33 +26,62 @@ const isStrictEmptyObjectSchema = (value: unknown): boolean => {
   return Object.keys(properties).length === 0 && schema.additionalProperties === false;
 };
 
-export const openApiOutputTypeSignatureFromSchemaJson = (
-  schemaJson: string | undefined,
+export const openApiOutputTypeSignatureFromSchema = (
+  schema: unknown,
   maxLength: number = 320,
  ): string => {
-  if (!schemaJson) {
+  if (schema === undefined || schema === null) {
     return "void";
   }
 
-  const parsed = parseJson(schemaJson);
-  if (parsed === undefined) {
-    return "unknown";
-  }
-
-  if (isStrictEmptyObjectSchema(parsed)) {
+  if (isStrictEmptyObjectSchema(schema)) {
     return "{}";
   }
 
-  return typeSignatureFromSchemaJson(schemaJson, "unknown", maxLength);
+  return typeSignatureFromSchema(schema, "unknown", maxLength);
 };
 
 const firstExample = (
   examples: ReadonlyArray<OpenApiExample> | undefined,
 ): OpenApiExample | undefined => examples?.[0];
 
-const buildExampleInputJson = (
+const fallbackInputSchemaFromInvocation = (
+  invocation: OpenApiInvocationPayload,
+): Record<string, unknown> | undefined => {
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+
+  for (const parameter of invocation.parameters) {
+    properties[parameter.name] = {
+      type: "string",
+    };
+    if (parameter.required) {
+      required.push(parameter.name);
+    }
+  }
+
+  if (invocation.requestBody) {
+    properties.body = {
+      type: "object",
+    };
+    if (invocation.requestBody.required) {
+      required.push("body");
+    }
+  }
+
+  return Object.keys(properties).length > 0
+    ? {
+      type: "object",
+      properties,
+      ...(required.length > 0 ? { required } : {}),
+      additionalProperties: false,
+    }
+    : undefined;
+};
+
+const buildExampleInput = (
   documentation: OpenApiToolDocumentation | undefined,
-): string | undefined => {
+): Record<string, unknown> | undefined => {
   if (!documentation) {
     return undefined;
   }
@@ -71,52 +94,51 @@ const buildExampleInputJson = (
       continue;
     }
 
-    const parsedValue = parseJson(example.valueJson);
-    if (parsedValue !== undefined) {
-      input[parameter.name] = parsedValue;
-    }
+    input[parameter.name] = JSON.parse(example.valueJson) as unknown;
   }
 
   const requestBodyExample = firstExample(documentation.requestBody?.examples);
   if (requestBodyExample) {
-    const parsedValue = parseJson(requestBodyExample.valueJson);
-    if (parsedValue !== undefined) {
-      input.body = parsedValue;
-    }
+    input.body = JSON.parse(requestBodyExample.valueJson) as unknown;
   }
 
-  return Object.keys(input).length > 0 ? JSON.stringify(input) : undefined;
+  return Object.keys(input).length > 0 ? input : undefined;
 };
 
-const buildExampleOutputJson = (
+const buildExampleOutput = (
   documentation: OpenApiToolDocumentation | undefined,
-): string | undefined => firstExample(documentation?.response?.examples)?.valueJson;
+): unknown | undefined => {
+  const example = firstExample(documentation?.response?.examples)?.valueJson;
+  return example ? JSON.parse(example) as unknown : undefined;
+};
 
 export type OpenApiToolPresentation = {
   inputType: string;
   outputType: string;
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
-  exampleInputJson?: string;
-  exampleOutputJson?: string;
-  providerDataJson: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  exampleInput?: unknown;
+  exampleOutput?: unknown;
+  providerData: OpenApiToolProviderData;
 };
 
 export const buildOpenApiToolPresentation = (input: {
   definition: OpenApiToolDefinition;
 }): OpenApiToolPresentation => {
-  const inputSchemaJson = input.definition.typing?.inputSchemaJson;
-  const outputSchemaJson = input.definition.typing?.outputSchemaJson;
-  const exampleInputJson = buildExampleInputJson(input.definition.documentation);
-  const exampleOutputJson = buildExampleOutputJson(input.definition.documentation);
+  const inputSchema =
+    input.definition.typing?.inputSchema
+    ?? fallbackInputSchemaFromInvocation(input.definition.invocation);
+  const outputSchema = input.definition.typing?.outputSchema;
+  const exampleInput = buildExampleInput(input.definition.documentation);
+  const exampleOutput = buildExampleOutput(input.definition.documentation);
 
   return {
-    inputType: typeSignatureFromSchemaJson(inputSchemaJson, "unknown", Infinity),
-    outputType: openApiOutputTypeSignatureFromSchemaJson(outputSchemaJson, Infinity),
-    ...(inputSchemaJson ? { inputSchemaJson } : {}),
-    ...(outputSchemaJson ? { outputSchemaJson } : {}),
-    ...(exampleInputJson ? { exampleInputJson } : {}),
-    ...(exampleOutputJson ? { exampleOutputJson } : {}),
-    providerDataJson: openApiProviderDataJsonFromDefinition(input.definition),
+    inputType: typeSignatureFromSchema(inputSchema, "unknown", Infinity),
+    outputType: openApiOutputTypeSignatureFromSchema(outputSchema, Infinity),
+    ...(inputSchema !== undefined ? { inputSchema } : {}),
+    ...(outputSchema !== undefined ? { outputSchema } : {}),
+    ...(exampleInput !== undefined ? { exampleInput } : {}),
+    ...(exampleOutput !== undefined ? { exampleOutput } : {}),
+    providerData: openApiProviderDataFromDefinition(input.definition),
   };
 };

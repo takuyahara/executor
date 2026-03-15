@@ -326,13 +326,12 @@ describe("codemode-core", () => {
               .slice(0, limit)
               .map((descriptor) => ({
                 ...descriptor,
-                inputSchemaJson: includeSchemas ? descriptor.inputSchemaJson : undefined,
-                outputSchemaJson: includeSchemas ? descriptor.outputSchemaJson : undefined,
+                inputSchema: includeSchemas ? descriptor.inputSchema : undefined,
+                outputSchema: includeSchemas ? descriptor.outputSchema : undefined,
               })),
           ),
         getToolByPath: ({ path }) =>
           Effect.succeed(descriptors[path] ?? null),
-        getSchemaBundle: () => Effect.succeed(null),
         searchTools: () =>
           Effect.succeed([
             { path: asToolPath("source.issues.create"), score: 0.93 },
@@ -369,7 +368,7 @@ describe("codemode-core", () => {
               description: "Get repository details",
               inputType: "{ owner: string; repo: string }",
               outputType: "Repository",
-              inputSchemaJson: '{"type":"object"}',
+              inputSchema: { type: "object" },
             },
           },
           {
@@ -388,17 +387,6 @@ describe("codemode-core", () => {
             },
           },
         ],
-        getSchemaBundle: ({ id }) =>
-          Effect.succeed(
-            id === "bundle_1"
-              ? {
-                  id,
-                  kind: "json_schema_ref_map",
-                  hash: "hash_1",
-                  refsJson: "{}",
-                }
-              : null,
-          ),
       });
 
       const namespaces = yield* catalog.listNamespaces({ limit: 10 });
@@ -414,7 +402,7 @@ describe("codemode-core", () => {
         includeSchemas: false,
       });
       expect(listed[0]?.path).toBe("github.repos.getRepo");
-      expect(listed[0]?.inputSchemaJson).toBeUndefined();
+      expect(listed[0]?.inputSchema).toBeUndefined();
 
       const discovered = yield* catalog.searchTools({
         query: "repository issues",
@@ -426,10 +414,7 @@ describe("codemode-core", () => {
         path: asToolPath("github.repos.getRepo"),
         includeSchemas: true,
       });
-      expect(described?.inputSchemaJson).toContain('"type"');
-
-      const bundle = yield* catalog.getSchemaBundle({ id: "bundle_1" });
-      expect(bundle?.id).toBe("bundle_1");
+      expect(described?.inputSchema).toEqual({ type: "object" });
     }),
   );
 

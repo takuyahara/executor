@@ -2,8 +2,8 @@ type JsonObject = Record<string, unknown>;
 type RefHintValue = string | JsonObject;
 
 type DiscoveryTypingLike = {
-  inputSchemaJson?: string;
-  outputSchemaJson?: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
 };
 
 const isJsonObject = (value: unknown): value is JsonObject =>
@@ -92,50 +92,40 @@ const resolveSchemaNode = (
   return next;
 };
 
-export const resolveSchemaJsonWithRefHints = (
-  schemaJson: string | undefined,
+export const resolveSchemaWithRefHints = (
+  schema: unknown,
   refHintTable: Readonly<Record<string, RefHintValue>> | undefined,
-): string | null => {
-  if (!schemaJson) {
+): unknown | null => {
+  if (schema === undefined || schema === null) {
     return null;
   }
 
-  const parsedSchema = parseJson(schemaJson);
-  if (parsedSchema === null) {
-    return schemaJson;
-  }
-
   if (!refHintTable || Object.keys(refHintTable).length === 0) {
-    return schemaJson;
+    return schema;
   }
 
   const resolved = resolveSchemaNode(
-    parsedSchema,
+    schema,
     refHintTable,
     new Map<string, unknown>(),
     new Set<string>(),
   );
-
-  try {
-    return JSON.stringify(resolved);
-  } catch {
-    return schemaJson;
-  }
+  return resolved;
 };
 
 export const resolveTypingSchemasWithRefHints = (
   typing: DiscoveryTypingLike | undefined,
   refHintTable: Readonly<Record<string, RefHintValue>> | undefined,
 ): {
-  inputSchemaJson: string | null;
-  outputSchemaJson: string | null;
+  inputSchema: unknown | null;
+  outputSchema: unknown | null;
 } => ({
-  inputSchemaJson: resolveSchemaJsonWithRefHints(
-    typing?.inputSchemaJson,
+  inputSchema: resolveSchemaWithRefHints(
+    typing?.inputSchema,
     refHintTable,
   ),
-  outputSchemaJson: resolveSchemaJsonWithRefHints(
-    typing?.outputSchemaJson,
+  outputSchema: resolveSchemaWithRefHints(
+    typing?.outputSchema,
     refHintTable,
   ),
 });

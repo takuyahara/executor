@@ -82,13 +82,13 @@ export const EXECUTOR_SOURCES_ADD_OUTPUT_SIGNATURE = deriveSchemaTypeSignature(
   260,
 );
 
-export const EXECUTOR_SOURCES_ADD_INPUT_SCHEMA_JSON = JSON.stringify(
-  deriveSchemaJson(ExecutorAddSourceInputSchema) ?? {},
-);
+export const EXECUTOR_SOURCES_ADD_INPUT_SCHEMA = deriveSchemaJson(
+  ExecutorAddSourceInputSchema,
+) ?? {};
 
-export const EXECUTOR_SOURCES_ADD_OUTPUT_SCHEMA_JSON = JSON.stringify(
-  deriveSchemaJson(SourceSchema) ?? {},
-);
+export const EXECUTOR_SOURCES_ADD_OUTPUT_SCHEMA = deriveSchemaJson(
+  SourceSchema,
+) ?? {};
 
 export const EXECUTOR_SOURCES_ADD_HELP_LINES = [
   "Source add input shapes:",
@@ -437,8 +437,8 @@ export const createExecutorToolMap = (input: {
     metadata: {
       inputType: EXECUTOR_SOURCES_ADD_INPUT_HINT,
       outputType: EXECUTOR_SOURCES_ADD_OUTPUT_SIGNATURE,
-      inputSchemaJson: EXECUTOR_SOURCES_ADD_INPUT_SCHEMA_JSON,
-      outputSchemaJson: EXECUTOR_SOURCES_ADD_OUTPUT_SCHEMA_JSON,
+      inputSchema: EXECUTOR_SOURCES_ADD_INPUT_SCHEMA,
+      outputSchema: EXECUTOR_SOURCES_ADD_OUTPUT_SCHEMA,
       sourceKey: "executor",
       interaction: "auto",
     },

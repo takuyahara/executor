@@ -291,8 +291,8 @@ describe("openapi-tools", () => {
       const resolvedGet = resolveToolDefinition(tools["source.demo.repos.getRepo"]!);
       expect(resolvedGet.metadata?.sourceKey).toBe("api.demo");
       expect(resolvedGet.metadata?.providerKind).toBe("openapi");
-      expect(resolvedGet.metadata?.providerDataJson).toContain('"group":"repos"');
-      expect(resolvedGet.metadata?.inputSchemaJson).toBeDefined();
+      expect(resolvedGet.metadata?.providerData).toMatchObject({ group: "repos" });
+      expect(resolvedGet.metadata?.inputSchema).toBeDefined();
     }),
   );
 

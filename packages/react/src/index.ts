@@ -19,7 +19,6 @@ import type {
   SourceDiscoveryResult,
   SourceInspection,
   SourceInspectionDiscoverResult,
-  SourceInspectionSchemaBundle,
   SourceInspectionToolDetail,
   StartSourceOAuthPayload,
   StartSourceOAuthResult,
@@ -59,13 +58,6 @@ type SourceToolDetailKeyParts = readonly [
   Source["id"],
   string | null,
 ];
-type SourceSchemaBundleKeyParts = readonly [
-  boolean,
-  Source["workspaceId"],
-  string,
-  Source["id"],
-  string | null,
-];
 type SourceDiscoveryKeyParts = readonly [
   boolean,
   Source["workspaceId"],
@@ -86,7 +78,6 @@ type ActiveQueryCollections = {
   sources: Set<string>;
   inspections: Set<string>;
   toolDetails: Set<string>;
-  schemaBundles: Set<string>;
   discoveries: Set<string>;
 };
 
@@ -161,17 +152,6 @@ const encodeToolDetailKey = (
   toolPath: string | null,
 ): string =>
   encodeAtomKey([enabled, workspaceId, accountId, sourceId, toolPath] satisfies SourceToolDetailKeyParts);
-
-const encodeSchemaBundleKey = (
-  enabled: boolean,
-  workspaceId: Source["workspaceId"],
-  accountId: string,
-  sourceId: Source["id"],
-  schemaBundleId: string | null,
-): string =>
-  encodeAtomKey(
-    [enabled, workspaceId, accountId, sourceId, schemaBundleId] satisfies SourceSchemaBundleKeyParts,
-  );
 
 const encodeDiscoveryKey = (
   enabled: boolean,
@@ -367,25 +347,6 @@ const sourceInspectionToolAtom = Atom.family((key: string) => {
   ).pipe(Atom.keepAlive);
 });
 
-const sourceInspectionSchemaBundleAtom = Atom.family((key: string) => {
-  const [enabled, workspaceId, accountId, sourceId, schemaBundleId] = decodeAtomKey<SourceSchemaBundleKeyParts>(key);
-
-  return Atom.make(
-    enabled && schemaBundleId
-      ? controlPlaneRequest({
-            accountId,
-            execute: (client) => client.sources.inspectionSchemaBundle({
-              path: {
-                workspaceId,
-                sourceId,
-                schemaBundleId,
-              },
-            }),
-          })
-      : Effect.succeed<SourceInspectionSchemaBundle | null>(null),
-  ).pipe(Atom.keepAlive);
-});
-
 const sourceDiscoveryAtom = Atom.family((key: string) => {
   const [enabled, workspaceId, accountId, sourceId, query, limit] = decodeAtomKey<SourceDiscoveryKeyParts>(key);
 
@@ -547,7 +508,6 @@ const createActiveQueryCollections = (): ActiveQueryCollections => ({
   sources: new Set(),
   inspections: new Set(),
   toolDetails: new Set(),
-  schemaBundles: new Set(),
   discoveries: new Set(),
 });
 
@@ -599,13 +559,6 @@ const invalidateTrackedQueries = (
     const [enabled, workspaceId, accountId, sourceId] = decodeAtomKey<SourceToolDetailKeyParts>(key);
     if (enabled && targetMatches(target, workspaceId, accountId, sourceId)) {
       registry.refresh(sourceInspectionToolAtom(key));
-    }
-  });
-
-  activeQueries.schemaBundles.forEach((key) => {
-    const [enabled, workspaceId, accountId, sourceId] = decodeAtomKey<SourceSchemaBundleKeyParts>(key);
-    if (enabled && targetMatches(target, workspaceId, accountId, sourceId)) {
-      registry.refresh(sourceInspectionSchemaBundleAtom(key));
     }
   });
 
@@ -988,27 +941,6 @@ export const useSourceToolDetail = (
   const detail = useLoadableAtom(sourceInspectionToolAtom(key));
 
   return workspace.enabled ? detail : pendingLoadable(workspace.workspace);
-};
-
-export const useSourceSchemaBundle = (
-  sourceId: string,
-  schemaBundleId: string | null,
-): Loadable<SourceInspectionSchemaBundle | null> => {
-  const workspace = useWorkspaceRequestContext();
-  const requestedSourceId = workspace.enabled
-    ? (sourceId as Source["id"])
-    : PLACEHOLDER_SOURCE_ID;
-  const key = encodeSchemaBundleKey(
-    workspace.enabled,
-    workspace.workspaceId,
-    workspace.accountId,
-    requestedSourceId,
-    schemaBundleId,
-  );
-  useTrackActiveKey("schemaBundles", key, workspace.enabled && schemaBundleId !== null);
-  const schemaBundle = useLoadableAtom(sourceInspectionSchemaBundleAtom(key));
-
-  return workspace.enabled ? schemaBundle : pendingLoadable(workspace.workspace);
 };
 
 export const useSourceDiscovery = (input: {
