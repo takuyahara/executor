@@ -327,6 +327,7 @@ If you are exploring the repo, these are the directories that matter most:
 - `bun run release:beta` is the simplest beta flow. It bumps `apps/executor/package.json`, runs the local publish dry-run, commits, pushes the branch, pushes the matching tag, and lets GitHub Actions publish it.
 - `bun run release:beta:dry-run` prints the next beta version and the exact git actions without changing anything.
 - `bun run --cwd apps/executor release:publish` is the only supported publish command.
+- One-time npm setup: either configure npm trusted publishing for `RhysSullivan/executor` with the workflow file `.github/workflows/publish-executor-package.yml`, or add a GitHub Actions secret named `NPM_TOKEN` that can publish the `executor` package.
 - Stable releases use a normal semver like `1.2.3` and publish to npm under `latest`.
 - Beta releases use a prerelease semver like `1.3.0-beta.1` and publish to npm under `beta`.
 - Push a matching git tag such as `v1.2.3` or `v1.3.0-beta.1` to trigger `.github/workflows/publish-executor-package.yml`.
