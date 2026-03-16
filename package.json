@@ -26,12 +26,15 @@
     "docs:dev": "turbo run dev --filter=@executor/docs",
     "test": "turbo run test",
     "executor": "./apps/executor/bin/executor",
-    "release:beta:dry-run": "bun run --cwd apps/executor release:beta:dry-run",
-    "release:beta": "bun run --cwd apps/executor release:beta",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "release:pre:enter": "changeset pre enter beta",
+    "release:pre:exit": "changeset pre exit",
     "typecheck": "bun run --filter='*' typecheck",
     "knip": "knip"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "knip": "^5.85.0",
     "turbo": "^2.5.6",
     "typescript": "^5.9.3"

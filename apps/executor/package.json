@@ -29,8 +29,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "bun src/cli/main.ts",
-    "release:beta:dry-run": "bun src/distribution/release-beta.ts --dry-run",
-    "release:beta": "bun src/distribution/release-beta.ts",
     "release:publish:dry-run": "bun src/distribution/publish.ts --dry-run",
     "release:publish": "bun src/distribution/publish.ts"
   },
