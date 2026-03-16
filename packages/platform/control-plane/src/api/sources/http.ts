@@ -22,7 +22,7 @@ import {
   completeSourceCredentialSetup,
   getSourceCredentialInteraction,
   submitSourceCredentialInteraction,
-} from "../../runtime/local/local-operations";
+} from "../../runtime/local/operations";
 import { discoverSource } from "../../runtime/sources/source-discovery";
 import { hasSourceAdapterFamily } from "../../runtime/sources/source-adapters";
 import { RuntimeSourceAuthServiceTag } from "../../runtime/sources/source-auth-service";

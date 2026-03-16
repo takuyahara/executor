@@ -4,30 +4,30 @@ import * as Effect from "effect/Effect";
 import type {
   LoadedLocalExecutorConfig,
   ResolvedLocalWorkspaceContext,
-} from "../../local/local-config";
+} from "../../local/config";
 import {
   LocalExecutorConfigDecodeError,
   LocalFileSystemError,
   LocalWorkspaceStateDecodeError,
   RuntimeLocalWorkspaceMismatchError,
   RuntimeLocalWorkspaceUnavailableError,
-} from "../../local/local-errors";
+} from "../../local/errors";
 import {
   requireRuntimeLocalWorkspace,
   type RuntimeLocalWorkspaceState,
-} from "../../local/local-runtime-context";
+} from "../../local/runtime-context";
 import type {
   SourceArtifactStoreShape,
   WorkspaceStorageServices,
   WorkspaceConfigStoreShape,
   WorkspaceStateStoreShape,
-} from "../../local/local-storage";
+} from "../../local/storage";
 import {
   SourceArtifactStore,
   WorkspaceConfigStore,
   WorkspaceStateStore,
-} from "../../local/local-storage";
-import type { LocalWorkspaceState } from "../../local/local-workspace-state";
+} from "../../local/storage";
+import type { LocalWorkspaceState } from "../../local/workspace-state";
 import type { ControlPlaneStoreShape } from "../../store";
 
 export type RuntimeSourceStoreDeps = {

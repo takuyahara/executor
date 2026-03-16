@@ -25,7 +25,7 @@ import {
   operationErrors,
 } from "../policy/operation-errors";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "../store";
-import { RuntimeSourceCatalogSyncService } from "../catalog/source-catalog-sync";
+import { RuntimeSourceCatalogSyncService } from "../catalog/source/sync";
 import {
   RuntimeSourceStoreService,
 } from "./source-store";

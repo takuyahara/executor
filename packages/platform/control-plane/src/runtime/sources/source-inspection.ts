@@ -17,7 +17,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import { joinTypeNameSegments } from "../catalog/catalog-typescript";
-import { LocalSourceArtifactMissingError } from "../local/local-errors";
+import { LocalSourceArtifactMissingError } from "../local/errors";
 import { operationErrors } from "../policy/operation-errors";
 import { formatWithPrettier } from "../catalog/prettier-format";
 import {
@@ -25,7 +25,7 @@ import {
   expandCatalogTools,
   loadSourceWithCatalog,
   type LoadedSourceCatalogTool,
-} from "../catalog/source-catalog-runtime";
+} from "../catalog/source/runtime";
 import { RuntimeSourceStoreService } from "./source-store";
 
 const sourceInspectOps = {

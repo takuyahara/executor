@@ -46,7 +46,7 @@ import {
 import {
   expandCatalogToolByPath,
   type LoadedSourceCatalog,
-} from "../catalog/source-catalog-runtime";
+} from "../catalog/source/runtime";
 import { invokeIrTool } from "../execution/ir-execution";
 import {
   createGoogleDiscoveryCatalogSnapshot,

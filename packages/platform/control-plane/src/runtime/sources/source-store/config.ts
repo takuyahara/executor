@@ -6,12 +6,12 @@ import type {
 } from "#schema";
 import { SourceIdSchema } from "#schema";
 
-import type { LoadedLocalExecutorConfig } from "../../local/local-config";
-import { LocalUnsupportedSourceKindError } from "../../local/local-errors";
+import type { LoadedLocalExecutorConfig } from "../../local/config";
+import { LocalUnsupportedSourceKindError } from "../../local/errors";
 import {
   fromConfigSecretProviderId,
   toConfigSecretProviderId,
-} from "../../local/local-config-secrets";
+} from "../../local/config-secrets";
 import { slugify } from "../slug";
 
 export const trimOrNull = (value: string | null | undefined): string | null => {

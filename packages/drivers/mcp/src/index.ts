@@ -2,7 +2,7 @@ export {
   createSdkMcpConnector,
   type CreateSdkMcpConnectorInput,
   type McpTransportPreference,
-} from "./mcp-connection";
+} from "./connection";
 export {
   McpToolsError,
   createMcpConnectorFromClient,
@@ -16,7 +16,7 @@ export {
   type McpDiscoveryElicitationContext,
   type McpToolManifest,
   type McpToolManifestEntry,
-} from "./mcp-tools";
+} from "./tools";
 export type {
   McpListToolsMetadata,
   McpServerCapabilities,
@@ -24,4 +24,4 @@ export type {
   McpServerMetadata,
   McpToolAnnotations,
   McpToolExecution,
-} from "./mcp-manifest";
+} from "./manifest";

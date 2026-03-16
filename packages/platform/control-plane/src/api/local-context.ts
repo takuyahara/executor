@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect";
 
 import {
   RuntimeLocalWorkspaceMismatchError,
-} from "../runtime/local/local-errors";
-import { requireRuntimeLocalWorkspace } from "../runtime/local/local-runtime-context";
+} from "../runtime/local/errors";
+import { requireRuntimeLocalWorkspace } from "../runtime/local/runtime-context";
 import { ControlPlaneForbiddenError } from "./errors";
 
 export const resolveRequestedLocalWorkspace = (

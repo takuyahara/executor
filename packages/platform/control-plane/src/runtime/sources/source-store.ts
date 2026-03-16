@@ -12,8 +12,8 @@ import {
   type WorkspaceStorageServices,
   WorkspaceConfigStore,
   WorkspaceStateStore,
-} from "../local/local-storage";
-import { RuntimeLocalWorkspaceService } from "../local/local-runtime-context";
+} from "../local/storage";
+import { RuntimeLocalWorkspaceService } from "../local/runtime-context";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "../store";
 import {
   loadRuntimeSourceStoreDeps,

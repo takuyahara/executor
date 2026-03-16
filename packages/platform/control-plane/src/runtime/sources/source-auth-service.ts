@@ -45,12 +45,12 @@ import {
   LiveExecutionManagerService,
   sanitizePersistedElicitationResponse,
   type LiveExecutionManager,
-} from "../execution/live-execution";
+} from "../execution/live";
 import {
   getRuntimeLocalWorkspaceOption,
   provideOptionalRuntimeLocalWorkspace,
   type RuntimeLocalWorkspaceState,
-} from "../local/local-runtime-context";
+} from "../local/runtime-context";
 import {
   exchangeMcpOAuthAuthorizationCode,
   startMcpOAuthAuthorization,
@@ -86,7 +86,7 @@ import {
 import {
   RuntimeSourceCatalogSyncService,
   type RuntimeSourceCatalogSyncShape,
-} from "../catalog/source-catalog-sync";
+} from "../catalog/source/sync";
 import {
   buildOAuth2AuthorizationUrl,
   createPkceCodeVerifier,
@@ -100,7 +100,7 @@ import {
   type RuntimeSourceStore,
   RuntimeSourceStoreService,
 } from "./source-store";
-import type { WorkspaceStorageServices } from "../local/local-storage";
+import type { WorkspaceStorageServices } from "../local/storage";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "../store";
 
 const trimOrNull = (value: string | null | undefined): string | null => {

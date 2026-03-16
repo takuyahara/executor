@@ -1,22 +1,22 @@
 export {
   fetchOpenApiDocument,
   parseOpenApiDocument,
-} from "./openapi-document";
+} from "./document";
 export {
   OpenApiExtractionError,
   extractOpenApiManifest,
-} from "./openapi-extraction";
+} from "./extraction";
 export {
   compileOpenApiToolDefinitions,
   openApiProviderDataFromDefinition,
   OpenApiToolDefinitionSchema,
   type OpenApiToolDefinition,
-} from "./openapi-definitions";
+} from "./definitions";
 export {
   buildOpenApiToolPresentation,
   openApiOutputTypeSignatureFromSchema,
   type OpenApiToolPresentation,
-} from "./openapi-tool-presentation";
+} from "./tool-presentation";
 export {
   httpBodyModeFromContentType,
   isJsonMediaType,
@@ -31,14 +31,14 @@ export {
   type SerializedOpenApiRequestBody,
   type SerializedOpenApiParameterValue,
   type SerializedOpenApiQueryEntry,
-} from "./openapi-http-serialization";
+} from "./http-serialization";
 export {
   OpenApiToolInvocationError,
   createOpenApiToolFromDefinition,
   createOpenApiToolsFromManifest,
   createOpenApiToolsFromSpec,
-} from "./openapi-tools";
-export { resolveSchemaWithRefHints, resolveTypingSchemasWithRefHints } from "./openapi-schema-refs";
+} from "./tools";
+export { resolveSchemaWithRefHints, resolveTypingSchemasWithRefHints } from "./schema-refs";
 export {
   OPEN_API_HTTP_METHODS,
   OPEN_API_PARAMETER_LOCATIONS,
@@ -89,11 +89,11 @@ export {
   type OpenApiSecuritySchemeType,
   type OpenApiOAuthFlow,
   type OpenApiSecurityScheme,
-} from "./openapi-types";
+} from "./types";
 export type {
   OpenApiExample,
   OpenApiParameterDocumentation,
   OpenApiRequestBodyDocumentation,
   OpenApiResponseDocumentation,
   OpenApiToolDocumentation,
-} from "./openapi-types";
+} from "./types";

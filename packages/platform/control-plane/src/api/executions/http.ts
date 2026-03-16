@@ -4,7 +4,7 @@ import {
   createExecution,
   getExecution,
   resumeExecution,
-} from "../../runtime/execution/execution-service";
+} from "../../runtime/execution/service";
 
 import { ControlPlaneApi } from "../api";
 import { resolveRequestedLocalWorkspace } from "../local-context";

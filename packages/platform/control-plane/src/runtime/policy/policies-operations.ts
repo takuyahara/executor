@@ -15,23 +15,23 @@ import * as Effect from "effect/Effect";
 
 import {
   requireRuntimeLocalWorkspace,
-} from "../local/local-runtime-context";
+} from "../local/runtime-context";
 import type {
   WorkspaceStorageServices,
   WorkspaceConfigStoreShape,
   WorkspaceStateStoreShape,
-} from "../local/local-storage";
+} from "../local/storage";
 import {
   WorkspaceConfigStore,
   WorkspaceStateStore,
-} from "../local/local-storage";
-import type { ResolvedLocalWorkspaceContext } from "../local/local-config";
+} from "../local/storage";
+import type { ResolvedLocalWorkspaceContext } from "../local/config";
 import {
   type LocalWorkspaceState,
-} from "../local/local-workspace-state";
+} from "../local/workspace-state";
 import {
   derivePolicyConfigKey,
-} from "../local/local-workspace-sync";
+} from "../local/workspace-sync";
 import {
   type OperationErrors,
   operationErrors,

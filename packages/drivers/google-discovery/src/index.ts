@@ -1,14 +1,14 @@
 export {
   extractGoogleDiscoveryManifest,
   compileGoogleDiscoveryToolDefinitions,
-} from "./google-discovery-document";
+} from "./document";
 export {
   buildGoogleDiscoveryToolPresentation,
   createGoogleDiscoveryToolFromDefinition,
   decodeGoogleDiscoverySchemaRefTableJson,
   googleDiscoveryProviderDataFromDefinition,
   type CreateGoogleDiscoveryToolFromDefinitionInput,
-} from "./google-discovery-tools";
+} from "./tools";
 export {
   GoogleDiscoveryHttpMethodSchema,
   GoogleDiscoveryParameterLocationSchema,
@@ -27,4 +27,4 @@ export {
   type GoogleDiscoveryToolDefinition,
   type GoogleDiscoverySchemaRefTable,
   type GoogleDiscoveryToolManifest,
-} from "./google-discovery-types";
+} from "./types";

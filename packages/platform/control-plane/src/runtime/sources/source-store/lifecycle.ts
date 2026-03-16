@@ -6,7 +6,7 @@ import {
   clearProviderGrantOrphanedAt,
   markProviderGrantOrphanedIfUnused,
 } from "../../auth/provider-grant-lifecycle";
-import type { LocalWorkspaceState } from "../../local/local-workspace-state";
+import type { LocalWorkspaceState } from "../../local/workspace-state";
 import {
   stableSourceCatalogId,
   stableSourceCatalogRevisionId,

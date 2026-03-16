@@ -33,7 +33,7 @@ import type {
   ParameterSymbol,
   Scope,
 } from "@executor/ir/model";
-import type { LoadedSourceCatalogToolIndexEntry } from "../catalog/source-catalog-runtime";
+import type { LoadedSourceCatalogToolIndexEntry } from "../catalog/source/runtime";
 import type { ResolvedSourceAuthMaterial } from "../auth/source-auth-material";
 
 const asObject = (value: unknown): Record<string, unknown> =>

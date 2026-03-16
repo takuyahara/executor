@@ -26,7 +26,7 @@ import { invokeIrTool } from "../../execution/ir-execution";
 import {
   expandCatalogToolByPath,
   type LoadedSourceCatalog,
-} from "../../catalog/source-catalog-runtime";
+} from "../../catalog/source/runtime";
 import { snapshotFromSourceCatalogSyncResult } from "../catalog-sync-result";
 import { createSourceFromPayload } from "../source-definitions";
 import { mcpSourceAdapter } from "./mcp";

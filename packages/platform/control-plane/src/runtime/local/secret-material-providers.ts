@@ -17,9 +17,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import { resolveConfigRelativePath } from "./local-config";
-import { fromConfigSecretProviderId } from "./local-config-secrets";
-import { getRuntimeLocalWorkspaceOption } from "./local-runtime-context";
+import { resolveConfigRelativePath } from "./config";
+import { fromConfigSecretProviderId } from "./config-secrets";
+import { getRuntimeLocalWorkspaceOption } from "./runtime-context";
 import { ControlPlaneStore } from "../store";
 import type { ControlPlaneStoreShape } from "../store";
 

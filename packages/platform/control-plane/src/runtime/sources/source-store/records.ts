@@ -10,8 +10,8 @@ import * as Effect from "effect/Effect";
 
 import { sourceAuthFromAuthArtifact } from "../../auth/auth-artifacts";
 import { authArtifactSecretMaterialRefs } from "../../auth/auth-artifacts";
-import { refreshWorkspaceSourceTypeDeclarationsInBackground } from "../../catalog/source-type-declarations";
-import type { LoadedLocalExecutorConfig } from "../../local/local-config";
+import { refreshWorkspaceSourceTypeDeclarationsInBackground } from "../../catalog/source/type-declarations";
+import type { LoadedLocalExecutorConfig } from "../../local/config";
 import {
   LocalConfiguredSourceNotFoundError,
   LocalExecutorConfigDecodeError,
@@ -19,8 +19,8 @@ import {
   LocalWorkspaceStateDecodeError,
   RuntimeLocalWorkspaceMismatchError,
   RuntimeLocalWorkspaceUnavailableError,
-} from "../../local/local-errors";
-import type { LocalWorkspaceState } from "../../local/local-workspace-state";
+} from "../../local/errors";
+import type { LocalWorkspaceState } from "../../local/workspace-state";
 import { getSourceAdapter } from "../source-adapters";
 import {
   resolveRuntimeLocalWorkspaceFromDeps,

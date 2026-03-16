@@ -7,8 +7,8 @@ import * as Option from "effect/Option";
 import { SecretMaterialIdSchema } from "#schema";
 import {
   getLocalInstallation,
-} from "../../runtime/local/local-operations";
-import { requireRuntimeLocalWorkspace } from "../../runtime/local/local-runtime-context";
+} from "../../runtime/local/operations";
+import { requireRuntimeLocalWorkspace } from "../../runtime/local/runtime-context";
 import {
   createDefaultSecretMaterialDeleter,
   createDefaultSecretMaterialStorer,

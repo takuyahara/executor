@@ -8,35 +8,35 @@ import { NodeFileSystem } from "@effect/platform-node";
 import { type ControlPlaneApiRuntimeContext } from "#api";
 import type { LocalInstallation } from "#schema";
 
-import { type ResolveExecutionEnvironment } from "./execution/execution-state";
+import { type ResolveExecutionEnvironment } from "./execution/state";
 import {
   createLiveExecutionManager,
   LiveExecutionManagerService,
-} from "./execution/live-execution";
+} from "./execution/live";
 import {
   createLocalControlPlanePersistence,
   type LocalControlPlanePersistence,
-} from "./local/local-control-plane-store";
+} from "./local/control-plane-store";
 
 import {
   resolveLocalWorkspaceContext,
-} from "./local/local-config";
+} from "./local/config";
 import {
   LocalStorageLive,
   LocalInstallationStore,
   LocalWorkspaceConfigStore,
-} from "./local/local-storage";
+} from "./local/storage";
 import {
   type RuntimeLocalWorkspaceState,
   RuntimeLocalWorkspaceLive,
-} from "./local/local-runtime-context";
-import { LocalToolRuntimeLoaderLive } from "./local/local-tools";
-import { synchronizeLocalWorkspaceState } from "./local/local-workspace-sync";
+} from "./local/runtime-context";
+import { LocalToolRuntimeLoaderLive } from "./local/tools";
+import { synchronizeLocalWorkspaceState } from "./local/workspace-sync";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
 import { RuntimeSourceStoreLive } from "./sources/source-store";
-import { RuntimeSourceCatalogStoreLive } from "./catalog/source-catalog-runtime";
+import { RuntimeSourceCatalogStoreLive } from "./catalog/source/runtime";
 import { RuntimeSourceAuthMaterialLive } from "./auth/source-auth-material";
-import { RuntimeSourceCatalogSyncLive } from "./catalog/source-catalog-sync";
+import { RuntimeSourceCatalogSyncLive } from "./catalog/source/sync";
 import {
   RuntimeSourceAuthServiceLive,
 } from "./sources/source-auth-service";
@@ -44,26 +44,26 @@ import type { ResolveSecretMaterial } from "./local/secret-material-providers";
 import { SecretMaterialLive } from "./local/secret-material-providers";
 import {
   RuntimeExecutionResolverLive,
-} from "./execution/workspace-execution-environment";
+} from "./execution/workspace/environment";
 
-export * from "./execution/execution-state";
+export * from "./execution/state";
 export * from "./sources/executor-tools";
-export * from "./execution/live-execution";
-export * from "./local/local-config";
-export * from "./local/local-installation";
-export * from "./local/local-storage";
-export * from "./local/local-source-artifacts";
-export * from "./local/local-tools";
+export * from "./execution/live";
+export * from "./local/config";
+export * from "./local/installation";
+export * from "./local/storage";
+export * from "./local/source-artifacts";
+export * from "./local/tools";
 export * from "./catalog/schema-type-signature";
 export * from "./sources/source-auth-service";
 export * from "./local/secret-material-providers";
 export * from "./sources/source-credential-interactions";
 export * from "./sources/source-adapters/mcp";
 export * from "./store";
-export * from "./execution/workspace-execution-environment";
+export * from "./execution/workspace/environment";
 export * from "./sources/source-inspection";
 export * from "./sources/source-discovery";
-export * from "./execution/execution-service";
+export * from "./execution/service";
 
 export type RuntimeControlPlaneOptions = {
   executionResolver?: ResolveExecutionEnvironment;
