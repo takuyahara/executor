@@ -16,7 +16,12 @@
 
 # Executor
 .executor-v2/
-.executor/
+.executor/*
+!.executor/executor.json
+!.executor/executor.jsonc
+.executor/artifacts/
+.executor/state/
+.executor/types/
 
 # Cloudflare Workers local state
 **/.wrangler/
