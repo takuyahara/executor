@@ -35,9 +35,15 @@ const makeRuntime = Effect.gen(function* () {
   const workspaceRoot = yield* fs.makeTempDirectoryScoped({
     prefix: "executor-control-plane-runtime-",
   });
+  const homeConfigPath = join(workspaceRoot, ".executor-home.jsonc");
+  const homeStateDirectory = join(workspaceRoot, ".executor-home-state");
 
   return yield* Effect.acquireRelease(
-    createControlPlaneRuntime({ workspaceRoot }),
+    createControlPlaneRuntime({
+      workspaceRoot,
+      homeConfigPath,
+      homeStateDirectory,
+    }),
     (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),
   );
 }).pipe(Effect.provide(NodeFileSystem.layer));
@@ -132,9 +138,13 @@ describe("control-plane-runtime", () => {
       const workspaceRoot = yield* fs.makeTempDirectoryScoped({
         prefix: "executor-local-config-runtime-",
       });
+      const homeConfigPath = join(workspaceRoot, ".executor-home.jsonc");
+      const homeStateDirectory = join(workspaceRoot, ".executor-home-state");
       const runtime = yield* Effect.acquireRelease(
         createControlPlaneRuntime({
           workspaceRoot,
+          homeConfigPath,
+          homeStateDirectory,
         }),
         (createdRuntime) => Effect.promise(() => createdRuntime.close()).pipe(Effect.orDie),
       );
@@ -355,6 +365,107 @@ describe("control-plane-runtime", () => {
       expect(storedInteraction.value.responseJson).toContain("\"authKind\":\"bearer\"");
       expect(storedInteraction.value.responseJson).not.toContain("tokenRef");
       expect(storedInteraction.value.responseJson).not.toContain("ghp_local_test_token");
+    }),
+  );
+
+  it.scoped("returns an empty inspection bundle for auth-required sources without a catalog artifact", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const installation = runtime.localInstallation;
+      const sourceId = SourceIdSchema.make("googleapis");
+      const now = Date.now();
+
+      const localSource = yield* createSourceFromPayload({
+        workspaceId: installation.workspaceId,
+        sourceId,
+        payload: {
+          name: "Google Drive",
+          kind: "google_discovery",
+          endpoint: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+          status: "auth_required",
+          enabled: true,
+          namespace: "googleapis",
+          importAuthPolicy: "reuse_runtime",
+          binding: {
+            service: "drive",
+            version: "v3",
+            discoveryUrl: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+            scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+          },
+          importAuth: { kind: "none" },
+          auth: { kind: "none" },
+        },
+        now,
+      }).pipe(Effect.orDie);
+      yield* persistSource(runtime.persistence.rows, localSource, {
+        actorAccountId: installation.accountId,
+      }).pipe((effect) => provideControlPlaneRuntime(effect, runtime), Effect.orDie);
+
+      const inspection = yield* withControlPlaneClient(
+        { runtime, accountId: installation.accountId },
+        (client) =>
+          client.sources.inspection({
+            path: {
+              workspaceId: installation.workspaceId,
+              sourceId,
+            },
+          }),
+      );
+
+      expect(inspection.source.id).toBe(sourceId);
+      expect(inspection.source.status).toBe("auth_required");
+      expect(inspection.toolCount).toBe(0);
+      expect(inspection.tools).toEqual([]);
+    }),
+  );
+
+  it.scoped("still fails inspection when a connected source is missing its catalog artifact", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const installation = runtime.localInstallation;
+      const sourceId = SourceIdSchema.make("googleapis");
+      const now = Date.now();
+
+      const localSource = yield* createSourceFromPayload({
+        workspaceId: installation.workspaceId,
+        sourceId,
+        payload: {
+          name: "Google Drive",
+          kind: "google_discovery",
+          endpoint: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+          status: "connected",
+          enabled: true,
+          namespace: "googleapis",
+          importAuthPolicy: "reuse_runtime",
+          binding: {
+            service: "drive",
+            version: "v3",
+            discoveryUrl: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+            scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+          },
+          importAuth: { kind: "none" },
+          auth: { kind: "none" },
+        },
+        now,
+      }).pipe(Effect.orDie);
+      yield* persistSource(runtime.persistence.rows, localSource, {
+        actorAccountId: installation.accountId,
+      }).pipe((effect) => provideControlPlaneRuntime(effect, runtime), Effect.orDie);
+
+      const error = yield* expectLeft(
+        withControlPlaneClient(
+          { runtime, accountId: installation.accountId },
+          (client) =>
+            client.sources.inspection({
+              path: {
+                workspaceId: installation.workspaceId,
+                sourceId,
+              },
+            }),
+        ),
+      );
+
+      expect(error.message).toContain("Catalog artifact missing for source googleapis");
     }),
   );
 

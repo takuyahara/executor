@@ -69,6 +69,8 @@ export type RuntimeControlPlaneOptions = {
   resolveSecretMaterial?: ResolveSecretMaterial;
   getLocalServerBaseUrl?: () => string | undefined;
   workspaceRoot?: string;
+  homeConfigPath?: string;
+  homeStateDirectory?: string;
 };
 
 const detailsFromCause = (cause: unknown): string =>
@@ -201,6 +203,8 @@ export const createControlPlaneRuntime = (
 
     const localWorkspaceContext = yield* resolveLocalWorkspaceContext({
       workspaceRoot: options.workspaceRoot,
+      homeConfigPath: options.homeConfigPath,
+      homeStateDirectory: options.homeStateDirectory,
     }).pipe(
       Effect.mapError(toLocalRuntimeBootstrapError),
       Effect.catchAll((error) =>

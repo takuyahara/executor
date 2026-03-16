@@ -28,6 +28,7 @@ const PROJECT_CONFIG_BASENAME = "executor.jsonc";
 const PROJECT_CONFIG_FALLBACK_BASENAME = "executor.json";
 const PROJECT_CONFIG_DIRECTORY = ".executor";
 const EXECUTOR_CONFIG_DIR_ENV = "EXECUTOR_CONFIG_DIR";
+const EXECUTOR_STATE_DIR_ENV = "EXECUTOR_STATE_DIR";
 
 const mapFileSystemError = (path: string, action: string) => (cause: unknown) =>
   new LocalFileSystemError({
@@ -69,6 +70,38 @@ const defaultExecutorConfigDirectory = (input: {
 
   return join(
     trimOrUndefined(env.XDG_CONFIG_HOME) ?? join(homeDirectory, ".config"),
+    "executor",
+  );
+};
+
+const defaultExecutorStateDirectory = (input: {
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  homeDirectory?: string;
+} = {}): string => {
+  const env = input.env ?? process.env;
+  const platform = input.platform ?? process.platform;
+  const homeDirectory = input.homeDirectory ?? homedir();
+  const explicitStateDirectory = trimOrUndefined(env[EXECUTOR_STATE_DIR_ENV]);
+
+  if (explicitStateDirectory) {
+    return explicitStateDirectory;
+  }
+
+  if (platform === "win32") {
+    return join(
+      trimOrUndefined(env.LOCALAPPDATA) ?? join(homeDirectory, "AppData", "Local"),
+      "Executor",
+      "State",
+    );
+  }
+
+  if (platform === "darwin") {
+    return join(homeDirectory, "Library", "Application Support", "Executor", "State");
+  }
+
+  return join(
+    trimOrUndefined(env.XDG_STATE_HOME) ?? join(homeDirectory, ".local", "state"),
     "executor",
   );
 };
@@ -120,6 +153,13 @@ export const resolveHomeConfigPath = (input: {
 
     return candidates[0]!;
   });
+
+export const resolveDefaultHomeStateDirectory = (input: {
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  homeDirectory?: string;
+} = {}): string =>
+  defaultExecutorStateDirectory(input);
 
 const formatJsoncParseErrors = (content: string, errors: readonly JsoncParseError[]): string => {
   const lines = content.split("\n");
@@ -313,6 +353,7 @@ export type ResolvedLocalWorkspaceContext = {
   configDirectory: string;
   projectConfigPath: string;
   homeConfigPath: string;
+  homeStateDirectory: string;
   artifactsDirectory: string;
   stateDirectory: string;
 };
@@ -328,6 +369,8 @@ export type LoadedLocalExecutorConfig = {
 export const resolveLocalWorkspaceContext = (input: {
   cwd?: string;
   workspaceRoot?: string;
+  homeConfigPath?: string;
+  homeStateDirectory?: string;
 } = {}): Effect.Effect<
   ResolvedLocalWorkspaceContext,
   LocalFileSystemError,
@@ -340,7 +383,12 @@ export const resolveLocalWorkspaceContext = (input: {
     );
     const workspaceName = basename(workspaceRoot) || "workspace";
     const projectConfigPath = yield* resolveProjectConfigPathEffect(workspaceRoot);
-    const homeConfigPath = yield* resolveHomeConfigPath();
+    const homeConfigPath = resolve(
+      input.homeConfigPath ?? (yield* resolveHomeConfigPath()),
+    );
+    const homeStateDirectory = resolve(
+      input.homeStateDirectory ?? resolveDefaultHomeStateDirectory(),
+    );
 
     return {
       cwd,
@@ -349,6 +397,7 @@ export const resolveLocalWorkspaceContext = (input: {
       configDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY),
       projectConfigPath,
       homeConfigPath,
+      homeStateDirectory,
       artifactsDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, "artifacts"),
       stateDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, "state"),
     };

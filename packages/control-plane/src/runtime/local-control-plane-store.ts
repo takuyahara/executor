@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   AuthArtifactSchema,
@@ -26,6 +26,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { ResolvedLocalWorkspaceContext } from "./local-config";
+import { deriveLocalInstallation } from "./local-installation";
 import {
   LocalFileSystemError,
   unknownLocalErrorDetails,
@@ -101,7 +102,13 @@ const sortByUpdatedAtAndIdDesc = <T extends { updatedAt: number; id: string }>(
 
 const localControlPlaneStatePath = (
   context: ResolvedLocalWorkspaceContext,
-): string => join(context.stateDirectory, LOCAL_CONTROL_PLANE_STATE_BASENAME);
+): string =>
+  join(
+    context.homeStateDirectory,
+    "workspaces",
+    deriveLocalInstallation(context).workspaceId,
+    LOCAL_CONTROL_PLANE_STATE_BASENAME,
+  );
 
 const readStateFromDisk = async (
   context: ResolvedLocalWorkspaceContext,
@@ -122,7 +129,10 @@ const writeStateToDisk = async (
   const path = localControlPlaneStatePath(context);
   await mkdir(dirname(path), { recursive: true });
   const tempPath = `${path}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
   await rename(tempPath, path);
 };
 

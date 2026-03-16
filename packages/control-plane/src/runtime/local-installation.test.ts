@@ -10,11 +10,15 @@ import { getOrProvisionLocalInstallation } from "./local-installation";
 import { resolveLocalWorkspaceContext } from "./local-config";
 
 const TEST_WORKSPACE_ROOT = mkdtempSync(join(tmpdir(), "executor-local-installation-"));
+const TEST_HOME_CONFIG_PATH = join(TEST_WORKSPACE_ROOT, ".executor-home.jsonc");
+const TEST_HOME_STATE_DIRECTORY = join(TEST_WORKSPACE_ROOT, ".executor-home-state");
 
 const makeRuntime = Effect.acquireRelease(
   createControlPlaneRuntime({
     localDataDir: ":memory:",
     workspaceRoot: TEST_WORKSPACE_ROOT,
+    homeConfigPath: TEST_HOME_CONFIG_PATH,
+    homeStateDirectory: TEST_HOME_STATE_DIRECTORY,
   }),
   (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),
 );
@@ -37,6 +41,8 @@ describe("local-installation", () => {
       const runtime = yield* makeRuntime;
       const context = yield* resolveLocalWorkspaceContext({
         workspaceRoot: TEST_WORKSPACE_ROOT,
+        homeConfigPath: TEST_HOME_CONFIG_PATH,
+        homeStateDirectory: TEST_HOME_STATE_DIRECTORY,
       });
 
       const first = runtime.localInstallation;

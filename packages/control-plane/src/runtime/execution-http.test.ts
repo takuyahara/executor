@@ -40,11 +40,25 @@ const makeExecutionResolver = () => {
 };
 
 const makeRuntime = Effect.acquireRelease(
-  createControlPlaneRuntime({
-    localDataDir: ":memory:",
-    workspaceRoot: mkdtempSync(join(tmpdir(), "executor-execution-http-")),
-    executionResolver: makeExecutionResolver(),
-  }),
+  Effect.sync(() => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "executor-execution-http-"));
+
+    return {
+      workspaceRoot,
+      homeConfigPath: join(workspaceRoot, ".executor-home.jsonc"),
+      homeStateDirectory: join(workspaceRoot, ".executor-home-state"),
+    };
+  }).pipe(
+    Effect.flatMap(({ workspaceRoot, homeConfigPath, homeStateDirectory }) =>
+      createControlPlaneRuntime({
+        localDataDir: ":memory:",
+        workspaceRoot,
+        homeConfigPath,
+        homeStateDirectory,
+        executionResolver: makeExecutionResolver(),
+      }),
+    ),
+  ),
   (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),
 );
 

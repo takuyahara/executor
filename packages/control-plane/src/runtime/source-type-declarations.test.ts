@@ -285,6 +285,7 @@ describe("source-type-declarations", () => {
       configDirectory: join(workspaceRoot, ".executor"),
       projectConfigPath: join(workspaceRoot, ".executor", "executor.jsonc"),
       homeConfigPath: join(workspaceRoot, ".executor-home.jsonc"),
+      homeStateDirectory: join(workspaceRoot, ".executor-home-state"),
       artifactsDirectory: join(workspaceRoot, ".executor", "artifacts"),
       stateDirectory: join(workspaceRoot, ".executor", "state"),
     };
@@ -338,6 +339,7 @@ describe("source-type-declarations", () => {
       configDirectory: join(workspaceRoot, ".executor"),
       projectConfigPath: join(workspaceRoot, ".executor", "executor.jsonc"),
       homeConfigPath: join(workspaceRoot, ".executor-home.jsonc"),
+      homeStateDirectory: join(workspaceRoot, ".executor-home-state"),
       artifactsDirectory: join(workspaceRoot, ".executor", "artifacts"),
       stateDirectory: join(workspaceRoot, ".executor", "state"),
     };
@@ -375,6 +377,7 @@ describe("source-type-declarations", () => {
       configDirectory: join(workspaceRoot, ".executor"),
       projectConfigPath: join(workspaceRoot, ".executor", "executor.jsonc"),
       homeConfigPath: join(workspaceRoot, ".executor-home.jsonc"),
+      homeStateDirectory: join(workspaceRoot, ".executor-home-state"),
       artifactsDirectory: join(workspaceRoot, ".executor", "artifacts"),
       stateDirectory: join(workspaceRoot, ".executor", "state"),
     };
@@ -488,6 +491,7 @@ describe("source-type-declarations", () => {
       configDirectory: join(workspaceRoot, ".executor"),
       projectConfigPath: join(workspaceRoot, ".executor", "executor.jsonc"),
       homeConfigPath: join(workspaceRoot, ".executor-home.jsonc"),
+      homeStateDirectory: join(workspaceRoot, ".executor-home-state"),
       artifactsDirectory: join(workspaceRoot, ".executor", "artifacts"),
       stateDirectory: join(workspaceRoot, ".executor", "state"),
     };

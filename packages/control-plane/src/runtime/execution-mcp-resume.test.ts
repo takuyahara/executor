@@ -283,10 +283,13 @@ describe("execution-mcp-resume", () => {
   it.scoped("keeps live form elicitation resumable without replaying the run", () =>
     Effect.gen(function* () {
       const mcpServer = yield* makeFormElicitationServer;
+      const workspaceRoot = mkdtempSync(join(tmpdir(), "executor-execution-mcp-resume-"));
       const runtime = yield* Effect.acquireRelease(
         createControlPlaneRuntime({
           localDataDir: ":memory:",
-          workspaceRoot: mkdtempSync(join(tmpdir(), "executor-execution-mcp-resume-")),
+          workspaceRoot,
+          homeConfigPath: join(workspaceRoot, ".executor-home.jsonc"),
+          homeStateDirectory: join(workspaceRoot, ".executor-home-state"),
           executionResolver: makeMcpExecutionResolver(mcpServer.endpoint),
         }),
         (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),

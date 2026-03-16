@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import {
   loadLocalExecutorConfig,
   resolveDefaultHomeConfigCandidates,
+  resolveDefaultHomeStateDirectory,
   resolveHomeConfigPath,
   resolveLocalWorkspaceContext,
 } from "./local-config";
@@ -51,6 +52,7 @@ describe("local-config", () => {
       expect(loaded.config?.sources?.github?.connection.endpoint).toBe(
         "https://api.github.com",
       );
+      expect(context.homeStateDirectory).toContain("executor");
     }).pipe(Effect.provide(NodeFileSystem.layer)),
   );
 
@@ -102,6 +104,24 @@ describe("local-config", () => {
       "/Users/alice/Library/Application Support/Executor/executor.jsonc",
     );
     expect(macCandidates[2]).toBe("/Users/alice/.config/executor/executor.jsonc");
+  });
+
+  it("uses platform-standard home state directories", () => {
+    const linuxStateDirectory = resolveDefaultHomeStateDirectory({
+      platform: "linux",
+      homeDirectory: "/home/alice",
+      env: {},
+    });
+    const macStateDirectory = resolveDefaultHomeStateDirectory({
+      platform: "darwin",
+      homeDirectory: "/Users/alice",
+      env: {},
+    });
+
+    expect(linuxStateDirectory).toBe("/home/alice/.local/state/executor");
+    expect(macStateDirectory).toBe(
+      "/Users/alice/Library/Application Support/Executor/State",
+    );
   });
 
   it.effect("prefers an existing legacy home config path before the canonical path", () =>
