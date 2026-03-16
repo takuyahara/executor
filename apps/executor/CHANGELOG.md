@@ -1,5 +1,11 @@
 # executor
 
+## 1.2.2
+
+### Patch Changes
+
+- 661ed29: Support selecting runtime
+
 ## 1.2.1
 
 ### Patch Changes
