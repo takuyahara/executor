@@ -22,6 +22,7 @@ import type {
 } from "#schema";
 import {
   AuthArtifactIdSchema,
+  ProviderAuthGrantIdSchema,
   SourceCatalogIdSchema,
   SourceCatalogRevisionIdSchema,
 } from "#schema";
@@ -90,10 +91,9 @@ const normalizeAuth = (
       return { kind: "none" } satisfies SourceAuth;
     }
 
-    const headerName = trimOrNull(auth.headerName) ?? "Authorization";
-    const prefix = auth.prefix ?? "Bearer ";
-
-  if (auth.kind === "bearer") {
+    if (auth.kind === "bearer") {
+      const headerName = trimOrNull(auth.headerName) ?? "Authorization";
+      const prefix = auth.prefix ?? "Bearer ";
       const providerId = trimOrNull(auth.token.providerId);
       const handle = trimOrNull(auth.token.handle);
       if (providerId === null || handle === null) {
@@ -112,6 +112,8 @@ const normalizeAuth = (
     }
 
     if (auth.kind === "oauth2_authorized_user") {
+      const headerName = trimOrNull(auth.headerName) ?? "Authorization";
+      const prefix = auth.prefix ?? "Bearer ";
       const refreshProviderId = trimOrNull(auth.refreshToken.providerId);
       const refreshHandle = trimOrNull(auth.refreshToken.handle);
       if (refreshProviderId === null || refreshHandle === null) {
@@ -159,6 +161,77 @@ const normalizeAuth = (
       } satisfies SourceAuth;
     }
 
+    if (auth.kind === "provider_grant_ref") {
+      const headerName = trimOrNull(auth.headerName) ?? "Authorization";
+      const prefix = auth.prefix ?? "Bearer ";
+      const grantId = trimOrNull(auth.grantId);
+      if (grantId === null) {
+        return yield* Effect.fail(
+          new Error("Provider grant auth requires a grantId"),
+        );
+      }
+
+      return {
+        kind: "provider_grant_ref",
+        grantId: ProviderAuthGrantIdSchema.make(grantId),
+        providerKey: trimOrNull(auth.providerKey) ?? "",
+        requiredScopes: auth.requiredScopes
+          .map((scope) => scope.trim())
+          .filter((scope) => scope.length > 0),
+        headerName,
+        prefix,
+      } satisfies SourceAuth;
+    }
+
+    if (auth.kind === "mcp_oauth") {
+      const redirectUri = trimOrNull(auth.redirectUri);
+      const accessProviderId = trimOrNull(auth.accessToken.providerId);
+      const accessHandle = trimOrNull(auth.accessToken.handle);
+      if (redirectUri === null || accessProviderId === null || accessHandle === null) {
+        return yield* Effect.fail(
+          new Error("MCP OAuth auth requires redirectUri and access token secret ref"),
+        );
+      }
+
+      let refreshToken: { providerId: string; handle: string } | null = null;
+      if (auth.refreshToken !== null) {
+        const refreshProviderId = trimOrNull(auth.refreshToken.providerId);
+        const refreshHandle = trimOrNull(auth.refreshToken.handle);
+        if (refreshProviderId === null || refreshHandle === null) {
+          return yield* Effect.fail(
+            new Error("MCP OAuth refresh token ref must include providerId and handle"),
+          );
+        }
+
+        refreshToken = {
+          providerId: refreshProviderId,
+          handle: refreshHandle,
+        };
+      }
+
+      const tokenType = trimOrNull(auth.tokenType) ?? "Bearer";
+
+      return {
+        kind: "mcp_oauth",
+        redirectUri,
+        accessToken: {
+          providerId: accessProviderId,
+          handle: accessHandle,
+        },
+        refreshToken,
+        tokenType,
+        expiresIn: auth.expiresIn ?? null,
+        scope: trimOrNull(auth.scope),
+        resourceMetadataUrl: trimOrNull(auth.resourceMetadataUrl),
+        authorizationServerUrl: trimOrNull(auth.authorizationServerUrl),
+        resourceMetadataJson: trimOrNull(auth.resourceMetadataJson),
+        authorizationServerMetadataJson: trimOrNull(auth.authorizationServerMetadataJson),
+        clientInformationJson: trimOrNull(auth.clientInformationJson),
+      } satisfies SourceAuth;
+    }
+
+    const headerName = trimOrNull(auth.headerName) ?? "Authorization";
+    const prefix = auth.prefix ?? "Bearer ";
     const accessProviderId = trimOrNull(auth.accessToken.providerId);
     const accessHandle = trimOrNull(auth.accessToken.handle);
     if (accessProviderId === null || accessHandle === null) {

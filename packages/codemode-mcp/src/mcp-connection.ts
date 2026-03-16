@@ -1,3 +1,4 @@
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -11,6 +12,7 @@ export type CreateSdkMcpConnectorInput = {
   transport?: McpTransportPreference;
   queryParams?: Record<string, string>;
   headers?: Record<string, string>;
+  authProvider?: OAuthClientProvider;
   clientName?: string;
   clientVersion?: string;
 };
@@ -76,12 +78,16 @@ export const createSdkMcpConnector = (
     const client = createClient();
 
     if (transport === "streamable-http") {
-      await client.connect(new StreamableHTTPClientTransport(endpoint, { requestInit }));
+      await client.connect(new StreamableHTTPClientTransport(endpoint, {
+        requestInit,
+        authProvider: input.authProvider,
+      }));
       return connectionFromClient(client);
     }
 
     if (transport === "sse") {
       await client.connect(new SSEClientTransport(endpoint, {
+        authProvider: input.authProvider,
         requestInit,
         eventSourceInit: requestInit
           ? {
@@ -94,10 +100,14 @@ export const createSdkMcpConnector = (
     }
 
     try {
-      await client.connect(new StreamableHTTPClientTransport(endpoint, { requestInit }));
+      await client.connect(new StreamableHTTPClientTransport(endpoint, {
+        requestInit,
+        authProvider: input.authProvider,
+      }));
       return connectionFromClient(client);
     } catch {
       await client.connect(new SSEClientTransport(endpoint, {
+        authProvider: input.authProvider,
         requestInit,
         eventSourceInit: requestInit
           ? {

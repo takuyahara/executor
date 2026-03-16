@@ -272,6 +272,7 @@ export const mcpSourceAdapter: SourceAdapter = {
               authHeaders: auth.headers,
               authCookies: auth.cookies,
             }),
+            authProvider: auth.authProvider,
           }),
         catch: (cause) =>
           cause instanceof Error ? cause : new Error(String(cause)),

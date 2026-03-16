@@ -109,7 +109,11 @@ export const resolveSourceAuthMaterialWithDeps = (input: {
       });
     }
 
-    if (artifact?.artifactKind === "oauth2_authorized_user") {
+    if (
+      artifact?.artifactKind === "oauth2_authorized_user"
+      || artifact?.artifactKind === "provider_grant_ref"
+      || artifact?.artifactKind === "mcp_oauth"
+    ) {
       return yield* Effect.fail(
         new Error("Dynamic auth artifacts require persistence-backed lease resolution"),
       );

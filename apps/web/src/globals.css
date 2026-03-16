@@ -152,6 +152,12 @@
   }
 }
 
+/* Indeterminate progress shimmer */
+@keyframes indeterminate-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 /* Streamdown code block overrides */
 [data-streamdown="code-block-body"] {
   background-color: var(--muted) !important;

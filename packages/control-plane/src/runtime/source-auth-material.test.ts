@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import {
+  AuthArtifactIdSchema,
   SourceIdSchema,
   WorkspaceIdSchema,
   type Source,
@@ -148,6 +150,98 @@ describe("source-auth-material", () => {
           expiresAt: null,
           refreshAfter: null,
         });
+      }));
+    });
+
+    it("reconstructs persisted MCP OAuth auth providers from stored auth artifacts", async () => {
+      const calls: string[] = [];
+
+      await Effect.runPromise(Effect.gen(function* () {
+        const auth = yield* resolveSourceAuthMaterialWithDeps({
+          source: makeSource({
+            kind: "mcp",
+            endpoint: "https://example.com/mcp",
+            binding: {
+              transport: "streamable-http",
+              queryParams: null,
+              headers: null,
+            },
+            auth: { kind: "none" },
+          }),
+          actorAccountId: null,
+          rows: {
+            authArtifacts: {
+              getByWorkspaceSourceAndActor: () =>
+                Effect.succeed(
+                  Option.some({
+                    id: AuthArtifactIdSchema.make("auth_artifact_mcp"),
+                    workspaceId: WorkspaceIdSchema.make("ws_tool_artifacts"),
+                    sourceId: SourceIdSchema.make("src_tool_artifacts"),
+                    actorAccountId: null,
+                    slot: "runtime",
+                    artifactKind: "mcp_oauth",
+                    configJson: JSON.stringify({
+                      redirectUri: "http://127.0.0.1/oauth/callback",
+                      accessToken: {
+                        providerId: "local",
+                        handle: "sec_mcp_access",
+                      },
+                      refreshToken: {
+                        providerId: "local",
+                        handle: "sec_mcp_refresh",
+                      },
+                      tokenType: "Bearer",
+                      expiresIn: 3600,
+                      scope: "mcp",
+                      resourceMetadataUrl: "https://example.com/.well-known/oauth-protected-resource",
+                      authorizationServerUrl: "https://example.com/oauth",
+                      resourceMetadataJson: JSON.stringify({ resource: "mcp" }),
+                      authorizationServerMetadataJson: JSON.stringify({
+                        issuer: "https://example.com/oauth",
+                        token_endpoint: "https://example.com/oauth/token",
+                      }),
+                      clientInformationJson: JSON.stringify({
+                        client_id: "client-123",
+                      }),
+                    }),
+                    grantSetJson: null,
+                    createdAt: 1,
+                    updatedAt: 1,
+                  }),
+                ),
+            },
+            authLeases: {
+              getByAuthArtifactId: () => Effect.succeed(Option.none()),
+            },
+          } as any,
+          resolveSecretMaterial: ({ ref }) => {
+            calls.push(`${ref.providerId}:${ref.handle}`);
+            return Effect.succeed(
+              ref.handle === "sec_mcp_access" ? "persisted-access-token" : "persisted-refresh-token",
+            );
+          },
+        });
+
+        expect(auth.headers).toEqual({});
+        expect(auth.authProvider).toBeDefined();
+
+        const tokens = yield* Effect.tryPromise({
+          try: () => auth.authProvider!.tokens(),
+          catch: (error) =>
+            error instanceof Error ? error : new Error(String(error)),
+        });
+
+        expect(tokens).toEqual({
+          access_token: "persisted-access-token",
+          refresh_token: "persisted-refresh-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+          scope: "mcp",
+        });
+        expect(calls).toEqual([
+          "local:sec_mcp_access",
+          "local:sec_mcp_refresh",
+        ]);
       }));
     });
   });

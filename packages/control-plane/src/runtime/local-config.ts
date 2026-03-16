@@ -5,7 +5,7 @@ import {
   type ParseError as JsoncParseError,
   parse as parseJsoncDocument,
   printParseErrorCode,
-} from "jsonc-parser";
+} from "jsonc-parser/lib/esm/main.js";
 
 import {
   LocalExecutorConfigSchema,

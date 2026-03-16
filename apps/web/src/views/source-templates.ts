@@ -5,6 +5,9 @@ type SourceTemplateBase = {
   name: string;
   summary: string;
   endpoint: string;
+  groupId?: string;
+  groupLabel?: string;
+  batchable?: boolean;
 };
 
 export type OpenApiSourceTemplate = SourceTemplateBase & {
@@ -46,6 +49,9 @@ const googleDiscoveryTemplate = (input: {
     summary: input.summary,
     kind: "google_discovery",
     endpoint: discoveryUrl,
+    groupId: "google_workspace",
+    groupLabel: "Google Workspace",
+    batchable: true,
     service: input.service,
     version: input.version,
     discoveryUrl,
@@ -89,6 +95,9 @@ export const sourceTemplates: ReadonlyArray<SourceTemplate> = [
     kind: "openapi",
     endpoint: "https://api.github.com",
     specUrl: "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.yaml",
+    groupId: "github",
+    groupLabel: "GitHub",
+    batchable: false,
   },
   {
     id: "github-graphql",
@@ -96,6 +105,9 @@ export const sourceTemplates: ReadonlyArray<SourceTemplate> = [
     summary: "Issues, pull requests, discussions, and repository objects via GraphQL.",
     kind: "graphql",
     endpoint: "https://api.github.com/graphql",
+    groupId: "github",
+    groupLabel: "GitHub",
+    batchable: false,
   },
   {
     id: "gitlab-graphql",

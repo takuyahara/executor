@@ -2,21 +2,29 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   type CompleteSourceOAuthResult,
+  type ConnectSourceBatchPayload,
+  type ConnectSourceBatchResult,
   type ConnectSourcePayload,
   type ConnectSourceResult,
+  type CreateWorkspaceOauthClientPayload,
   type DiscoverSourcePayload,
   type InstanceConfig,
   type Loadable,
   type SecretListItem,
   type Source,
   type SourceDiscoveryResult,
+  type WorkspaceOauthClient,
+  useConnectSourceBatch,
   useConnectSource,
+  useCreateWorkspaceOauthClient,
   useCreateSecret,
   useDiscoverSource,
+  useInvalidateExecutorQueries,
   useInstanceConfig,
   useRefreshSecrets,
   useSecrets,
   useStartSourceOAuth,
+  useWorkspaceOauthClients,
 } from "@executor/react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -74,6 +82,7 @@ type ConnectFormState = {
   bearerToken: string;
   bearerProviderId: string;
   bearerHandle: string;
+  workspaceOauthClientId: string;
   oauthClientId: string;
   oauthClientSecret: string;
   queryParamsText: string;
@@ -84,6 +93,12 @@ type OAuthRequiredInfo = {
   source: Source;
   sessionId: string;
   authorizationUrl: string;
+};
+
+type BatchOAuthRequiredInfo = {
+  sessionId: string;
+  authorizationUrl: string;
+  sourceIds: ReadonlyArray<string>;
 };
 
 // ---------------------------------------------------------------------------
@@ -220,6 +235,7 @@ const defaultConnectForm = (discovery?: SourceDiscoveryResult): ConnectFormState
       bearerToken: "",
       bearerProviderId: "",
       bearerHandle: "",
+      workspaceOauthClientId: "",
       oauthClientId: "",
       oauthClientSecret: "",
       queryParamsText: "",
@@ -272,6 +288,7 @@ const defaultConnectForm = (discovery?: SourceDiscoveryResult): ConnectFormState
     bearerToken: "",
     bearerProviderId: "",
     bearerHandle: "",
+    workspaceOauthClientId: "",
     oauthClientId: "",
     oauthClientSecret: "",
     queryParamsText: "",
@@ -293,6 +310,7 @@ const connectFormFromTemplate = (template: SourceTemplate): ConnectFormState => 
     : namespaceFromUrl(template.endpoint),
   transport: template.kind === "mcp" ? "auto" : "",
   authKind: template.kind === "google_discovery" ? "oauth2" : "none",
+  workspaceOauthClientId: "",
 });
 
 const authKindForSourceKind = (
@@ -366,8 +384,12 @@ const buildConnectPayload = (form: ConnectFormState): ConnectSourcePayload => {
     const version = form.version.trim();
     if (!service) throw new Error("Google Discovery sources require a service name.");
     if (!version) throw new Error("Google Discovery sources require a version.");
-    if (form.authKind === "oauth2" && form.oauthClientId.trim().length === 0) {
-      throw new Error("Google OAuth requires a client ID.");
+    if (
+      form.authKind === "oauth2"
+      && form.workspaceOauthClientId.trim().length === 0
+      && form.oauthClientId.trim().length === 0
+    ) {
+      throw new Error("Google OAuth requires a workspace OAuth client or a new client ID.");
     }
     return {
       kind: "google_discovery",
@@ -376,12 +398,17 @@ const buildConnectPayload = (form: ConnectFormState): ConnectSourcePayload => {
       discoveryUrl: trimToNull(form.discoveryUrl),
       name: trimToNull(form.name),
       namespace: trimToNull(form.namespace),
-      oauthClient: form.authKind === "oauth2"
-        ? {
-            clientId: form.oauthClientId.trim(),
-            clientSecret: trimToNull(form.oauthClientSecret),
-          }
-        : null,
+      workspaceOauthClientId:
+        form.authKind === "oauth2" && form.workspaceOauthClientId.trim().length > 0
+          ? form.workspaceOauthClientId.trim()
+          : undefined,
+      oauthClient:
+        form.authKind === "oauth2" && form.workspaceOauthClientId.trim().length === 0
+          ? {
+              clientId: form.oauthClientId.trim(),
+              clientSecret: trimToNull(form.oauthClientSecret),
+            }
+          : null,
       auth,
     };
   }
@@ -592,7 +619,11 @@ export function AddSourcePage() {
   const navigate = useNavigate();
   const discoverSource = useDiscoverSource();
   const connectSource = useConnectSource();
+  const connectSourceBatch = useConnectSourceBatch();
+  const createWorkspaceOauthClient = useCreateWorkspaceOauthClient();
+  const workspaceOauthClients = useWorkspaceOauthClients("google_workspace");
   const instanceConfig = useInstanceConfig();
+  const invalidateExecutorQueries = useInvalidateExecutorQueries();
   const secrets = useSecrets();
   const refreshSecrets = useRefreshSecrets();
   const startSourceOAuth = useStartSourceOAuth();
@@ -626,7 +657,10 @@ export function AddSourcePage() {
 
   // OAuth required state
   const [oauthInfo, setOauthInfo] = useState<OAuthRequiredInfo | null>(null);
+  const [batchOauthInfo, setBatchOauthInfo] = useState<BatchOAuthRequiredInfo | null>(null);
   const [oauthBusy, setOauthBusy] = useState(false);
+  const [batchConnecting, setBatchConnecting] = useState(false);
+  const [selectedGoogleTemplateIds, setSelectedGoogleTemplateIds] = useState<ReadonlyArray<string>>([]);
 
   // Status banner
   const [statusBanner, setStatusBanner] = useState<{
@@ -643,12 +677,17 @@ export function AddSourcePage() {
       ...current,
       kind,
       authKind: authKindForSourceKind(current.authKind, kind),
+      workspaceOauthClientId: kind === "google_discovery" ? current.workspaceOauthClientId : "",
     }));
   };
 
   const setProbeField = <K extends keyof ProbeAuthState>(key: K, value: ProbeAuthState[K]) => {
     setProbeAuth((current) => ({ ...current, [key]: value }));
   };
+
+  const googleTemplates = sourceTemplates.filter(
+    (template) => template.groupId === "google_workspace" && template.batchable,
+  );
 
   // -------------------------------------------------------------------------
   // Handlers
@@ -704,6 +743,16 @@ export function AddSourcePage() {
   };
 
   const applyTemplate = async (template: SourceTemplate) => {
+    if (template.batchable) {
+      setSelectedGoogleTemplateIds((current) =>
+        current.includes(template.id)
+          ? current.filter((id) => id !== template.id)
+          : [...current, template.id],
+      );
+      setStatusBanner(null);
+      return;
+    }
+
     const discoveryUrl = "specUrl" in template ? template.specUrl : template.endpoint;
     setUrl(template.endpoint);
     setStatusBanner(null);
@@ -752,6 +801,7 @@ export function AddSourcePage() {
       setConnectResult(result);
 
       if (result.kind === "connected") {
+        setBatchOauthInfo(null);
         setPhase("connected");
         setStatusBanner({
           tone: "success",
@@ -766,6 +816,7 @@ export function AddSourcePage() {
           });
         }, 1200);
       } else if (result.kind === "credential_required") {
+        setBatchOauthInfo(null);
         setPhase("credential_required");
         setStatusBanner({
           tone: "info",
@@ -776,6 +827,7 @@ export function AddSourcePage() {
           setFormField("authKind", "bearer");
         }
       } else if (result.kind === "oauth_required") {
+        setBatchOauthInfo(null);
         setPhase("oauth_required");
         setOauthInfo({
           source: result.source,
@@ -797,28 +849,38 @@ export function AddSourcePage() {
   };
 
   const handleOAuthPopup = async () => {
-    if (!oauthInfo) return;
+    if (!oauthInfo && !batchOauthInfo) return;
     setStatusBanner(null);
     setOauthBusy(true);
 
     try {
       await startSourceOAuthPopup({
-        authorizationUrl: oauthInfo.authorizationUrl,
-        sessionId: oauthInfo.sessionId,
+        authorizationUrl: oauthInfo?.authorizationUrl ?? batchOauthInfo!.authorizationUrl,
+        sessionId: oauthInfo?.sessionId ?? batchOauthInfo!.sessionId,
       });
 
       refreshSecrets();
+      invalidateExecutorQueries();
       setPhase("connected");
       setStatusBanner({
         tone: "success",
-        text: `"${oauthInfo.source.name}" connected via OAuth.`,
+        text: oauthInfo
+          ? `"${oauthInfo.source.name}" connected via OAuth.`
+          : `Connected ${batchOauthInfo?.sourceIds.length ?? 0} Google source${(batchOauthInfo?.sourceIds.length ?? 0) === 1 ? "" : "s"} via OAuth.`,
       });
 
       setTimeout(() => {
+        if (oauthInfo) {
+          void navigate({
+            to: "/sources/$sourceId",
+            params: { sourceId: oauthInfo.source.id },
+            search: { tab: "model" },
+          });
+          return;
+        }
+
         void navigate({
-          to: "/sources/$sourceId",
-          params: { sourceId: oauthInfo.source.id },
-          search: { tab: "model" },
+          to: "/",
         });
       }, 1200);
     } catch (error) {
@@ -828,6 +890,91 @@ export function AddSourcePage() {
       });
     } finally {
       setOauthBusy(false);
+    }
+  };
+
+  const ensureGoogleWorkspaceOauthClientId = async (): Promise<string> => {
+    const selectedClientId = connectForm.workspaceOauthClientId.trim();
+    if (selectedClientId.length > 0) {
+      return selectedClientId;
+    }
+
+    const clientId = connectForm.oauthClientId.trim();
+    if (clientId.length === 0) {
+      throw new Error("Choose an existing Google workspace OAuth client or enter a new client ID.");
+    }
+
+    const created = await createWorkspaceOauthClient.mutateAsync({
+      providerKey: "google_workspace",
+      label: "Google Workspace",
+      oauthClient: {
+        clientId,
+        clientSecret: trimToNull(connectForm.oauthClientSecret),
+      },
+    } satisfies CreateWorkspaceOauthClientPayload);
+
+    setFormField("workspaceOauthClientId", created.id);
+    return created.id;
+  };
+
+  const handleConnectGoogleBatch = async () => {
+    if (selectedGoogleTemplateIds.length === 0) {
+      return;
+    }
+
+    setStatusBanner(null);
+
+    try {
+      const workspaceOauthClientId = await ensureGoogleWorkspaceOauthClientId();
+      const selectedTemplates = googleTemplates.filter(
+        (template): template is Extract<SourceTemplate, { kind: "google_discovery" }> =>
+          selectedGoogleTemplateIds.includes(template.id),
+      );
+      const payload: ConnectSourceBatchPayload = {
+        workspaceOauthClientId: workspaceOauthClientId as WorkspaceOauthClient["id"],
+        sources: selectedTemplates.map((template) => ({
+          service: template.service,
+          version: template.version,
+          discoveryUrl: template.discoveryUrl,
+          name: template.name,
+          namespace: googleDiscoveryNamespace(template.service),
+        })),
+      };
+
+      setBatchConnecting(true);
+      setPhase("connecting");
+      const result = await connectSourceBatch.mutateAsync(payload);
+      if (result.providerOauthSession) {
+        setBatchOauthInfo({
+          sessionId: result.providerOauthSession.sessionId,
+          authorizationUrl: result.providerOauthSession.authorizationUrl,
+          sourceIds: result.providerOauthSession.sourceIds,
+        });
+        setOauthInfo(null);
+        setBatchConnecting(false);
+        setPhase("oauth_required");
+        setStatusBanner(null);
+        return;
+      }
+
+      setSelectedGoogleTemplateIds([]);
+      setBatchOauthInfo(null);
+      setBatchConnecting(false);
+      setPhase("connected");
+      setStatusBanner({
+        tone: "success",
+        text: `Connected ${result.results.length} Google source${result.results.length === 1 ? "" : "s"}.`,
+      });
+      setTimeout(() => {
+        void navigate({ to: "/" });
+      }, 1200);
+    } catch (error) {
+      setBatchConnecting(false);
+      setPhase("idle");
+      setStatusBanner({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Batch connection failed.",
+      });
     }
   };
 
@@ -845,7 +992,12 @@ export function AddSourcePage() {
 
   const isDiscovering = phase === "discovering";
   const isConnecting = phase === "connecting";
-  const isBusy = isDiscovering || isConnecting || oauthBusy;
+  const isBusy =
+    isDiscovering
+    || isConnecting
+    || oauthBusy
+    || connectSourceBatch.status === "pending"
+    || createWorkspaceOauthClient.status === "pending";
 
   // -------------------------------------------------------------------------
   // Render
@@ -870,10 +1022,52 @@ export function AddSourcePage() {
           {phase === "editing" && (
             <Badge variant="outline">{connectForm.kind}</Badge>
           )}
-          {phase === "connected" && (
-            <Badge variant="default">connected</Badge>
-          )}
         </div>
+
+        {/* Step indicator */}
+        {phase !== "idle" && phase !== "discovering" && (
+          <div className="mb-6 flex items-center gap-1.5" aria-label="Progress">
+            {(["discover", "configure", "connect"] as const).map((step, i) => {
+              const stepPhases: Record<string, number> = {
+                editing: 1,
+                connecting: 2,
+                credential_required: 1,
+                oauth_required: 2,
+                connected: 2,
+              };
+              const currentStep = stepPhases[phase] ?? 0;
+              const isComplete = i < currentStep;
+              const isCurrent = i === currentStep;
+              return (
+                <div key={step} className="flex items-center gap-1.5">
+                  {i > 0 && (
+                    <div className={cn(
+                      "h-px w-6 transition-colors",
+                      isComplete || isCurrent ? "bg-primary/40" : "bg-border",
+                    )} />
+                  )}
+                  <div className={cn(
+                    "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors",
+                    isComplete
+                      ? "text-primary"
+                      : isCurrent
+                        ? "text-foreground bg-muted/50"
+                        : "text-muted-foreground/40",
+                  )}>
+                    {isComplete ? (
+                      <IconCheck className="size-2.5" />
+                    ) : (
+                      <span className="flex size-3.5 items-center justify-center rounded-full border text-[9px] tabular-nums border-current">
+                        {i + 1}
+                      </span>
+                    )}
+                    {step}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {statusBanner && <StatusBanner state={statusBanner} className="mb-6" />}
 
@@ -895,22 +1089,29 @@ export function AddSourcePage() {
                 </p>
 
                 <Field label="URL">
-                  <div className="flex gap-2">
-                    <input
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder="https://api.example.com or https://mcp.example.com/mcp"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !isDiscovering) {
-                          void handleDiscover();
-                        }
-                      }}
-                      className="h-9 flex-1 rounded-lg border border-input bg-background px-3 font-mono text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/35 focus:border-ring focus:ring-1 focus:ring-ring/25"
-                    />
-                    <Button onClick={handleDiscover} disabled={isBusy}>
-                      {isDiscovering ? <IconSpinner className="size-3.5" /> : <IconDiscover className="size-3.5" />}
-                      {isDiscovering ? "Discovering\u2026" : "Discover"}
-                    </Button>
+                  <div className="space-y-0">
+                    <div className="flex gap-2">
+                      <input
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        placeholder="https://api.example.com or https://mcp.example.com/mcp"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !isDiscovering) {
+                            void handleDiscover();
+                          }
+                        }}
+                        className="h-9 flex-1 rounded-lg border border-input bg-background px-3 font-mono text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/35 focus:border-ring focus:ring-1 focus:ring-ring/25"
+                      />
+                      <Button onClick={handleDiscover} disabled={isBusy}>
+                        {isDiscovering ? <IconSpinner className="size-3.5" /> : <IconDiscover className="size-3.5" />}
+                        {isDiscovering ? "Discovering\u2026" : "Discover"}
+                      </Button>
+                    </div>
+                    {isDiscovering && (
+                      <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full w-1/4 rounded-full bg-primary/60" style={{ animation: "indeterminate-progress 1.2s ease-in-out infinite" }} />
+                      </div>
+                    )}
                   </div>
                 </Field>
 
@@ -1005,36 +1206,187 @@ export function AddSourcePage() {
                   </button>
                 </div>
 
-                <div className="space-y-3 border-t border-border pt-4">
+                {/* ---- Template catalogue ---- */}
+                <div className="space-y-5 border-t border-border pt-5">
                   <div>
-                    <p className="text-[12px] font-medium text-foreground">Start from a known source</p>
-                     <p className="text-[11px] text-muted-foreground">
-                       Load a real MCP, OpenAPI, GraphQL, or Google Discovery template without running discovery first.
-                     </p>
-                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {sourceTemplates.map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => applyTemplate(template)}
-                        disabled={isBusy}
-                        className="rounded-xl border border-border bg-card/70 px-4 py-3 text-left transition-colors hover:bg-accent/50 disabled:opacity-60"
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
-                              <SourceFavicon endpoint={template.endpoint} kind={template.kind} className="size-4" />
-                            </div>
-                            <span className="truncate text-[13px] font-medium text-foreground">{template.name}</span>
-                          </div>
-                          <Badge variant="outline" className="text-[9px]">{template.kind}</Badge>
+                    <p className="text-[13px] font-medium text-foreground">Start from a template</p>
+                    <p className="mt-0.5 text-[12px] text-muted-foreground">
+                      Pick a known source to skip discovery, or select multiple Google APIs for batch connect.
+                    </p>
+                  </div>
+
+                  {/* -- Popular / non-Google templates -- */}
+                  {(() => {
+                    const popularTemplates = sourceTemplates.filter((t) => t.groupId !== "google_workspace");
+                    return popularTemplates.length > 0 && (
+                      <div className="space-y-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/50">Popular</p>
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {popularTemplates.map((template) => (
+                            <button
+                              key={template.id}
+                              type="button"
+                              onClick={() => applyTemplate(template)}
+                              disabled={isBusy}
+                              className="group rounded-xl border border-border bg-card/70 px-4 py-3 text-left transition-all hover:bg-accent/50 hover:border-primary/20 hover:shadow-sm disabled:opacity-60"
+                            >
+                              <div className="mb-1.5 flex items-center gap-2.5">
+                                <div className="flex size-5 shrink-0 items-center justify-center rounded-md bg-muted/50">
+                                  <SourceFavicon endpoint={template.endpoint} kind={template.kind} className="size-3.5" />
+                                </div>
+                                <span className="flex-1 truncate text-[13px] font-medium text-foreground group-hover:text-primary transition-colors">{template.name}</span>
+                                <Badge variant="outline" className="text-[9px] opacity-60 group-hover:opacity-100 transition-opacity">{template.kind}</Badge>
+                              </div>
+                              <span className="line-clamp-1 text-[11px] text-muted-foreground/70">
+                                {template.summary}
+                              </span>
+                            </button>
+                          ))}
                         </div>
-                        <span className="line-clamp-2 text-[11px] text-muted-foreground">
-                          {template.summary}
-                        </span>
-                      </button>
-                    ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* -- Google Workspace batch section -- */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/50">Google Workspace</p>
+                      {googleTemplates.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          {selectedGoogleTemplateIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedGoogleTemplateIds([])}
+                              disabled={isBusy}
+                              className="text-[11px] font-medium text-muted-foreground/60 transition-colors hover:text-foreground"
+                            >
+                              Clear
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedGoogleTemplateIds(
+                                selectedGoogleTemplateIds.length === googleTemplates.length
+                                  ? []
+                                  : googleTemplates.map((t) => t.id),
+                              )
+                            }
+                            disabled={isBusy}
+                            className="text-[11px] font-medium text-muted-foreground/60 transition-colors hover:text-foreground"
+                          >
+                            {selectedGoogleTemplateIds.length === googleTemplates.length ? "Deselect all" : "Select all"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                      {googleTemplates.map((template) => {
+                        const selected = selectedGoogleTemplateIds.includes(template.id);
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            onClick={() => applyTemplate(template)}
+                            disabled={isBusy}
+                            className={cn(
+                              "group flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left transition-all disabled:opacity-60",
+                              selected
+                                ? "border-primary/40 bg-primary/6 shadow-sm"
+                                : "border-border bg-card/50 hover:bg-accent/40 hover:border-border",
+                            )}
+                          >
+                            <div className={cn(
+                              "flex size-4 shrink-0 items-center justify-center rounded transition-colors",
+                              selected
+                                ? "text-primary"
+                                : "text-muted-foreground/30 group-hover:text-muted-foreground/50",
+                            )}>
+                              {selected ? (
+                                <IconCheck className="size-3.5" />
+                              ) : (
+                                <SourceFavicon endpoint={template.endpoint} kind={template.kind} className="size-3.5" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className={cn(
+                                "block truncate text-[12px] font-medium transition-colors",
+                                selected ? "text-foreground" : "text-foreground/80",
+                              )}>
+                                {template.name}
+                              </span>
+                              <span className="block truncate text-[10px] text-muted-foreground/60">
+                                {template.summary}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* -- Batch connect panel (slides in when templates selected) -- */}
+                    {selectedGoogleTemplateIds.length > 0 && (
+                      <div className="rounded-xl border border-primary/20 bg-gradient-to-b from-primary/4 to-transparent overflow-hidden">
+                        {/* Header strip */}
+                        <div className="flex items-center justify-between gap-3 border-b border-primary/10 px-5 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                              <span className="text-[11px] font-bold tabular-nums">{selectedGoogleTemplateIds.length}</span>
+                            </div>
+                            <p className="text-[13px] font-medium text-foreground">
+                              Connect Google API{selectedGoogleTemplateIds.length === 1 ? "" : "s"}
+                            </p>
+                          </div>
+                          <p className="hidden text-[11px] text-muted-foreground/60 sm:block">
+                            One consent screen for all
+                          </p>
+                        </div>
+
+                        {/* Body */}
+                        <div className="px-5 py-4 space-y-4">
+                          <Field label="Workspace OAuth client">
+                            <select
+                              value={connectForm.workspaceOauthClientId}
+                              onChange={(event) => setFormField("workspaceOauthClientId", event.target.value)}
+                              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring/25"
+                            >
+                              <option value="">Enter new client credentials</option>
+                              {workspaceOauthClients.status === "ready" && workspaceOauthClients.data.map((client) => (
+                                <option key={client.id} value={client.id}>
+                                  {client.label ?? client.clientId}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          {connectForm.workspaceOauthClientId.trim().length === 0 && (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <Field label="Client ID" className="sm:col-span-2">
+                                <TextInput
+                                  type="password"
+                                  value={connectForm.oauthClientId}
+                                  onChange={(v) => setFormField("oauthClientId", v)}
+                                  placeholder="1234567890-abcdef.apps.googleusercontent.com"
+                                />
+                              </Field>
+                              <Field label="Client secret" className="sm:col-span-2">
+                                <TextInput
+                                  type="password"
+                                  value={connectForm.oauthClientSecret}
+                                  onChange={(v) => setFormField("oauthClientSecret", v)}
+                                  placeholder="GOCSPX-..."
+                                />
+                              </Field>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-end pt-1">
+                            <Button type="button" onClick={handleConnectGoogleBatch} disabled={isBusy}>
+                              {isBusy ? <IconSpinner className="size-3.5" /> : <IconPlus className="size-3.5" />}
+                              Connect {selectedGoogleTemplateIds.length} source{selectedGoogleTemplateIds.length === 1 ? "" : "s"}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1044,8 +1396,25 @@ export function AddSourcePage() {
 
 
 
+        {/* Batch connecting interstitial */}
+        {batchConnecting && phase === "connecting" && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="space-y-5 text-center">
+              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border border-primary/15 bg-primary/6">
+                <IconSpinner className="size-6 text-primary" />
+              </div>
+              <div className="space-y-1.5">
+                <h2 className="font-display text-xl tracking-tight text-foreground">
+                  Connecting {selectedGoogleTemplateIds.length} source{selectedGoogleTemplateIds.length === 1 ? "" : "s"}
+                </h2>
+                <p className="text-[13px] text-muted-foreground/70">Setting up Google Workspace APIs\u2026</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Step 2-4: Editing / Connecting */}
-        {(phase === "editing" || phase === "connecting" || phase === "credential_required") && (
+        {(phase === "editing" || (phase === "connecting" && !batchConnecting) || phase === "credential_required") && (
           <div className="space-y-6">
             <Section title="Configuration">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1154,6 +1523,22 @@ export function AddSourcePage() {
             )}
 
             {/* Auth section (for non-MCP kinds, or when credential_required) */}
+            {phase === "credential_required" && (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-300/40 bg-amber-50/50 px-4 py-3.5 dark:border-amber-500/20 dark:bg-amber-950/20">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-amber-100/80 dark:bg-amber-900/40">
+                  <svg className="size-3.5 text-amber-600 dark:text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 9v4" /><path d="M12 17h.01" />
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[12px] font-medium text-amber-900 dark:text-amber-200">Credentials required</p>
+                  <p className="text-[11px] leading-relaxed text-amber-800/70 dark:text-amber-300/60">
+                    The server responded that this source requires authentication. Add a token or secret below, then try connecting again.
+                  </p>
+                </div>
+              </div>
+            )}
             {connectForm.kind !== "mcp" && (
               <Section title="Authentication">
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -1167,28 +1552,47 @@ export function AddSourcePage() {
                   {connectForm.kind === "google_discovery" && (
                     <div className="sm:col-span-2 rounded-lg border border-border bg-card/60 px-3 py-2 text-[12px] text-muted-foreground">
                       {connectForm.authKind === "oauth2"
-                        ? "OAuth starts after you click Connect. Executor will store the OAuth client secret in the configured secret store, then open the Google sign-in flow for this source."
+                        ? "OAuth starts after you click Connect. Choose an existing workspace OAuth client or enter a new client once, then reuse it across Google sources."
                         : "Choosing auth mode 'none' skips the Google OAuth popup. Use 'oauth2' if you want executor to start the sign-in flow for you."}
                     </div>
                   )}
                   {connectForm.kind === "google_discovery" && connectForm.authKind === "oauth2" && (
                     <>
-                      <Field label="OAuth client ID" className="sm:col-span-2">
-                        <TextInput
-                          type="password"
-                          value={connectForm.oauthClientId}
-                          onChange={(v) => setFormField("oauthClientId", v)}
-                          placeholder="1234567890-abcdef.apps.googleusercontent.com"
+                      <Field label="Workspace OAuth client" className="sm:col-span-2">
+                        <SelectInput
+                          value={connectForm.workspaceOauthClientId}
+                          onChange={(value) => setFormField("workspaceOauthClientId", value)}
+                          options={[
+                            { value: "", label: "Enter new client" },
+                            ...(workspaceOauthClients.status === "ready"
+                              ? workspaceOauthClients.data.map((client) => ({
+                                  value: client.id,
+                                  label: client.label ?? client.clientId,
+                                }))
+                              : []),
+                          ]}
                         />
                       </Field>
-                      <Field label="OAuth client secret" className="sm:col-span-2">
-                        <TextInput
-                          type="password"
-                          value={connectForm.oauthClientSecret}
-                          onChange={(v) => setFormField("oauthClientSecret", v)}
-                          placeholder="GOCSPX-..."
-                        />
-                      </Field>
+                      {connectForm.workspaceOauthClientId.trim().length === 0 && (
+                        <>
+                          <Field label="New client ID" className="sm:col-span-2">
+                            <TextInput
+                              type="password"
+                              value={connectForm.oauthClientId}
+                              onChange={(v) => setFormField("oauthClientId", v)}
+                              placeholder="1234567890-abcdef.apps.googleusercontent.com"
+                            />
+                          </Field>
+                          <Field label="New client secret" className="sm:col-span-2">
+                            <TextInput
+                              type="password"
+                              value={connectForm.oauthClientSecret}
+                              onChange={(v) => setFormField("oauthClientSecret", v)}
+                              placeholder="GOCSPX-..."
+                            />
+                          </Field>
+                        </>
+                      )}
                     </>
                   )}
                   {connectForm.authKind !== "none" && (
@@ -1256,45 +1660,78 @@ export function AddSourcePage() {
         )}
 
         {/* Step 5a: OAuth required */}
-        {phase === "oauth_required" && oauthInfo && (
-          <div className="space-y-6">
-            <Section title="OAuth Authentication Required">
-              <div className="space-y-4">
-                <p className="text-[13px] text-muted-foreground">
-                  The source <strong className="text-foreground">{oauthInfo.source.name}</strong> requires OAuth.
-                  Click the button below to open a popup and complete authentication.
-                </p>
-                <div className="flex items-center gap-3">
-                  <Button onClick={handleOAuthPopup} disabled={oauthBusy}>
-                    {oauthBusy ? <IconSpinner className="size-3.5" /> : null}
-                    {oauthBusy ? "Authenticating\u2026" : "Sign in with OAuth"}
-                  </Button>
-                  <Button variant="ghost" onClick={handleBackToEditing}>
-                    Back to edit
-                  </Button>
-                </div>
+        {phase === "oauth_required" && (oauthInfo || batchOauthInfo) && (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="w-full max-w-sm space-y-6 text-center">
+              {/* Visual anchor */}
+              <div className="mx-auto flex size-16 items-center justify-center rounded-2xl border border-primary/20 bg-gradient-to-b from-primary/10 to-primary/4">
+                {oauthBusy ? (
+                  <IconSpinner className="size-6 text-primary" />
+                ) : (
+                  <svg className="size-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0110 0v4" />
+                  </svg>
+                )}
               </div>
-            </Section>
+
+              <div className="space-y-2">
+                <h2 className="font-display text-xl tracking-tight text-foreground">
+                  {oauthBusy ? "Waiting for sign-in\u2026" : "Sign in to continue"}
+                </h2>
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  {oauthInfo
+                    ? <>
+                        <strong className="text-foreground">{oauthInfo.source.name}</strong> requires OAuth authentication.
+                        A popup will open for you to authorize access.
+                      </>
+                    : <>
+                        {batchOauthInfo!.sourceIds.length} Google source{batchOauthInfo!.sourceIds.length === 1 ? "" : "s"} need{batchOauthInfo!.sourceIds.length === 1 ? "s" : ""} OAuth.
+                        One consent screen covers all selected APIs.
+                      </>
+                  }
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center gap-3">
+                <Button onClick={handleOAuthPopup} disabled={oauthBusy} className="w-full max-w-xs">
+                  {oauthBusy ? <IconSpinner className="size-3.5" /> : null}
+                  {oauthBusy ? "Authenticating\u2026" : "Open sign-in"}
+                </Button>
+                {!oauthBusy && (
+                  <button
+                    type="button"
+                    onClick={handleBackToEditing}
+                    className="text-[12px] font-medium text-muted-foreground/60 transition-colors hover:text-foreground"
+                  >
+                    Back to configuration
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
         {/* Step 5b: Connected */}
-        {phase === "connected" && connectResult && (
-          <Section title="Connected">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <IconCheck className="size-5" />
+        {phase === "connected" && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="space-y-5 text-center">
+              <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-primary/10 ring-4 ring-primary/5">
+                <IconCheck className="size-6 text-primary" />
               </div>
-              <div>
-                <p className="text-[14px] font-medium text-foreground">
-                  {connectResult.source.name}
-                </p>
-                <p className="text-[12px] text-muted-foreground">
-                  Source connected. Redirecting...
-                </p>
+              <div className="space-y-1.5">
+                <h2 className="font-display text-xl tracking-tight text-foreground">
+                  {connectResult
+                    ? connectResult.source.name
+                    : batchOauthInfo
+                      ? `${batchOauthInfo.sourceIds.length} source${batchOauthInfo.sourceIds.length === 1 ? "" : "s"}`
+                      : "Source"}
+                  {" "}connected
+                </h2>
+                <p className="text-[13px] text-muted-foreground/70">Redirecting\u2026</p>
               </div>
             </div>
-          </Section>
+          </div>
         )}
       </div>
     </div>
@@ -1390,14 +1827,27 @@ function StatusBanner(props: { state: { tone: "info" | "success" | "error"; text
   return (
     <div
       className={cn(
-        "rounded-lg border px-4 py-3 text-[13px]",
+        "flex items-start gap-2.5 rounded-lg border px-4 py-3 text-[13px]",
         props.state.tone === "success" && "border-primary/30 bg-primary/8 text-foreground",
         props.state.tone === "info" && "border-border bg-card text-muted-foreground",
         props.state.tone === "error" && "border-destructive/30 bg-destructive/8 text-destructive",
         props.className,
       )}
     >
-      {props.state.text}
+      <span className="mt-0.5 shrink-0">
+        {props.state.tone === "success" && <IconCheck className="size-3.5 text-primary" />}
+        {props.state.tone === "error" && (
+          <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6" /><path d="M9 9l6 6" />
+          </svg>
+        )}
+        {props.state.tone === "info" && (
+          <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+          </svg>
+        )}
+      </span>
+      <span>{props.state.text}</span>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { describe, expect, it } from "@effect/vitest";
@@ -215,6 +216,151 @@ const makeRealMcpServer = Effect.acquireRelease(
     }).pipe(Effect.orDie),
 );
 
+const makeAuthenticatedMcpServer = (expectedAuthorization: string) =>
+  Effect.acquireRelease(
+    Effect.promise<RealMcpServer>(
+      () =>
+        new Promise<RealMcpServer>((resolve, reject) => {
+          const createServerForRequest = () => {
+            const mcp = new McpServer(
+              {
+                name: "mcp-auth-adapter-test-server",
+                version: "1.0.0",
+              },
+              {
+                capabilities: {
+                  tools: {
+                    listChanged: true,
+                  },
+                },
+              },
+            );
+
+            mcp.registerTool(
+              "secure_echo",
+              {
+                title: "Secure Echo",
+                description: "Echoes a string after auth succeeds",
+                inputSchema: {
+                  value: z.string(),
+                },
+              },
+              async ({ value }: { value: string }) => ({
+                content: [{
+                  type: "text",
+                  text: `secure:${value}`,
+                }],
+              }),
+            );
+
+            const transport = new StreamableHTTPServerTransport({
+              sessionIdGenerator: undefined,
+            });
+
+            return {
+              mcp,
+              transport,
+            };
+          };
+
+          const app = createMcpExpressApp({ host: "127.0.0.1" });
+
+          const handle = async (req: any, res: any, parsedBody?: unknown) => {
+            if (req.headers.authorization !== expectedAuthorization) {
+              res.status(401).json({
+                jsonrpc: "2.0",
+                error: {
+                  code: -32001,
+                  message: "Unauthorized",
+                },
+                id: null,
+              });
+              return;
+            }
+
+            const { mcp, transport } = createServerForRequest();
+            try {
+              await mcp.connect(transport);
+              await transport.handleRequest(req, res, parsedBody);
+            } finally {
+              await transport.close().catch(() => undefined);
+              await mcp.close().catch(() => undefined);
+            }
+          };
+
+          app.post("/mcp", async (req: any, res: any) => {
+            await handle(req, res, req.body);
+          });
+
+          app.get("/mcp", async (req: any, res: any) => {
+            await handle(req, res);
+          });
+
+          app.delete("/mcp", async (req: any, res: any) => {
+            await handle(req, res, req.body);
+          });
+
+          const listener = app.listen(0, "127.0.0.1", () => {
+            const address = listener.address();
+            if (!address || typeof address === "string") {
+              reject(new Error("failed to resolve authenticated MCP test server address"));
+              return;
+            }
+
+            resolve({
+              endpoint: `http://127.0.0.1:${address.port}/mcp`,
+              close: async () => {
+                await new Promise<void>((closeResolve, closeReject) => {
+                  listener.close((error: Error | undefined) => {
+                    if (error) {
+                      closeReject(error);
+                      return;
+                    }
+                    closeResolve();
+                  });
+                });
+              },
+            });
+          });
+
+          listener.once("error", reject);
+        }),
+    ),
+    (server: RealMcpServer) =>
+      Effect.tryPromise({
+        try: () => server.close(),
+        catch: (error: unknown) =>
+          error instanceof Error ? error : new Error(String(error)),
+      }).pipe(Effect.orDie),
+  );
+
+const makeStaticAuthProvider = (accessToken: string): OAuthClientProvider => ({
+  get redirectUrl() {
+    return "http://127.0.0.1/oauth/callback";
+  },
+  get clientMetadata() {
+    return {
+      redirect_uris: ["http://127.0.0.1/oauth/callback"],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+      client_name: "Executor MCP Test",
+    };
+  },
+  clientInformation: () => undefined,
+  saveClientInformation: async () => undefined,
+  tokens: async () => ({
+    access_token: accessToken,
+    token_type: "Bearer",
+  }),
+  saveTokens: async () => undefined,
+  redirectToAuthorization: async () => undefined,
+  saveCodeVerifier: () => undefined,
+  codeVerifier: () => "unused",
+  saveDiscoveryState: async () => undefined,
+  discoveryState: () => undefined,
+});
+
 describe("mcp source adapter", () => {
   it.scoped("syncs MCP annotations and introspection metadata into snapshot", () =>
     Effect.gen(function* () {
@@ -381,6 +527,87 @@ describe("mcp source adapter", () => {
           content: [{
             type: "text",
             text: "read:/tmp/demo.txt",
+          }],
+        },
+        error: null,
+        headers: {},
+        status: null,
+      });
+    }),
+  );
+
+  it.scoped("passes OAuth client providers through MCP sync and execution reconnects", () =>
+    Effect.gen(function* () {
+      const realServer = yield* makeAuthenticatedMcpServer("Bearer mcp-auth-token");
+      const authProvider = makeStaticAuthProvider("mcp-auth-token");
+      const source = yield* createSourceFromPayload({
+        workspaceId: "ws_test" as any,
+        sourceId: SourceIdSchema.make(`src_${randomUUID()}`),
+        payload: {
+          name: "Authenticated MCP Demo",
+          kind: "mcp",
+          endpoint: realServer.endpoint,
+          namespace: "mcp.auth.demo",
+          binding: {
+            transport: "streamable-http",
+            queryParams: null,
+            headers: null,
+          },
+          importAuthPolicy: "reuse_runtime",
+          importAuth: { kind: "none" },
+          auth: { kind: "none" },
+          status: "connected",
+          enabled: true,
+        },
+        now: Date.now(),
+      });
+
+      const resolvedAuth = {
+        placements: [],
+        headers: {},
+        queryParams: {},
+        cookies: {},
+        bodyValues: {},
+        expiresAt: null,
+        refreshAfter: null,
+        authProvider,
+      } as const;
+
+      const syncResult = yield* mcpSourceAdapter.syncCatalog({
+        source,
+        resolveSecretMaterial: () =>
+          Effect.fail(new Error("unexpected secret lookup")),
+        resolveAuthMaterialForSlot: () => Effect.succeed(resolvedAuth),
+      });
+      const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
+
+      const tool = yield* expandCatalogToolByPath({
+        catalogs: [makeLoadedCatalog({
+          source,
+          snapshot,
+        })],
+        path: "mcp.auth.demo.secure_echo",
+      });
+
+      if (!tool) {
+        throw new Error("Expected authenticated MCP tool to resolve");
+      }
+
+      const result = yield* invokeIrTool({
+        workspaceId: source.workspaceId,
+        accountId: "acct_test" as any,
+        tool,
+        auth: resolvedAuth,
+        args: {
+          value: "ok",
+        },
+      });
+
+      expect(result).toEqual({
+        data: {
+          content: [{
+            type: "text",
+            text: "secure:ok",
           }],
         },
         error: null,

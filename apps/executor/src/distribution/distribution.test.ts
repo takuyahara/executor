@@ -15,6 +15,12 @@ describe("distribution flow", () => {
     Effect.gen(function* () {
       const harness = yield* DistributionHarness;
 
+      yield* harness.writeProjectConfig(`{
+  // local workspace config
+  "sources": {},
+}
+`);
+
       const initialDoctor = yield* runCommand([
         "doctor",
         "--json",

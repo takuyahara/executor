@@ -1,7 +1,9 @@
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform";
 import {
+  SourceOauthClientInputSchema,
   ExecutionInteractionIdSchema,
   JsonObjectSchema,
+  ProviderAuthGrantIdSchema,
   SourceAuthSchema,
   SourceAuthSessionIdSchema,
   SourceDiscoveryResultSchema,
@@ -15,6 +17,8 @@ import {
   SourceProbeAuthSchema,
   SourceSchema,
   SourceStatusSchema,
+  WorkspaceOauthClientIdSchema,
+  WorkspaceOauthClientSchema,
   WorkspaceIdSchema,
 } from "#schema";
 import * as Schema from "effect/Schema";
@@ -59,6 +63,8 @@ export const CreateSourcePayloadSchema = Schema.extend(
 );
 
 export type CreateSourcePayload = typeof CreateSourcePayloadSchema.Type;
+export type CreateWorkspaceOauthClientPayload =
+  typeof CreateWorkspaceOauthClientPayloadSchema.Type;
 
 export const UpdateSourcePayloadSchema = Schema.Struct({
   name: OptionalTrimmedNonEmptyStringSchema,
@@ -96,6 +102,49 @@ const CredentialOauthCompleteUrlParamsSchema = Schema.Struct({
   error_description: Schema.optional(Schema.String),
 });
 
+const WorkspaceOauthClientQuerySchema = Schema.Struct({
+  providerKey: Schema.String,
+});
+
+const CreateWorkspaceOauthClientPayloadSchema = Schema.Struct({
+  providerKey: Schema.String,
+  label: Schema.optional(Schema.NullOr(Schema.String)),
+  oauthClient: SourceOauthClientInputSchema,
+});
+
+const oauthClientIdParam = HttpApiSchema.param("oauthClientId", WorkspaceOauthClientIdSchema);
+const grantIdParam = HttpApiSchema.param("grantId", ProviderAuthGrantIdSchema);
+
+const ConnectGoogleDiscoveryBatchSourceSchema = Schema.Struct({
+  service: TrimmedNonEmptyStringSchema,
+  version: TrimmedNonEmptyStringSchema,
+  discoveryUrl: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  scopes: Schema.optional(Schema.Array(TrimmedNonEmptyStringSchema)),
+  name: Schema.optional(Schema.NullOr(Schema.String)),
+  namespace: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const ConnectSourceBatchPayloadSchema = Schema.Struct({
+  workspaceOauthClientId: WorkspaceOauthClientIdSchema,
+  sources: Schema.Array(ConnectGoogleDiscoveryBatchSourceSchema),
+});
+
+const ConnectSourceBatchResultSchema = Schema.Struct({
+  results: Schema.Array(
+    Schema.Struct({
+      source: SourceSchema,
+      status: Schema.Literal("connected", "pending_oauth"),
+    }),
+  ),
+  providerOauthSession: Schema.NullOr(
+    Schema.Struct({
+      sessionId: SourceAuthSessionIdSchema,
+      authorizationUrl: Schema.String,
+      sourceIds: Schema.Array(SourceIdSchema),
+    }),
+  ),
+});
+
 const DiscoverSourcePayloadSchema = Schema.Struct({
   url: TrimmedNonEmptyStringSchema,
   probeAuth: Schema.optional(SourceProbeAuthSchema),
@@ -122,10 +171,15 @@ const ConnectSourceResultSchema = Schema.Union(
 );
 
 export type ConnectSourceResult = typeof ConnectSourceResultSchema.Type;
+export type ConnectSourceBatchPayload = typeof ConnectSourceBatchPayloadSchema.Type;
+export type ConnectSourceBatchResult = typeof ConnectSourceBatchResultSchema.Type;
 
 export {
   ConnectSourcePayloadSchema,
+  ConnectSourceBatchPayloadSchema,
+  ConnectSourceBatchResultSchema,
   ConnectSourceResultSchema,
+  CreateWorkspaceOauthClientPayloadSchema,
   DiscoverSourcePayloadSchema,
 };
 
@@ -148,6 +202,49 @@ export class SourcesApi extends HttpApiGroup.make("sources")
     HttpApiEndpoint.post("connect")`/workspaces/${workspaceIdParam}/sources/connect`
       .setPayload(ConnectSourcePayloadSchema)
       .addSuccess(ConnectSourceResultSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.post("connectBatch")`/workspaces/${workspaceIdParam}/sources/connect-batch`
+      .setPayload(ConnectSourceBatchPayloadSchema)
+      .addSuccess(ConnectSourceBatchResultSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.get("listWorkspaceOauthClients")`/workspaces/${workspaceIdParam}/oauth-clients`
+      .setUrlParams(WorkspaceOauthClientQuerySchema)
+      .addSuccess(Schema.Array(WorkspaceOauthClientSchema))
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.post("createWorkspaceOauthClient")`/workspaces/${workspaceIdParam}/oauth-clients`
+      .setPayload(CreateWorkspaceOauthClientPayloadSchema)
+      .addSuccess(WorkspaceOauthClientSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.del("removeWorkspaceOauthClient")`/workspaces/${workspaceIdParam}/oauth-clients/${oauthClientIdParam}`
+      .addSuccess(Schema.Struct({ removed: Schema.Boolean }))
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.del("removeProviderAuthGrant")`/workspaces/${workspaceIdParam}/provider-grants/${grantIdParam}`
+      .addSuccess(Schema.Struct({ removed: Schema.Boolean }))
       .addError(ControlPlaneBadRequestError)
       .addError(ControlPlaneUnauthorizedError)
       .addError(ControlPlaneForbiddenError)
@@ -216,6 +313,14 @@ export class SourcesApi extends HttpApiGroup.make("sources")
   )
   .add(
     HttpApiEndpoint.get("credentialComplete")`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/credentials/oauth/complete`
+      .setUrlParams(CredentialOauthCompleteUrlParamsSchema)
+      .addSuccess(HtmlSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.get("providerOauthComplete")`/workspaces/${workspaceIdParam}/oauth/provider/callback`
       .setUrlParams(CredentialOauthCompleteUrlParamsSchema)
       .addSuccess(HtmlSchema)
       .addError(ControlPlaneBadRequestError)

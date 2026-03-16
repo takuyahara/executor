@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@effect/platform": "catalog:",
+    "@electric-sql/pglite": "^0.3.15",
     "@executor/codemode-core": "workspace:*",
     "@executor/codemode-google-discovery": "workspace:*",
     "@executor/codemode-mcp": "workspace:*",
@@ -31,6 +32,7 @@
     "effect": "catalog:",
     "graphql": "^16.12.0",
     "jsonc-parser": "3.3.1",
+    "postgres": "^3.4.8",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3"
   },

@@ -97,6 +97,7 @@ type McpInvocationRequestPlan = {
   transport?: "auto" | "streamable-http" | "sse";
   queryParams: Record<string, string>;
   headers: Record<string, string>;
+  authProvider?: ResolvedSourceAuthMaterial["authProvider"];
   toolName: string;
   payload: unknown;
   inputSchema: unknown;
@@ -600,6 +601,7 @@ const planMcpInvocation = (input: {
         },
         cookies: input.auth.cookies,
       }),
+      authProvider: input.auth.authProvider,
       toolName: input.executable.toolName,
       payload,
       inputSchema: input.tool.descriptor.inputSchema,
@@ -624,6 +626,7 @@ const executeMcpPlan = (input: {
         transport: input.requestPlan.transport,
         queryParams: input.requestPlan.queryParams,
         headers: input.requestPlan.headers,
+        authProvider: input.requestPlan.authProvider,
       });
       const tools = createMcpToolsFromManifest({
         manifest: {

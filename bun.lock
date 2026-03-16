@@ -162,6 +162,7 @@
       "name": "@executor/control-plane",
       "dependencies": {
         "@effect/platform": "catalog:",
+        "@electric-sql/pglite": "^0.3.15",
         "@executor/codemode-core": "workspace:*",
         "@executor/codemode-google-discovery": "workspace:*",
         "@executor/codemode-mcp": "workspace:*",
@@ -172,6 +173,7 @@
         "effect": "catalog:",
         "graphql": "^16.12.0",
         "jsonc-parser": "3.3.1",
+        "postgres": "^3.4.8",
         "prettier": "^3.8.1",
         "typescript": "^5.9.3",
       },
@@ -441,6 +443,8 @@
     "@effect/vitest": ["@effect/vitest@0.27.0", "", { "peerDependencies": { "effect": "^3.19.0", "vitest": "^3.2.0" } }, "sha512-8bM7n9xlMUYw9GqPIVgXFwFm2jf27m/R7psI64PGpwU5+26iwyxp9eAXEsfT5S6lqztYfpQQ1Ubp5o6HfNYzJQ=="],
 
     "@effect/workflow": ["@effect/workflow@0.16.0", "", { "peerDependencies": { "@effect/experimental": "^0.58.0", "@effect/platform": "^0.94.0", "@effect/rpc": "^0.73.0", "effect": "^3.19.13" } }, "sha512-MiAdlxx3TixkgHdbw+Yf1Z3tHAAE0rOQga12kIydJqj05Fnod+W/I+kQGRMY/XWRg+QUsVxhmh1qTr7Ype6lrw=="],
+
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.3.16", "", {}, "sha512-mZkZfOd9OqTMHsK+1cje8OSzfAQcpD7JmILXTl5ahdempjUDdmg4euf1biDex5/LfQIDJ3gvCu6qDgdnDxfJmA=="],
 
     "@emnapi/core": ["@emnapi/core@1.8.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.1.0", "tslib": "^2.4.0" } }, "sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg=="],
 
@@ -1485,6 +1489,8 @@
     "pkce-challenge": ["pkce-challenge@5.0.1", "", {}, "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="],
 
     "postcss": ["postcss@8.5.8", "", { "dependencies": { "nanoid": "^3.3.11", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-OW/rX8O/jXnm82Ey1k44pObPtdblfiuWnrd8X7GJ7emImCOstunGbXUpp7HdBrFQX6rJzn3sPT397Wp5aCwCHg=="],
+
+    "postgres": ["postgres@3.4.8", "", {}, "sha512-d+JFcLM17njZaOLkv6SCev7uoLaBtfK86vMUXhW1Z4glPWh4jozno9APvW/XKFJ3CCxVoC7OL38BqRydtu5nGg=="],
 
     "prettier": ["prettier@3.8.1", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-UOnG6LftzbdaHZcKoPFtOcCKztrQ57WkHDeRD9t/PTQtmT0NHSeWWepj6pS0z/N7+08BHFDQVUrfmfMRcZwbMg=="],
 

@@ -2,6 +2,7 @@ import { Schema } from "effect";
 
 import { TimestampMsSchema } from "../common";
 import {
+  ProviderAuthGrantIdSchema,
   SourceIdSchema,
   SourceCatalogIdSchema,
   SourceCatalogRevisionIdSchema,
@@ -59,6 +60,28 @@ export const SourceAuthSchema = Schema.Union(
     clientSecret: Schema.NullOr(SecretRefSchema),
     refreshToken: SecretRefSchema,
     grantSet: Schema.NullOr(Schema.Array(Schema.String)),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("provider_grant_ref"),
+    grantId: ProviderAuthGrantIdSchema,
+    providerKey: Schema.String,
+    requiredScopes: Schema.Array(Schema.String),
+    headerName: Schema.String,
+    prefix: Schema.String,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("mcp_oauth"),
+    redirectUri: Schema.String,
+    accessToken: SecretRefSchema,
+    refreshToken: Schema.NullOr(SecretRefSchema),
+    tokenType: Schema.String,
+    expiresIn: Schema.NullOr(Schema.Number),
+    scope: Schema.NullOr(Schema.String),
+    resourceMetadataUrl: Schema.NullOr(Schema.String),
+    authorizationServerUrl: Schema.NullOr(Schema.String),
+    resourceMetadataJson: Schema.NullOr(Schema.String),
+    authorizationServerMetadataJson: Schema.NullOr(Schema.String),
+    clientInformationJson: Schema.NullOr(Schema.String),
   }),
 );
 

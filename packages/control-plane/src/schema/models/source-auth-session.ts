@@ -5,8 +5,9 @@ import {
   AccountIdSchema,
   ExecutionIdSchema,
   ExecutionInteractionIdSchema,
-  SourceAuthSessionIdSchema,
   SourceIdSchema,
+  SourceAuthSessionIdSchema,
+  WorkspaceOauthClientIdSchema,
   WorkspaceIdSchema,
 } from "../ids";
 import {
@@ -97,6 +98,35 @@ export const OAuth2PkceSourceAuthSessionDataJsonSchema = Schema.parseJson(
   OAuth2PkceSourceAuthSessionDataSchema,
 );
 
+export const ProviderOauthTargetSourceSchema = Schema.Struct({
+  sourceId: SourceIdSchema,
+  requiredScopes: Schema.Array(Schema.String),
+});
+
+export const ProviderOauthBatchSourceAuthSessionDataSchema = Schema.Struct({
+  kind: Schema.Literal("provider_oauth_batch"),
+  providerKey: Schema.String,
+  authorizationEndpoint: Schema.String,
+  tokenEndpoint: Schema.String,
+  redirectUri: Schema.String,
+  oauthClientId: WorkspaceOauthClientIdSchema,
+  clientAuthentication: OAuth2ClientAuthenticationMethodSchema,
+  scopes: Schema.Array(Schema.String),
+  headerName: Schema.String,
+  prefix: Schema.String,
+  authorizationParams: Schema.Record({
+    key: Schema.String,
+    value: Schema.String,
+  }),
+  targetSources: Schema.Array(ProviderOauthTargetSourceSchema),
+  codeVerifier: Schema.NullOr(Schema.String),
+  authorizationUrl: Schema.NullOr(Schema.String),
+});
+
+export const ProviderOauthBatchSourceAuthSessionDataJsonSchema = Schema.parseJson(
+  ProviderOauthBatchSourceAuthSessionDataSchema,
+);
+
 export const SourceAuthSessionSchema = Schema.Struct({
   id: SourceAuthSessionIdSchema,
   workspaceId: WorkspaceIdSchema,
@@ -120,4 +150,7 @@ export type SourceAuthSessionStatus = typeof SourceAuthSessionStatusSchema.Type;
 export type McpSourceAuthSessionData = typeof McpSourceAuthSessionDataSchema.Type;
 export type OAuth2PkceSourceAuthSessionData =
   typeof OAuth2PkceSourceAuthSessionDataSchema.Type;
+export type ProviderOauthTargetSource = typeof ProviderOauthTargetSourceSchema.Type;
+export type ProviderOauthBatchSourceAuthSessionData =
+  typeof ProviderOauthBatchSourceAuthSessionDataSchema.Type;
 export type SourceAuthSession = typeof SourceAuthSessionSchema.Type;

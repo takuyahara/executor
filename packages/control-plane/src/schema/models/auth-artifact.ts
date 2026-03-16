@@ -4,6 +4,7 @@ import { TimestampMsSchema } from "../common";
 import {
   AccountIdSchema,
   AuthArtifactIdSchema,
+  ProviderAuthGrantIdSchema,
   SourceIdSchema,
   WorkspaceIdSchema,
 } from "../ids";
@@ -85,6 +86,8 @@ export const StaticOAuth2AuthArtifactKind = "static_oauth2" as const;
 export const StaticPlacementsAuthArtifactKind = "static_placements" as const;
 export const RefreshableOAuth2AuthorizedUserAuthArtifactKind =
   "oauth2_authorized_user" as const;
+export const ProviderGrantRefAuthArtifactKind = "provider_grant_ref" as const;
+export const McpOAuthAuthArtifactKind = "mcp_oauth" as const;
 
 export const OAuth2ClientAuthenticationMethodSchema = Schema.Literal(
   "none",
@@ -125,6 +128,28 @@ export const RefreshableOAuth2AuthorizedUserAuthArtifactConfigSchema = Schema.St
   refreshToken: SecretRefSchema,
 });
 
+export const ProviderGrantRefAuthArtifactConfigSchema = Schema.Struct({
+  grantId: ProviderAuthGrantIdSchema,
+  providerKey: Schema.String,
+  requiredScopes: Schema.Array(Schema.String),
+  headerName: Schema.String,
+  prefix: Schema.String,
+});
+
+export const McpOAuthAuthArtifactConfigSchema = Schema.Struct({
+  redirectUri: Schema.String,
+  accessToken: SecretRefSchema,
+  refreshToken: Schema.NullOr(SecretRefSchema),
+  tokenType: Schema.String,
+  expiresIn: Schema.NullOr(Schema.Number),
+  scope: Schema.NullOr(Schema.String),
+  resourceMetadataUrl: Schema.NullOr(Schema.String),
+  authorizationServerUrl: Schema.NullOr(Schema.String),
+  resourceMetadataJson: Schema.NullOr(Schema.String),
+  authorizationServerMetadataJson: Schema.NullOr(Schema.String),
+  clientInformationJson: Schema.NullOr(Schema.String),
+});
+
 export const StaticBearerAuthArtifactConfigJsonSchema = Schema.parseJson(
   StaticBearerAuthArtifactConfigSchema,
 );
@@ -139,6 +164,14 @@ export const StaticPlacementsAuthArtifactConfigJsonSchema = Schema.parseJson(
 
 export const RefreshableOAuth2AuthorizedUserAuthArtifactConfigJsonSchema = Schema.parseJson(
   RefreshableOAuth2AuthorizedUserAuthArtifactConfigSchema,
+);
+
+export const ProviderGrantRefAuthArtifactConfigJsonSchema = Schema.parseJson(
+  ProviderGrantRefAuthArtifactConfigSchema,
+);
+
+export const McpOAuthAuthArtifactConfigJsonSchema = Schema.parseJson(
+  McpOAuthAuthArtifactConfigSchema,
 );
 
 export const RequestPlacementsJsonSchema = Schema.parseJson(
@@ -161,6 +194,12 @@ const decodeStaticPlacementsAuthArtifactConfigOption = Schema.decodeUnknownOptio
 
 const decodeRefreshableOAuth2AuthorizedUserAuthArtifactConfigOption = Schema.decodeUnknownOption(
   RefreshableOAuth2AuthorizedUserAuthArtifactConfigJsonSchema,
+);
+const decodeProviderGrantRefAuthArtifactConfigOption = Schema.decodeUnknownOption(
+  ProviderGrantRefAuthArtifactConfigJsonSchema,
+);
+const decodeMcpOAuthAuthArtifactConfigOption = Schema.decodeUnknownOption(
+  McpOAuthAuthArtifactConfigJsonSchema,
 );
 
 const decodeAuthGrantSetOption = Schema.decodeUnknownOption(AuthGrantSetJsonSchema);
@@ -194,6 +233,9 @@ export type StaticOAuth2AuthArtifactConfig = typeof StaticOAuth2AuthArtifactConf
 export type StaticPlacementsAuthArtifactConfig = typeof StaticPlacementsAuthArtifactConfigSchema.Type;
 export type RefreshableOAuth2AuthorizedUserAuthArtifactConfig =
   typeof RefreshableOAuth2AuthorizedUserAuthArtifactConfigSchema.Type;
+export type ProviderGrantRefAuthArtifactConfig =
+  typeof ProviderGrantRefAuthArtifactConfigSchema.Type;
+export type McpOAuthAuthArtifactConfig = typeof McpOAuthAuthArtifactConfigSchema.Type;
 export type AuthArtifact = typeof AuthArtifactSchema.Type;
 
 export type DecodedBuiltInAuthArtifactConfig =
@@ -213,6 +255,28 @@ export type DecodedBuiltInAuthArtifactConfig =
       artifactKind: typeof RefreshableOAuth2AuthorizedUserAuthArtifactKind;
       config: RefreshableOAuth2AuthorizedUserAuthArtifactConfig;
     };
+
+export const decodeProviderGrantRefAuthArtifactConfig = (
+  artifact: Pick<AuthArtifact, "artifactKind" | "configJson">,
+): ProviderGrantRefAuthArtifactConfig | null => {
+  if (artifact.artifactKind !== ProviderGrantRefAuthArtifactKind) {
+    return null;
+  }
+
+  const decoded = decodeProviderGrantRefAuthArtifactConfigOption(artifact.configJson);
+  return decoded._tag === "Some" ? decoded.value : null;
+};
+
+export const decodeMcpOAuthAuthArtifactConfig = (
+  artifact: Pick<AuthArtifact, "artifactKind" | "configJson">,
+): McpOAuthAuthArtifactConfig | null => {
+  if (artifact.artifactKind !== McpOAuthAuthArtifactKind) {
+    return null;
+  }
+
+  const decoded = decodeMcpOAuthAuthArtifactConfigOption(artifact.configJson);
+  return decoded._tag === "Some" ? decoded.value : null;
+};
 
 export const decodeBuiltInAuthArtifactConfig = (
   artifact: Pick<AuthArtifact, "artifactKind" | "configJson">,
@@ -273,28 +337,35 @@ export const authArtifactSecretRefs = (
   artifact: Pick<AuthArtifact, "artifactKind" | "configJson">,
 ): ReadonlyArray<SecretRef> => {
   const decoded = decodeBuiltInAuthArtifactConfig(artifact);
-  if (decoded === null) {
-    return [];
+  if (decoded !== null) {
+    switch (decoded.artifactKind) {
+      case StaticBearerAuthArtifactKind:
+        return [decoded.config.token];
+      case StaticOAuth2AuthArtifactKind:
+        return decoded.config.refreshToken
+          ? [decoded.config.accessToken, decoded.config.refreshToken]
+          : [decoded.config.accessToken];
+      case StaticPlacementsAuthArtifactKind:
+        return decoded.config.placements.flatMap((placement) =>
+          placement.parts.flatMap((part) =>
+            part.kind === "secret_ref" ? [part.ref] : [],
+          )
+        );
+      case RefreshableOAuth2AuthorizedUserAuthArtifactKind:
+        return decoded.config.clientSecret
+          ? [decoded.config.refreshToken, decoded.config.clientSecret]
+          : [decoded.config.refreshToken];
+    }
   }
 
-  switch (decoded.artifactKind) {
-    case StaticBearerAuthArtifactKind:
-      return [decoded.config.token];
-    case StaticOAuth2AuthArtifactKind:
-      return decoded.config.refreshToken
-        ? [decoded.config.accessToken, decoded.config.refreshToken]
-        : [decoded.config.accessToken];
-    case StaticPlacementsAuthArtifactKind:
-      return decoded.config.placements.flatMap((placement) =>
-        placement.parts.flatMap((part) =>
-          part.kind === "secret_ref" ? [part.ref] : [],
-        )
-      );
-    case RefreshableOAuth2AuthorizedUserAuthArtifactKind:
-      return decoded.config.clientSecret
-        ? [decoded.config.refreshToken, decoded.config.clientSecret]
-        : [decoded.config.refreshToken];
+  const mcpOAuthConfig = decodeMcpOAuthAuthArtifactConfig(artifact);
+  if (mcpOAuthConfig !== null) {
+    return mcpOAuthConfig.refreshToken
+      ? [mcpOAuthConfig.accessToken, mcpOAuthConfig.refreshToken]
+      : [mcpOAuthConfig.accessToken];
   }
+
+  return [];
 };
 
 export const authArtifactSecretMaterialRefs = authArtifactSecretRefs;

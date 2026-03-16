@@ -14,10 +14,14 @@ import {
   ExecutionInteractionSchema,
   ExecutionSchema,
   ExecutionStepSchema,
+  type ProviderAuthGrant,
+  ProviderAuthGrantSchema,
   SecretMaterialSchema,
   type SecretMaterial,
   type SourceAuthSession,
   SourceAuthSessionSchema,
+  type WorkspaceOauthClient,
+  WorkspaceOauthClientSchema,
   type WorkspaceSourceOauthClient,
   WorkspaceSourceOauthClientSchema,
 } from "#schema";
@@ -40,6 +44,8 @@ const LocalControlPlaneStateSchema = Schema.Struct({
   authArtifacts: Schema.Array(AuthArtifactSchema),
   authLeases: Schema.Array(AuthLeaseSchema),
   sourceOauthClients: Schema.Array(WorkspaceSourceOauthClientSchema),
+  workspaceOauthClients: Schema.Array(WorkspaceOauthClientSchema),
+  providerAuthGrants: Schema.Array(ProviderAuthGrantSchema),
   sourceAuthSessions: Schema.Array(SourceAuthSessionSchema),
   secretMaterials: Schema.Array(SecretMaterialSchema),
   executions: Schema.Array(ExecutionSchema),
@@ -63,12 +69,38 @@ const defaultLocalControlPlaneState = (): LocalControlPlaneState => ({
   authArtifacts: [],
   authLeases: [],
   sourceOauthClients: [],
+  workspaceOauthClients: [],
+  providerAuthGrants: [],
   sourceAuthSessions: [],
   secretMaterials: [],
   executions: [],
   executionInteractions: [],
   executionSteps: [],
 });
+
+const normalizeLocalControlPlaneStateInput = (raw: unknown): unknown => {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const record = raw as Record<string, unknown>;
+  const defaults = defaultLocalControlPlaneState();
+
+  return {
+    ...record,
+    version: record.version ?? defaults.version,
+    authArtifacts: record.authArtifacts ?? defaults.authArtifacts,
+    authLeases: record.authLeases ?? defaults.authLeases,
+    sourceOauthClients: record.sourceOauthClients ?? defaults.sourceOauthClients,
+    workspaceOauthClients: record.workspaceOauthClients ?? defaults.workspaceOauthClients,
+    providerAuthGrants: record.providerAuthGrants ?? defaults.providerAuthGrants,
+    sourceAuthSessions: record.sourceAuthSessions ?? defaults.sourceAuthSessions,
+    secretMaterials: record.secretMaterials ?? defaults.secretMaterials,
+    executions: record.executions ?? defaults.executions,
+    executionInteractions: record.executionInteractions ?? defaults.executionInteractions,
+    executionSteps: record.executionSteps ?? defaults.executionSteps,
+  };
+};
 
 const cloneValue = <T>(value: T): T =>
   JSON.parse(JSON.stringify(value)) as T;
@@ -119,7 +151,9 @@ const readStateFromDisk = async (
   }
 
   const content = await readFile(path, "utf8");
-  return decodeLocalControlPlaneState(JSON.parse(content) as unknown);
+  return decodeLocalControlPlaneState(
+    normalizeLocalControlPlaneStateInput(JSON.parse(content) as unknown),
+  );
 };
 
 const writeStateToDisk = async (
@@ -253,6 +287,34 @@ const mergeSourceOauthClients = (
   return [...merged.values()];
 };
 
+const mergeWorkspaceOauthClients = (
+  current: readonly WorkspaceOauthClient[],
+  imported: readonly WorkspaceOauthClient[],
+): WorkspaceOauthClient[] => {
+  const merged = new Map<string, WorkspaceOauthClient>();
+
+  for (const oauthClient of imported) {
+    merged.set(
+      [oauthClient.workspaceId, oauthClient.providerKey, oauthClient.id].join("::"),
+      cloneValue(oauthClient),
+    );
+  }
+
+  for (const oauthClient of current) {
+    merged.set(
+      [oauthClient.workspaceId, oauthClient.providerKey, oauthClient.id].join("::"),
+      cloneValue(oauthClient),
+    );
+  }
+
+  return [...merged.values()];
+};
+
+const mergeProviderAuthGrants = (
+  current: readonly ProviderAuthGrant[],
+  imported: readonly ProviderAuthGrant[],
+): ProviderAuthGrant[] => mergeById(current, imported);
+
 export const mergeImportedLocalControlPlaneState = (input: {
   current: LocalControlPlaneState;
   imported: Partial<Omit<LocalControlPlaneState, "version">>;
@@ -269,6 +331,14 @@ export const mergeImportedLocalControlPlaneState = (input: {
   sourceOauthClients: mergeSourceOauthClients(
     input.current.sourceOauthClients,
     input.imported.sourceOauthClients ?? [],
+  ),
+  workspaceOauthClients: mergeWorkspaceOauthClients(
+    input.current.workspaceOauthClients,
+    input.imported.workspaceOauthClients ?? [],
+  ),
+  providerAuthGrants: mergeProviderAuthGrants(
+    input.current.providerAuthGrants,
+    input.imported.providerAuthGrants ?? [],
   ),
   sourceAuthSessions: mergeById(
     input.current.sourceAuthSessions,
@@ -578,6 +648,133 @@ export const createLocalControlPlaneStore = (
             },
             value: state.sourceOauthClients.length - nextOauthClients.length,
           } satisfies StateMutationResult<number>;
+        }),
+    },
+
+    workspaceOauthClients: {
+      listByWorkspaceAndProvider: (input: {
+        workspaceId: WorkspaceOauthClient["workspaceId"];
+        providerKey: string;
+      }) =>
+        stateManager.read((state) =>
+          sortByUpdatedAtAndIdAsc(
+            state.workspaceOauthClients.filter(
+              (candidate) =>
+                candidate.workspaceId === input.workspaceId
+                && candidate.providerKey === input.providerKey,
+            ),
+          ),
+        ),
+
+      getById: (id: WorkspaceOauthClient["id"]) =>
+        stateManager.read((state) => {
+          const oauthClient = state.workspaceOauthClients.find(
+            (candidate) => candidate.id === id,
+          );
+
+          return oauthClient
+            ? Option.some(cloneValue(oauthClient))
+            : Option.none<WorkspaceOauthClient>();
+        }),
+
+      upsert: (oauthClient: WorkspaceOauthClient) =>
+        stateManager.mutate((state) => {
+          const nextOauthClients = state.workspaceOauthClients.filter(
+            (candidate) => candidate.id !== oauthClient.id,
+          );
+          nextOauthClients.push(cloneValue(oauthClient));
+
+          return {
+            state: {
+              ...state,
+              workspaceOauthClients: nextOauthClients,
+            },
+            value: undefined,
+          } satisfies StateMutationResult<void>;
+        }),
+
+      removeById: (id: WorkspaceOauthClient["id"]) =>
+        stateManager.mutate((state) => {
+          const nextOauthClients = state.workspaceOauthClients.filter(
+            (candidate) => candidate.id !== id,
+          );
+
+          return {
+            state: {
+              ...state,
+              workspaceOauthClients: nextOauthClients,
+            },
+            value: nextOauthClients.length !== state.workspaceOauthClients.length,
+          } satisfies StateMutationResult<boolean>;
+        }),
+    },
+
+    providerAuthGrants: {
+      listByWorkspaceId: (workspaceId: ProviderAuthGrant["workspaceId"]) =>
+        stateManager.read((state) =>
+          sortByUpdatedAtAndIdAsc(
+            state.providerAuthGrants.filter(
+              (grant) => grant.workspaceId === workspaceId,
+            ),
+          ),
+        ),
+
+      listByWorkspaceActorAndProvider: (input: {
+        workspaceId: ProviderAuthGrant["workspaceId"];
+        actorAccountId: ProviderAuthGrant["actorAccountId"];
+        providerKey: string;
+      }) =>
+        stateManager.read((state) =>
+          sortByUpdatedAtAndIdAsc(
+            state.providerAuthGrants.filter(
+              (grant) =>
+                grant.workspaceId === input.workspaceId
+                && grant.providerKey === input.providerKey
+                && actorEquals(grant.actorAccountId, input.actorAccountId),
+            ),
+          ),
+        ),
+
+      getById: (id: ProviderAuthGrant["id"]) =>
+        stateManager.read((state) => {
+          const grant = state.providerAuthGrants.find(
+            (candidate) => candidate.id === id,
+          );
+
+          return grant
+            ? Option.some(cloneValue(grant))
+            : Option.none<ProviderAuthGrant>();
+        }),
+
+      upsert: (grant: ProviderAuthGrant) =>
+        stateManager.mutate((state) => {
+          const nextGrants = state.providerAuthGrants.filter(
+            (candidate) => candidate.id !== grant.id,
+          );
+          nextGrants.push(cloneValue(grant));
+
+          return {
+            state: {
+              ...state,
+              providerAuthGrants: nextGrants,
+            },
+            value: undefined,
+          } satisfies StateMutationResult<void>;
+        }),
+
+      removeById: (id: ProviderAuthGrant["id"]) =>
+        stateManager.mutate((state) => {
+          const nextGrants = state.providerAuthGrants.filter(
+            (candidate) => candidate.id !== id,
+          );
+
+          return {
+            state: {
+              ...state,
+              providerAuthGrants: nextGrants,
+            },
+            value: nextGrants.length !== state.providerAuthGrants.length,
+          } satisfies StateMutationResult<boolean>;
         }),
     },
 

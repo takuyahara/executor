@@ -15,12 +15,16 @@ import {
   ExecutionIdSchema,
   ExecutionInteractionIdSchema,
   type ExecutionInteraction,
+  ProviderAuthGrantIdSchema,
   SecretMaterialIdSchema,
+  SourceAuthSessionIdSchema,
   SourceIdSchema,
+  WorkspaceOauthClientIdSchema,
 } from "#schema";
 import type { ToolPath } from "@executor/codemode-core";
 
 import {
+  type ControlPlaneRuntime,
   createControlPlaneRuntime,
   LiveExecutionManagerService,
   provideControlPlaneRuntime,
@@ -51,6 +55,25 @@ const makeRuntime = Effect.gen(function* () {
 type OpenApiSpecServer = {
   baseUrl: string;
   specUrl: string;
+  close: () => Promise<void>;
+};
+
+type GoogleWorkspaceTestServer = {
+  baseUrl: string;
+  tokenEndpoint: string;
+  discoveryUrl: (input: {
+    service: string;
+    version: string;
+    scope: string;
+  }) => string;
+  queueTokenResponse: (response: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+  }) => void;
+  tokenRequests: URLSearchParams[];
+  discoveryAuthorizations: string[];
   close: () => Promise<void>;
 };
 
@@ -121,6 +144,232 @@ const makeOpenApiSpecServer = Effect.acquireRelease(
   ),
   (server) => Effect.promise(() => server.close()).pipe(Effect.orDie),
 );
+
+const makeGoogleWorkspaceTestServer = Effect.acquireRelease(
+  Effect.promise<GoogleWorkspaceTestServer>(
+    () =>
+      new Promise<GoogleWorkspaceTestServer>((resolve, reject) => {
+        const discoveryScopes = new Map<string, string>();
+        const tokenResponses: Array<{
+          access_token: string;
+          refresh_token?: string;
+          expires_in?: number;
+          scope?: string;
+        }> = [];
+        const tokenRequests: URLSearchParams[] = [];
+        const discoveryAuthorizations: string[] = [];
+        let baseUrl = "";
+        let currentAccessToken: string | null = null;
+
+        const server = createServer(async (request, response) => {
+          const requestUrl = new URL(
+            request.url ?? "/",
+            `http://${request.headers.host ?? "127.0.0.1"}`,
+          );
+
+          if (request.method === "POST" && requestUrl.pathname === "/oauth/token") {
+            const chunks: Buffer[] = [];
+            for await (const chunk of request) {
+              chunks.push(Buffer.from(chunk));
+            }
+
+            const params = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+            tokenRequests.push(params);
+            const nextResponse = tokenResponses.shift();
+            if (!nextResponse) {
+              response.statusCode = 500;
+              response.setHeader("content-type", "application/json");
+              response.end(JSON.stringify({
+                error: "missing_token_response",
+              }));
+              return;
+            }
+
+            currentAccessToken = nextResponse.access_token;
+            response.statusCode = 200;
+            response.setHeader("content-type", "application/json");
+            response.end(JSON.stringify({
+              token_type: "Bearer",
+              expires_in: 3600,
+              ...nextResponse,
+            }));
+            return;
+          }
+
+          const discoveryMatch = /^\/([^/]+)\/\$discovery\/rest$/.exec(requestUrl.pathname);
+          if (request.method === "GET" && discoveryMatch) {
+            const service = discoveryMatch[1]!;
+            const version = requestUrl.searchParams.get("version") ?? "v1";
+            const authorizationHeader =
+              typeof request.headers.authorization === "string"
+                ? request.headers.authorization
+                : Array.isArray(request.headers.authorization)
+                  ? (request.headers.authorization[0] ?? "")
+                  : "";
+            discoveryAuthorizations.push(authorizationHeader);
+
+            if (authorizationHeader !== `Bearer ${currentAccessToken ?? ""}`) {
+              response.statusCode = 401;
+              response.end("Unauthorized");
+              return;
+            }
+
+            const scope = discoveryScopes.get(`${service}:${version}`)
+              ?? `https://example.test/auth/${service}`;
+            response.statusCode = 200;
+            response.setHeader("content-type", "application/json");
+            response.end(JSON.stringify({
+              name: service,
+              version,
+              title: `${service} API`,
+              description: `Test ${service} API`,
+              rootUrl: `${baseUrl}/`,
+              servicePath: `${service}/${version}/`,
+              auth: {
+                oauth2: {
+                  scopes: {
+                    [scope]: {
+                      description: `${service} scope`,
+                    },
+                  },
+                },
+              },
+              methods: {
+                list: {
+                  id: `${service}.list`,
+                  path: "items",
+                  httpMethod: "GET",
+                  response: {
+                    $ref: "ListResponse",
+                  },
+                },
+              },
+              schemas: {
+                ListResponse: {
+                  id: "ListResponse",
+                  type: "object",
+                  properties: {
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                      },
+                    },
+                  },
+                },
+              },
+            }));
+            return;
+          }
+
+          response.statusCode = 404;
+          response.end();
+        });
+
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          const address = server.address();
+          if (!address || typeof address === "string") {
+            reject(new Error("Failed to bind Google workspace test server"));
+            return;
+          }
+
+          baseUrl = `http://127.0.0.1:${address.port}`;
+          resolve({
+            baseUrl,
+            tokenEndpoint: `${baseUrl}/oauth/token`,
+            discoveryUrl: ({ service, version, scope }) => {
+              discoveryScopes.set(`${service}:${version}`, scope);
+              return `${baseUrl}/${service}/$discovery/rest?version=${encodeURIComponent(version)}`;
+            },
+            queueTokenResponse: (tokenResponse) => {
+              tokenResponses.push(tokenResponse);
+            },
+            tokenRequests,
+            discoveryAuthorizations,
+            close: () =>
+              new Promise<void>((closeResolve, closeReject) => {
+                server.close((error) => {
+                  if (error) {
+                    closeReject(error);
+                    return;
+                  }
+
+                  closeResolve();
+                });
+              }),
+          });
+        });
+      }),
+  ),
+  (server) => Effect.promise(() => server.close()).pipe(Effect.orDie),
+);
+
+const upsertLocalSecret = (runtime: ControlPlaneRuntime, input: {
+  id: string;
+  name: string;
+  purpose: "oauth_refresh_token" | "oauth_client_info" | "oauth_access_token";
+  value: string;
+}) =>
+  runtime.persistence.rows.secretMaterials.upsert({
+    id: SecretMaterialIdSchema.make(input.id),
+    providerId: "local",
+    handle: input.id,
+    name: input.name,
+    purpose: input.purpose,
+    value: input.value,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+
+const createPersistedGoogleSource = (input: {
+  runtime: ControlPlaneRuntime;
+  name: string;
+  namespace: string;
+  service: string;
+  version: string;
+  discoveryUrl: string;
+  scopes: ReadonlyArray<string>;
+  auth: {
+    kind: "none";
+  } | {
+    kind: "provider_grant_ref";
+    grantId: ReturnType<typeof ProviderAuthGrantIdSchema.make>;
+    providerKey: string;
+    requiredScopes: ReadonlyArray<string>;
+    headerName: string;
+    prefix: string;
+  };
+}) =>
+  Effect.gen(function* () {
+    const installation = input.runtime.localInstallation;
+    const source = yield* createSourceFromPayload({
+      workspaceId: installation.workspaceId,
+      sourceId: SourceIdSchema.make(`src_${crypto.randomUUID()}`),
+      payload: {
+        name: input.name,
+        kind: "google_discovery",
+        endpoint: input.discoveryUrl,
+        namespace: input.namespace,
+        binding: {
+          service: input.service,
+          version: input.version,
+          discoveryUrl: input.discoveryUrl,
+          scopes: [...input.scopes],
+        },
+        importAuthPolicy: "reuse_runtime",
+        importAuth: { kind: "none" },
+        auth: input.auth as any,
+        status: "connected",
+        enabled: true,
+      },
+      now: Date.now(),
+    });
+
+    return yield* persistSource(input.runtime.persistence.rows, source, {
+      actorAccountId: installation.accountId,
+    }).pipe((effect) => provideControlPlaneRuntime(effect, input.runtime));
+  });
 
 const expectLeft = <A, E>(effect: Effect.Effect<A, E, never>) =>
   Effect.either(effect).pipe(
@@ -686,6 +935,593 @@ describe("control-plane-runtime", () => {
       assertTrue(Option.isSome(storedInteraction));
       expect(storedInteraction.value.responseJson).toContain("\"authKind\":\"none\"");
       expect(storedInteraction.value.responseJson).not.toContain("tokenRef");
+    }),
+  );
+
+  it.scoped("reuses existing Google provider grants for batch connects and clears orphan state", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const googleServer = yield* makeGoogleWorkspaceTestServer;
+      const installation = runtime.localInstallation;
+
+      const oauthClient = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.createWorkspaceOauthClient({
+            path: {
+              workspaceId: installation.workspaceId,
+            },
+            payload: {
+              providerKey: "google_workspace",
+              label: "Local Google Workspace Client",
+              oauthClient: {
+                clientId: "google-client-id",
+                clientSecret: "google-client-secret",
+              },
+            },
+          }),
+      );
+
+      const refreshSecretId = "sec_google_refresh_reuse";
+      yield* upsertLocalSecret(runtime, {
+        id: refreshSecretId,
+        name: "Google Refresh Token",
+        purpose: "oauth_refresh_token",
+        value: "refresh-token-reuse",
+      });
+
+      const grantId = ProviderAuthGrantIdSchema.make(`provider_grant_${crypto.randomUUID()}`);
+      yield* runtime.persistence.rows.providerAuthGrants.upsert({
+        id: grantId,
+        workspaceId: installation.workspaceId,
+        actorAccountId: installation.accountId,
+        providerKey: "google_workspace",
+        oauthClientId: oauthClient.id,
+        tokenEndpoint: googleServer.tokenEndpoint,
+        clientAuthentication: "client_secret_post",
+        headerName: "Authorization",
+        prefix: "Bearer ",
+        refreshToken: {
+          providerId: "local",
+          handle: refreshSecretId,
+        },
+        grantedScopes: [
+          "scope:gmail.readonly",
+          "scope:calendar.readonly",
+        ],
+        lastRefreshedAt: null,
+        orphanedAt: 123,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      googleServer.queueTokenResponse({
+        access_token: "reuse-access-token",
+        scope: "scope:gmail.readonly scope:calendar.readonly",
+      });
+      googleServer.queueTokenResponse({
+        access_token: "reuse-access-token",
+        scope: "scope:gmail.readonly scope:calendar.readonly",
+      });
+
+      const result = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.connectBatch({
+            path: {
+              workspaceId: installation.workspaceId,
+            },
+            payload: {
+              workspaceOauthClientId: oauthClient.id,
+              sources: [
+                {
+                  service: "gmail",
+                  version: "v1",
+                  discoveryUrl: googleServer.discoveryUrl({
+                    service: "gmail",
+                    version: "v1",
+                    scope: "scope:gmail.readonly",
+                  }),
+                  scopes: ["scope:gmail.readonly"],
+                  name: "Gmail",
+                  namespace: "google.gmail",
+                },
+                {
+                  service: "calendar",
+                  version: "v3",
+                  discoveryUrl: googleServer.discoveryUrl({
+                    service: "calendar",
+                    version: "v3",
+                    scope: "scope:calendar.readonly",
+                  }),
+                  scopes: ["scope:calendar.readonly"],
+                  name: "Calendar",
+                  namespace: "google.calendar",
+                },
+              ],
+            },
+          }),
+      );
+
+      expect(result.providerOauthSession).toBeNull();
+      expect(result.results).toHaveLength(2);
+      expect(result.results.every((entry) => entry.status === "connected")).toBe(true);
+      expect(result.results.every((entry) => entry.source.auth.kind === "provider_grant_ref")).toBe(true);
+
+      const storedGrant = yield* runtime.persistence.rows.providerAuthGrants.getById(grantId);
+      assertTrue(Option.isSome(storedGrant));
+      expect(storedGrant.value.orphanedAt).toBeNull();
+      expect(googleServer.tokenRequests.length).toBeGreaterThanOrEqual(1);
+      expect(
+        googleServer.discoveryAuthorizations.every(
+          (authorization) => authorization === "Bearer reuse-access-token",
+        ),
+      ).toBe(true);
+    }),
+    60_000,
+  );
+
+  it.scoped("uses the app callback redirect for browser-started Google batch OAuth", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const googleServer = yield* makeGoogleWorkspaceTestServer;
+      const installation = runtime.localInstallation;
+
+      const oauthClient = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.createWorkspaceOauthClient({
+            path: {
+              workspaceId: installation.workspaceId,
+            },
+            payload: {
+              providerKey: "google_workspace",
+              label: "Local Google Workspace Client",
+              oauthClient: {
+                clientId: "google-client-id",
+                clientSecret: "google-client-secret",
+              },
+            },
+          }),
+      );
+
+      const result = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.connectBatch({
+            path: {
+              workspaceId: installation.workspaceId,
+            },
+            payload: {
+              workspaceOauthClientId: oauthClient.id,
+              sources: [{
+                service: "gmail",
+                version: "v1",
+                discoveryUrl: googleServer.discoveryUrl({
+                  service: "gmail",
+                  version: "v1",
+                  scope: "scope:gmail.readonly",
+                }),
+                scopes: ["scope:gmail.readonly"],
+                name: "Gmail",
+                namespace: "google.gmail",
+              }],
+            },
+          }),
+      );
+
+      expect(result.providerOauthSession).not.toBeNull();
+      const redirectUri = new URL(
+        result.providerOauthSession!.authorizationUrl,
+      ).searchParams.get("redirect_uri");
+
+      expect(redirectUri).not.toBeNull();
+      expect(new URL(redirectUri!).pathname).toBe(
+        `/v1/workspaces/${encodeURIComponent(installation.workspaceId)}/oauth/provider/callback`,
+      );
+    }),
+    60_000,
+  );
+
+  it.scoped("preserves the existing provider refresh token when callback expansion omits refresh_token", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const googleServer = yield* makeGoogleWorkspaceTestServer;
+      const installation = runtime.localInstallation;
+
+      const oauthClient = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.createWorkspaceOauthClient({
+            path: {
+              workspaceId: installation.workspaceId,
+            },
+            payload: {
+              providerKey: "google_workspace",
+              label: "Local Google Workspace Client",
+              oauthClient: {
+                clientId: "google-client-id",
+                clientSecret: "google-client-secret",
+              },
+            },
+          }),
+      );
+
+      const preservedRefreshSecretId = "sec_google_refresh_preserved";
+      yield* upsertLocalSecret(runtime, {
+        id: preservedRefreshSecretId,
+        name: "Preserved Google Refresh Token",
+        purpose: "oauth_refresh_token",
+        value: "refresh-token-preserved",
+      });
+
+      const source = yield* createPersistedGoogleSource({
+        runtime,
+        name: "Drive",
+        namespace: "google.drive",
+        service: "drive",
+        version: "v3",
+        discoveryUrl: googleServer.discoveryUrl({
+          service: "drive",
+          version: "v3",
+          scope: "scope:drive.readonly",
+        }),
+        scopes: ["scope:drive.readonly"],
+        auth: {
+          kind: "none",
+        },
+      });
+
+      const grantId = ProviderAuthGrantIdSchema.make(`provider_grant_${crypto.randomUUID()}`);
+      yield* runtime.persistence.rows.providerAuthGrants.upsert({
+        id: grantId,
+        workspaceId: installation.workspaceId,
+        actorAccountId: installation.accountId,
+        providerKey: "google_workspace",
+        oauthClientId: oauthClient.id,
+        tokenEndpoint: googleServer.tokenEndpoint,
+        clientAuthentication: "client_secret_post",
+        headerName: "Authorization",
+        prefix: "Bearer ",
+        refreshToken: {
+          providerId: "local",
+          handle: preservedRefreshSecretId,
+        },
+        grantedScopes: [
+          "scope:gmail.readonly",
+        ],
+        lastRefreshedAt: null,
+        orphanedAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const sessionId = SourceAuthSessionIdSchema.make(`src_auth_${crypto.randomUUID()}`);
+      const state = `provider-state-${crypto.randomUUID()}`;
+      yield* runtime.persistence.rows.sourceAuthSessions.upsert({
+        id: sessionId,
+        workspaceId: installation.workspaceId,
+        sourceId: SourceIdSchema.make(`oauth_provider_${crypto.randomUUID()}`),
+        actorAccountId: installation.accountId,
+        credentialSlot: "runtime",
+        executionId: null,
+        interactionId: null,
+        providerKind: "oauth2_provider_batch",
+        status: "pending",
+        state,
+        sessionDataJson: JSON.stringify({
+          kind: "provider_oauth_batch",
+          providerKey: "google_workspace",
+          authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+          tokenEndpoint: googleServer.tokenEndpoint,
+          redirectUri: `${googleServer.baseUrl}/oauth/callback`,
+          oauthClientId: oauthClient.id,
+          clientAuthentication: "client_secret_post",
+          scopes: [
+            "scope:gmail.readonly",
+            "scope:drive.readonly",
+          ],
+          headerName: "Authorization",
+          prefix: "Bearer ",
+          authorizationParams: {
+            access_type: "offline",
+            prompt: "consent",
+            include_granted_scopes: "true",
+          },
+          targetSources: [{
+            sourceId: source.id,
+            requiredScopes: ["scope:drive.readonly"],
+          }],
+          codeVerifier: "pkce-verifier",
+          authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?state=${encodeURIComponent(state)}`,
+        }),
+        errorText: null,
+        completedAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      googleServer.queueTokenResponse({
+        access_token: "authorization-code-access-token",
+        scope: "scope:gmail.readonly scope:drive.readonly",
+      });
+      googleServer.queueTokenResponse({
+        access_token: "post-callback-sync-access-token",
+        scope: "scope:gmail.readonly scope:drive.readonly",
+      });
+
+      const callbackPage = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.providerOauthComplete({
+            path: {
+              workspaceId: installation.workspaceId,
+            },
+            urlParams: {
+              state,
+              code: "authorization-code",
+            },
+          }),
+      );
+
+      expect(callbackPage).toContain("Connected 1 source");
+
+      const storedGrant = yield* runtime.persistence.rows.providerAuthGrants.getById(grantId);
+      assertTrue(Option.isSome(storedGrant));
+      expect(storedGrant.value.refreshToken).toEqual({
+        providerId: "local",
+        handle: preservedRefreshSecretId,
+      });
+      expect(storedGrant.value.grantedScopes).toEqual([
+        "scope:gmail.readonly",
+        "scope:drive.readonly",
+      ]);
+
+      const refreshedSource = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.get({
+            path: {
+              workspaceId: installation.workspaceId,
+              sourceId: source.id,
+            },
+          }),
+      );
+
+      expect(refreshedSource.status).toBe("connected");
+      expect(refreshedSource.auth).toEqual({
+        kind: "provider_grant_ref",
+        grantId,
+        providerKey: "google_workspace",
+        requiredScopes: ["scope:drive.readonly"],
+        headerName: "Authorization",
+        prefix: "Bearer ",
+      });
+
+      expect(googleServer.tokenRequests.map((request) => request.get("grant_type"))).toEqual([
+        "authorization_code",
+        "refresh_token",
+      ]);
+      expect(googleServer.tokenRequests[1]?.get("refresh_token")).toBe("refresh-token-preserved");
+      expect(googleServer.discoveryAuthorizations).toContain("Bearer post-callback-sync-access-token");
+    }),
+    60_000,
+  );
+
+  it.scoped("marks provider grants as orphaned when the last referencing source is removed", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const installation = runtime.localInstallation;
+      const oauthClientId = WorkspaceOauthClientIdSchema.make(`ws_oauth_client_${crypto.randomUUID()}`);
+      const refreshSecretId = "sec_google_refresh_orphan";
+
+      yield* runtime.persistence.rows.workspaceOauthClients.upsert({
+        id: oauthClientId,
+        workspaceId: installation.workspaceId,
+        providerKey: "google_workspace",
+        label: "Local Google Workspace Client",
+        clientId: "google-client-id",
+        clientSecretProviderId: null,
+        clientSecretHandle: null,
+        clientMetadataJson: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      yield* upsertLocalSecret(runtime, {
+        id: refreshSecretId,
+        name: "Google Refresh Token",
+        purpose: "oauth_refresh_token",
+        value: "refresh-token-orphan",
+      });
+
+      const grantId = ProviderAuthGrantIdSchema.make(`provider_grant_${crypto.randomUUID()}`);
+      yield* runtime.persistence.rows.providerAuthGrants.upsert({
+        id: grantId,
+        workspaceId: installation.workspaceId,
+        actorAccountId: installation.accountId,
+        providerKey: "google_workspace",
+        oauthClientId,
+        tokenEndpoint: "https://example.test/oauth/token",
+        clientAuthentication: "client_secret_post",
+        headerName: "Authorization",
+        prefix: "Bearer ",
+        refreshToken: {
+          providerId: "local",
+          handle: refreshSecretId,
+        },
+        grantedScopes: ["scope:drive.readonly"],
+        lastRefreshedAt: null,
+        orphanedAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const source = yield* createPersistedGoogleSource({
+        runtime,
+        name: "Drive",
+        namespace: "google.drive",
+        service: "drive",
+        version: "v3",
+        discoveryUrl: "https://example.test/drive/$discovery/rest?version=v3",
+        scopes: ["scope:drive.readonly"],
+        auth: {
+          kind: "provider_grant_ref",
+          grantId,
+          providerKey: "google_workspace",
+          requiredScopes: ["scope:drive.readonly"],
+          headerName: "Authorization",
+          prefix: "Bearer ",
+        },
+      });
+
+      const removed = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.remove({
+            path: {
+              workspaceId: installation.workspaceId,
+              sourceId: source.id,
+            },
+          }),
+      );
+
+      expect(removed.removed).toBe(true);
+
+      const storedGrant = yield* runtime.persistence.rows.providerAuthGrants.getById(grantId);
+      assertTrue(Option.isSome(storedGrant));
+      expect(storedGrant.value.orphanedAt).not.toBeNull();
+    }),
+  );
+
+  it.scoped("revokes shared provider grants through the API and disconnects linked sources", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const installation = runtime.localInstallation;
+      const oauthClientId = WorkspaceOauthClientIdSchema.make(`ws_oauth_client_${crypto.randomUUID()}`);
+      const refreshSecretId = "sec_google_refresh_revoke";
+
+      yield* runtime.persistence.rows.workspaceOauthClients.upsert({
+        id: oauthClientId,
+        workspaceId: installation.workspaceId,
+        providerKey: "google_workspace",
+        label: "Local Google Workspace Client",
+        clientId: "google-client-id",
+        clientSecretProviderId: null,
+        clientSecretHandle: null,
+        clientMetadataJson: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      yield* upsertLocalSecret(runtime, {
+        id: refreshSecretId,
+        name: "Google Refresh Token",
+        purpose: "oauth_refresh_token",
+        value: "refresh-token-revoke",
+      });
+
+      const grantId = ProviderAuthGrantIdSchema.make(`provider_grant_${crypto.randomUUID()}`);
+      yield* runtime.persistence.rows.providerAuthGrants.upsert({
+        id: grantId,
+        workspaceId: installation.workspaceId,
+        actorAccountId: installation.accountId,
+        providerKey: "google_workspace",
+        oauthClientId,
+        tokenEndpoint: "https://example.test/oauth/token",
+        clientAuthentication: "client_secret_post",
+        headerName: "Authorization",
+        prefix: "Bearer ",
+        refreshToken: {
+          providerId: "local",
+          handle: refreshSecretId,
+        },
+        grantedScopes: ["scope:drive.readonly", "scope:gmail.readonly"],
+        lastRefreshedAt: null,
+        orphanedAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const driveSource = yield* createPersistedGoogleSource({
+        runtime,
+        name: "Drive",
+        namespace: "google.drive",
+        service: "drive",
+        version: "v3",
+        discoveryUrl: "https://example.test/drive/$discovery/rest?version=v3",
+        scopes: ["scope:drive.readonly"],
+        auth: {
+          kind: "provider_grant_ref",
+          grantId,
+          providerKey: "google_workspace",
+          requiredScopes: ["scope:drive.readonly"],
+          headerName: "Authorization",
+          prefix: "Bearer ",
+        },
+      });
+      const gmailSource = yield* createPersistedGoogleSource({
+        runtime,
+        name: "Gmail",
+        namespace: "google.gmail",
+        service: "gmail",
+        version: "v1",
+        discoveryUrl: "https://example.test/gmail/$discovery/rest?version=v1",
+        scopes: ["scope:gmail.readonly"],
+        auth: {
+          kind: "provider_grant_ref",
+          grantId,
+          providerKey: "google_workspace",
+          requiredScopes: ["scope:gmail.readonly"],
+          headerName: "Authorization",
+          prefix: "Bearer ",
+        },
+      });
+
+      const removed = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.removeProviderAuthGrant({
+            path: {
+              workspaceId: installation.workspaceId,
+              grantId,
+            },
+          }),
+      );
+
+      expect(removed.removed).toBe(true);
+
+      const storedGrant = yield* runtime.persistence.rows.providerAuthGrants.getById(grantId);
+      assertTrue(Option.isNone(storedGrant));
+
+      const storedRefreshSecret = yield* runtime.persistence.rows.secretMaterials.getById(
+        SecretMaterialIdSchema.make(refreshSecretId),
+      );
+      assertTrue(Option.isNone(storedRefreshSecret));
+
+      const disconnectedDrive = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.get({
+            path: {
+              workspaceId: installation.workspaceId,
+              sourceId: driveSource.id,
+            },
+          }),
+      );
+      const disconnectedGmail = yield* withControlPlaneClient(
+        { runtime },
+        (client) =>
+          client.sources.get({
+            path: {
+              workspaceId: installation.workspaceId,
+              sourceId: gmailSource.id,
+            },
+          }),
+      );
+
+      expect(disconnectedDrive.status).toBe("auth_required");
+      expect(disconnectedDrive.auth).toEqual({ kind: "none" });
+      expect(disconnectedGmail.status).toBe("auth_required");
+      expect(disconnectedGmail.auth).toEqual({ kind: "none" });
     }),
   );
 

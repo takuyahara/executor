@@ -7,8 +7,10 @@ import type {
   Execution,
   ExecutionInteraction,
   ExecutionStep,
+  ProviderAuthGrant,
   SecretMaterial,
   SourceAuthSession,
+  WorkspaceOauthClient,
   WorkspaceSourceOauthClient,
 } from "#schema";
 
@@ -75,6 +77,32 @@ export type ControlPlaneStoreShape = {
       workspaceId: WorkspaceSourceOauthClient["workspaceId"];
       sourceId: WorkspaceSourceOauthClient["sourceId"];
     }) => Effect.Effect<number, Error, never>;
+  };
+  workspaceOauthClients: {
+    listByWorkspaceAndProvider: (input: {
+      workspaceId: WorkspaceOauthClient["workspaceId"];
+      providerKey: string;
+    }) => Effect.Effect<readonly WorkspaceOauthClient[], Error, never>;
+    getById: (
+      id: WorkspaceOauthClient["id"],
+    ) => Effect.Effect<import("effect/Option").Option<WorkspaceOauthClient>, Error, never>;
+    upsert: (oauthClient: WorkspaceOauthClient) => Effect.Effect<void, Error, never>;
+    removeById: (id: WorkspaceOauthClient["id"]) => Effect.Effect<boolean, Error, never>;
+  };
+  providerAuthGrants: {
+    listByWorkspaceId: (
+      workspaceId: ProviderAuthGrant["workspaceId"],
+    ) => Effect.Effect<readonly ProviderAuthGrant[], Error, never>;
+    listByWorkspaceActorAndProvider: (input: {
+      workspaceId: ProviderAuthGrant["workspaceId"];
+      actorAccountId: ProviderAuthGrant["actorAccountId"];
+      providerKey: string;
+    }) => Effect.Effect<readonly ProviderAuthGrant[], Error, never>;
+    getById: (
+      id: ProviderAuthGrant["id"],
+    ) => Effect.Effect<import("effect/Option").Option<ProviderAuthGrant>, Error, never>;
+    upsert: (grant: ProviderAuthGrant) => Effect.Effect<void, Error, never>;
+    removeById: (id: ProviderAuthGrant["id"]) => Effect.Effect<boolean, Error, never>;
   };
   sourceAuthSessions: {
     listAll: () => Effect.Effect<readonly SourceAuthSession[], Error, never>;

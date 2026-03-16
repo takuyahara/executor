@@ -41,6 +41,8 @@ describe("local-control-plane-store", () => {
           authArtifacts: [],
           authLeases: [],
           sourceOauthClients: [],
+          workspaceOauthClients: [],
+          providerAuthGrants: [],
           sourceAuthSessions: [],
           secretMaterials: [],
           executions: [],
@@ -76,6 +78,8 @@ describe("local-control-plane-store", () => {
           authArtifacts: [],
           authLeases: [],
           sourceOauthClients: [],
+          workspaceOauthClients: [],
+          providerAuthGrants: [],
           sourceAuthSessions: [],
           secretMaterials: [
             {
@@ -106,6 +110,35 @@ describe("local-control-plane-store", () => {
           updatedAt: 2,
         },
       ]);
+    }),
+  );
+
+  it.effect("backfills newly added top-level state arrays when loading older version 1 files", () =>
+    Effect.gen(function* () {
+      const context = makeContext();
+      const expectedPath = localControlPlaneStatePath(context);
+      mkdirSync(dirname(expectedPath), { recursive: true });
+
+      writeFileSync(
+        expectedPath,
+        JSON.stringify({
+          version: 1,
+          authArtifacts: [],
+          authLeases: [],
+          sourceOauthClients: [],
+          sourceAuthSessions: [],
+          secretMaterials: [],
+          executions: [],
+          executionInteractions: [],
+          executionSteps: [],
+        }),
+      );
+
+      const loaded = yield* loadLocalControlPlaneState(context);
+      expect(loaded.workspaceOauthClients).toEqual([]);
+      expect(loaded.providerAuthGrants).toEqual([]);
+      expect(loaded.sourceOauthClients).toEqual([]);
+      expect(loaded.secretMaterials).toEqual([]);
     }),
   );
 });

@@ -1,6 +1,13 @@
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import {
   type AccountId,
   AuthGrantSetJsonSchema,
+  type McpOAuthAuthArtifactConfig,
+  McpOAuthAuthArtifactConfigJsonSchema,
+  McpOAuthAuthArtifactKind,
+  type ProviderGrantRefAuthArtifactConfig,
+  ProviderGrantRefAuthArtifactConfigJsonSchema,
+  ProviderGrantRefAuthArtifactKind,
   RequestPlacementTemplatesJsonSchema,
   RefreshableOAuth2AuthorizedUserAuthArtifactConfigJsonSchema,
   RefreshableOAuth2AuthorizedUserAuthArtifactKind,
@@ -13,6 +20,8 @@ import {
   authArtifactSecretRefs,
   decodeAuthGrantSet,
   decodeBuiltInAuthArtifactConfig,
+  decodeMcpOAuthAuthArtifactConfig,
+  decodeProviderGrantRefAuthArtifactConfig,
   type AuthArtifact,
   type CredentialSlot,
   type RequestPlacement,
@@ -37,6 +46,7 @@ export type ResolvedSourceAuthMaterial = {
   bodyValues: Readonly<Record<string, string>>;
   expiresAt: number | null;
   refreshAfter: number | null;
+  authProvider?: OAuthClientProvider | undefined;
 };
 
 const emptyResolvedAuthMaterial: ResolvedSourceAuthMaterial = {
@@ -47,6 +57,7 @@ const emptyResolvedAuthMaterial: ResolvedSourceAuthMaterial = {
   bodyValues: {},
   expiresAt: null,
   refreshAfter: null,
+  authProvider: undefined,
 };
 
 const encodeStaticBearerAuthArtifactConfig = Schema.encodeSync(
@@ -62,6 +73,12 @@ const encodeStaticPlacementsAuthArtifactConfig = Schema.encodeSync(
 );
 const encodeRefreshableOAuth2AuthorizedUserAuthArtifactConfig = Schema.encodeSync(
   RefreshableOAuth2AuthorizedUserAuthArtifactConfigJsonSchema,
+);
+const encodeProviderGrantRefAuthArtifactConfig = Schema.encodeSync(
+  ProviderGrantRefAuthArtifactConfigJsonSchema,
+);
+const encodeMcpOAuthAuthArtifactConfig = Schema.encodeSync(
+  McpOAuthAuthArtifactConfigJsonSchema,
 );
 
 const decodeRequestPlacementTemplates = Schema.decodeUnknownEither(
@@ -192,6 +209,54 @@ export const authArtifactFromSourceAuth = (input: {
     };
   }
 
+  if (input.auth.kind === "provider_grant_ref") {
+    return {
+      id,
+      workspaceId: input.source.workspaceId,
+      sourceId: input.source.id,
+      actorAccountId: input.actorAccountId ?? null,
+      slot: input.slot,
+      artifactKind: ProviderGrantRefAuthArtifactKind,
+      configJson: encodeProviderGrantRefAuthArtifactConfig({
+        grantId: input.auth.grantId,
+        providerKey: input.auth.providerKey,
+        requiredScopes: [...input.auth.requiredScopes],
+        headerName: input.auth.headerName,
+        prefix: input.auth.prefix,
+      }),
+      grantSetJson,
+      createdAt: input.source.createdAt,
+      updatedAt: input.source.updatedAt,
+    };
+  }
+
+  if (input.auth.kind === "mcp_oauth") {
+    return {
+      id,
+      workspaceId: input.source.workspaceId,
+      sourceId: input.source.id,
+      actorAccountId: input.actorAccountId ?? null,
+      slot: input.slot,
+      artifactKind: McpOAuthAuthArtifactKind,
+      configJson: encodeMcpOAuthAuthArtifactConfig({
+        redirectUri: input.auth.redirectUri,
+        accessToken: input.auth.accessToken,
+        refreshToken: input.auth.refreshToken,
+        tokenType: input.auth.tokenType,
+        expiresIn: input.auth.expiresIn,
+        scope: input.auth.scope,
+        resourceMetadataUrl: input.auth.resourceMetadataUrl,
+        authorizationServerUrl: input.auth.authorizationServerUrl,
+        resourceMetadataJson: input.auth.resourceMetadataJson,
+        authorizationServerMetadataJson: input.auth.authorizationServerMetadataJson,
+        clientInformationJson: input.auth.clientInformationJson,
+      }),
+      grantSetJson,
+      createdAt: input.source.createdAt,
+      updatedAt: input.source.updatedAt,
+    };
+  }
+
   return {
     id,
     workspaceId: input.source.workspaceId,
@@ -214,6 +279,36 @@ export const authArtifactFromSourceAuth = (input: {
 export const sourceAuthFromAuthArtifact = (artifact: AuthArtifact | null): SourceAuth => {
   if (artifact === null) {
     return { kind: "none" };
+  }
+
+  const providerGrantRefConfig = decodeProviderGrantRefAuthArtifactConfig(artifact);
+  if (providerGrantRefConfig !== null) {
+    return {
+      kind: "provider_grant_ref",
+      grantId: providerGrantRefConfig.grantId,
+      providerKey: providerGrantRefConfig.providerKey,
+      requiredScopes: [...providerGrantRefConfig.requiredScopes],
+      headerName: providerGrantRefConfig.headerName,
+      prefix: providerGrantRefConfig.prefix,
+    };
+  }
+
+  const mcpOAuthConfig = decodeMcpOAuthAuthArtifactConfig(artifact);
+  if (mcpOAuthConfig !== null) {
+    return {
+      kind: "mcp_oauth",
+      redirectUri: mcpOAuthConfig.redirectUri,
+      accessToken: mcpOAuthConfig.accessToken,
+      refreshToken: mcpOAuthConfig.refreshToken,
+      tokenType: mcpOAuthConfig.tokenType,
+      expiresIn: mcpOAuthConfig.expiresIn,
+      scope: mcpOAuthConfig.scope,
+      resourceMetadataUrl: mcpOAuthConfig.resourceMetadataUrl,
+      authorizationServerUrl: mcpOAuthConfig.authorizationServerUrl,
+      resourceMetadataJson: mcpOAuthConfig.resourceMetadataJson,
+      authorizationServerMetadataJson: mcpOAuthConfig.authorizationServerMetadataJson,
+      clientInformationJson: mcpOAuthConfig.clientInformationJson,
+    };
   }
 
   const decoded = decodeBuiltInAuthArtifactConfig(artifact);
@@ -358,6 +453,22 @@ export const resolveAuthArtifactMaterial = (input: {
         case RefreshableOAuth2AuthorizedUserAuthArtifactKind:
           break;
       }
+    }
+
+    const providerGrantRefConfig = decodeProviderGrantRefAuthArtifactConfig(input.artifact);
+    if (providerGrantRefConfig !== null) {
+      if (input.lease === null || input.lease === undefined) {
+        return yield* Effect.fail(
+          new Error(`Provider grant auth artifact ${input.artifact.id} requires a lease`),
+        );
+      }
+    }
+
+    const mcpOAuthConfig = decodeMcpOAuthAuthArtifactConfig(input.artifact);
+    if (mcpOAuthConfig !== null) {
+      return {
+        ...emptyResolvedAuthMaterial,
+      };
     }
 
     if (input.lease === null || input.lease === undefined) {

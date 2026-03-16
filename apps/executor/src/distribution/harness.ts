@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,6 +26,9 @@ export class DistributionHarness extends Context.Tag(
     readonly tarballPath: string;
     readonly executorHome: string;
     readonly baseUrl: string;
+    readonly writeProjectConfig: (
+      contents: string,
+    ) => Effect.Effect<void, Error, never>;
     readonly run: (
       args: ReadonlyArray<string>,
       options?: {
@@ -185,6 +188,8 @@ export const LocalDistributionHarnessLive = Layer.scoped(
     const prefixDir = join(tempRoot, "prefix");
     const homeDir = join(tempRoot, "home");
     const executorHome = join(homeDir, ".executor");
+    const stagedWorkspaceRoot = packageDir;
+    const installedWorkspaceRoot = tempRoot;
     const baseUrl = `http://127.0.0.1:${yield* allocatePort()}`;
 
     yield* Effect.tryPromise({
@@ -256,12 +261,25 @@ export const LocalDistributionHarnessLive = Layer.scoped(
         catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
       });
 
+    const writeProjectConfig = (contents: string) =>
+      Effect.tryPromise({
+        try: async () => {
+          for (const workspaceRoot of [stagedWorkspaceRoot, installedWorkspaceRoot]) {
+            const configDir = join(workspaceRoot, ".executor");
+            await mkdir(configDir, { recursive: true });
+            await writeFile(join(configDir, "executor.jsonc"), contents, "utf8");
+          }
+        },
+        catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+      });
+
     return DistributionHarness.of({
       packageDir,
       launcherPath: artifact.launcherPath,
       tarballPath,
       executorHome,
       baseUrl,
+      writeProjectConfig,
       run,
       runInstalled,
       fetchText,

@@ -273,7 +273,9 @@ const buildRunWorkflowText = (
 
 const loadRunWorkflowText = (): Effect.Effect<string, Error, never> =>
   Effect.acquireUseRelease(
-    createControlPlaneRuntime({}).pipe(Effect.mapError(toError)),
+    createControlPlaneRuntime({
+      localDataDir: DEFAULT_LOCAL_DATA_DIR,
+    }).pipe(Effect.mapError(toError)),
     (runtime) =>
       Effect.gen(function* () {
         const environment = yield* Effect.gen(function* () {

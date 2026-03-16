@@ -4,12 +4,15 @@ import { RegistryContext, RegistryProvider, useAtomValue } from "@effect-atom/at
 import { createControlPlaneClient } from "@executor/control-plane/client";
 import type {
   CompleteSourceOAuthResult,
+  ConnectSourceBatchPayload,
+  ConnectSourceBatchResult,
   ConnectSourcePayload,
   ConnectSourceResult,
   ControlPlaneClient,
   CreateSecretPayload,
   CreateSecretResult,
   CreateSourcePayload,
+  CreateWorkspaceOauthClientPayload,
   DeleteSecretResult,
   DiscoverSourcePayload,
   InstanceConfig,
@@ -25,6 +28,7 @@ import type {
   UpdateSecretPayload,
   UpdateSecretResult,
   UpdateSourcePayload,
+  WorkspaceOauthClient,
 } from "@executor/control-plane";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -66,6 +70,12 @@ type SourceDiscoveryKeyParts = readonly [
   string,
   number | null,
 ];
+type WorkspaceOauthClientsKeyParts = readonly [
+  boolean,
+  Source["workspaceId"],
+  string,
+  string,
+];
 
 type InvalidationTarget = {
   workspaceId?: Source["workspaceId"];
@@ -76,6 +86,7 @@ type InvalidationTarget = {
 type ActiveQueryCollections = {
   sourceLists: Set<string>;
   sources: Set<string>;
+  workspaceOauthClients: Set<string>;
   inspections: Set<string>;
   toolDetails: Set<string>;
   discoveries: Set<string>;
@@ -162,6 +173,16 @@ const encodeDiscoveryKey = (
   limit: number | null,
 ): string =>
   encodeAtomKey([enabled, workspaceId, accountId, sourceId, query, limit] satisfies SourceDiscoveryKeyParts);
+
+const encodeWorkspaceOauthClientsKey = (
+  enabled: boolean,
+  workspaceId: Source["workspaceId"],
+  accountId: string,
+  providerKey: string,
+): string =>
+  encodeAtomKey(
+    [enabled, workspaceId, accountId, providerKey] satisfies WorkspaceOauthClientsKeyParts,
+  );
 
 const causeMessage = (cause: Cause.Cause<unknown>): Error =>
   new Error(Cause.pretty(cause));
@@ -377,6 +398,26 @@ const sourceDiscoveryAtom = Atom.family((key: string) => {
   ).pipe(Atom.keepAlive);
 });
 
+const workspaceOauthClientsAtom = Atom.family((key: string) => {
+  const [enabled, workspaceId, accountId, providerKey] = decodeAtomKey<WorkspaceOauthClientsKeyParts>(key);
+
+  return Atom.make(
+    enabled
+      ? controlPlaneRequest({
+          accountId,
+          execute: (client) => client.sources.listWorkspaceOauthClients({
+            path: {
+              workspaceId,
+            },
+            urlParams: {
+              providerKey,
+            },
+          }),
+        })
+      : Effect.never,
+  ).pipe(Atom.keepAlive);
+});
+
 export type Loadable<T> =
   | { status: "loading" }
   | { status: "error"; error: Error }
@@ -506,6 +547,7 @@ const setCachedAtomValue = <A>(
 const createActiveQueryCollections = (): ActiveQueryCollections => ({
   sourceLists: new Set(),
   sources: new Set(),
+  workspaceOauthClients: new Set(),
   inspections: new Set(),
   toolDetails: new Set(),
   discoveries: new Set(),
@@ -545,6 +587,13 @@ const invalidateTrackedQueries = (
     const [enabled, workspaceId, accountId, sourceId] = decodeAtomKey<SourceKeyParts>(key);
     if (enabled && targetMatches(target, workspaceId, accountId, sourceId)) {
       registry.refresh(sourceAtom(key));
+    }
+  });
+
+  activeQueries.workspaceOauthClients.forEach((key) => {
+    const [enabled, workspaceId, accountId] = decodeAtomKey<WorkspaceOauthClientsKeyParts>(key);
+    if (enabled && targetMatches(target, workspaceId, accountId)) {
+      registry.refresh(workspaceOauthClientsAtom(key));
     }
   });
 
@@ -905,6 +954,37 @@ export const useSource = (sourceId: string): Loadable<Source> => {
   return workspace.enabled ? source : pendingLoadable(workspace.workspace);
 };
 
+export const useWorkspaceOauthClients = (
+  providerKey: string | null,
+): Loadable<ReadonlyArray<WorkspaceOauthClient>> => {
+  const workspace = useWorkspaceRequestContext();
+  const key = encodeWorkspaceOauthClientsKey(
+    workspace.enabled && providerKey !== null,
+    workspace.workspaceId,
+    workspace.accountId,
+    providerKey ?? "",
+  );
+  useTrackActiveKey(
+    "workspaceOauthClients",
+    key,
+    workspace.enabled && providerKey !== null,
+  );
+  const oauthClients = useLoadableAtom(workspaceOauthClientsAtom(key));
+
+  if (!workspace.enabled) {
+    return pendingLoadable(workspace.workspace);
+  }
+
+  if (providerKey === null) {
+    return {
+      status: "ready",
+      data: [],
+    };
+  }
+
+  return oauthClients;
+};
+
 export const useSourceInspection = (sourceId: string): Loadable<SourceInspection> => {
   const workspace = useWorkspaceRequestContext();
   const requestedSourceId = workspace.enabled
@@ -1209,13 +1289,134 @@ export const useConnectSource = () =>
     },
   );
 
+export const useConnectSourceBatch = () =>
+  useSourceMutation<ConnectSourceBatchPayload, ConnectSourceBatchResult>(
+    React.useCallback(
+      ({ workspaceId, accountId, payload }) =>
+        runControlPlane({
+          accountId,
+          execute: (client) => client.sources.connectBatch({
+            path: {
+              workspaceId,
+            },
+            payload,
+          } as any),
+        }),
+      [],
+    ),
+    {
+      onSuccess: (context, _payload, result) => {
+        const listAtom = sourcesAtom(encodeSourcesKey(true, context.workspaceId, context.accountId));
+        const currentList = getCachedAtomValue(context.registry, listAtom);
+        if (currentList !== undefined) {
+          let nextList = currentList;
+          for (const entry of result.results) {
+            nextList = upsertSourceInList(nextList, entry.source);
+            setCachedAtomValue(
+              context.registry,
+              sourceAtom(encodeSourceKey(true, context.workspaceId, context.accountId, entry.source.id)),
+              entry.source,
+            );
+          }
+          setCachedAtomValue(context.registry, listAtom, nextList);
+        }
+
+        context.invalidateQueries({
+          workspaceId: context.workspaceId,
+          accountId: context.accountId,
+        });
+      },
+    },
+  );
+
+export const useCreateWorkspaceOauthClient = () =>
+  useSourceMutation<CreateWorkspaceOauthClientPayload, WorkspaceOauthClient>(
+    React.useCallback(
+      ({ workspaceId, accountId, payload }) =>
+        runControlPlane({
+          accountId,
+          execute: (client) => client.sources.createWorkspaceOauthClient({
+            path: {
+              workspaceId,
+            },
+            payload,
+          }),
+        }),
+      [],
+    ),
+    {
+      onSuccess: (context) => {
+        context.invalidateQueries({
+          workspaceId: context.workspaceId,
+          accountId: context.accountId,
+        });
+      },
+    },
+  );
+
+export const useRemoveWorkspaceOauthClient = () =>
+  useSourceMutation<WorkspaceOauthClient["id"], { removed: boolean }>(
+    React.useCallback(
+      ({ workspaceId, accountId, payload }) =>
+        runControlPlane({
+          accountId,
+          execute: (client) => client.sources.removeWorkspaceOauthClient({
+            path: {
+              workspaceId,
+              oauthClientId: payload,
+            },
+          }),
+        }),
+      [],
+    ),
+    {
+      onSuccess: (context) => {
+        context.invalidateQueries({
+          workspaceId: context.workspaceId,
+          accountId: context.accountId,
+        });
+      },
+    },
+  );
+
+export const useRemoveProviderAuthGrant = () =>
+  useSourceMutation<
+    Extract<Source["auth"], { kind: "provider_grant_ref" }>["grantId"],
+    { removed: boolean }
+  >(
+    React.useCallback(
+      ({ workspaceId, accountId, payload }) =>
+        runControlPlane({
+          accountId,
+          execute: (client) => client.sources.removeProviderAuthGrant({
+            path: {
+              workspaceId,
+              grantId: payload,
+            },
+          }),
+        }),
+      [],
+    ),
+    {
+      onSuccess: (context) => {
+        context.invalidateQueries({
+          workspaceId: context.workspaceId,
+          accountId: context.accountId,
+        });
+      },
+    },
+  );
+
 export type {
   CompleteSourceOAuthResult,
+  ConnectSourceBatchPayload,
+  ConnectSourceBatchResult,
   ConnectSourcePayload,
   ConnectSourceResult,
   CreateSecretPayload,
   CreateSecretResult,
   CreateSourcePayload,
+  CreateWorkspaceOauthClientPayload,
   DeleteSecretResult,
   DiscoverSourcePayload,
   InstanceConfig,
@@ -1232,4 +1433,5 @@ export type {
   UpdateSecretPayload,
   UpdateSecretResult,
   UpdateSourcePayload,
+  WorkspaceOauthClient,
 };

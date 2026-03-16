@@ -3,12 +3,16 @@ import type {
   AuthArtifact,
   CredentialSlot,
   LocalConfigSecretInput,
+  ProviderAuthGrant,
   LocalConfigSource,
   Source,
   SourceId,
   WorkspaceId,
 } from "#schema";
-import { SourceIdSchema } from "#schema";
+import {
+  decodeProviderGrantRefAuthArtifactConfig,
+  SourceIdSchema,
+} from "#schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -60,6 +64,10 @@ import {
 import { createDefaultSecretMaterialDeleter } from "./secret-material-providers";
 import { authArtifactSecretMaterialRefs } from "./auth-artifacts";
 import { removeAuthLeaseAndSecrets } from "./auth-leases";
+import {
+  clearProviderGrantOrphanedAt,
+  markProviderGrantOrphanedIfUnused,
+} from "./provider-grant-lifecycle";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
 import { getSourceAdapter } from "./source-adapters";
 import { refreshWorkspaceSourceTypeDeclarationsInBackground } from "./source-type-declarations";
@@ -91,6 +99,15 @@ const cleanupAuthArtifactSecretRefs = (rows: ControlPlaneStoreShape, input: {
       { discard: true },
     );
   });
+
+const providerGrantIdsFromArtifacts = (
+  artifacts: ReadonlyArray<Pick<AuthArtifact, "artifactKind" | "configJson"> | null>,
+): ReadonlySet<ProviderAuthGrant["id"]> =>
+  new Set(
+    artifacts
+      .flatMap((artifact) => artifact ? [decodeProviderGrantRefAuthArtifactConfig(artifact)] : [])
+      .flatMap((config) => config ? [config.grantId] : []),
+  );
 
 const selectPreferredAuthArtifact = (input: {
   authArtifacts: ReadonlyArray<AuthArtifact>;
@@ -804,6 +821,11 @@ const removeSourceByIdWithDeps = (deps: RuntimeSourceStoreDeps, input: {
       context: localWorkspace.context,
       sourceId: input.sourceId,
     });
+    const existingAuthArtifacts = yield* deps.rows.authArtifacts.listByWorkspaceAndSourceId({
+      workspaceId: input.workspaceId,
+      sourceId: input.sourceId,
+    });
+    const removedGrantIds = providerGrantIdsFromArtifacts(existingAuthArtifacts);
 
     yield* deps.rows.sourceAuthSessions.removeByWorkspaceAndSourceId(
       input.workspaceId,
@@ -814,6 +836,15 @@ const removeSourceByIdWithDeps = (deps: RuntimeSourceStoreDeps, input: {
       sourceId: input.sourceId,
     });
     yield* removeAuthArtifactsForSource(deps.rows, input);
+    yield* Effect.forEach(
+      [...removedGrantIds],
+      (grantId) =>
+        markProviderGrantOrphanedIfUnused(deps.rows, {
+          workspaceId: input.workspaceId,
+          grantId,
+        }),
+      { discard: true },
+    );
     yield* syncWorkspaceSourceTypeDeclarationsWithDeps(deps, input.workspaceId);
 
     return true;
@@ -946,6 +977,33 @@ const persistSourceWithDeps = (
       previous: existingImportAuthArtifact ?? null,
       next: importAuthArtifact,
     });
+
+    const previousGrantIds = providerGrantIdsFromArtifacts([
+      existingRuntimeAuthArtifact,
+      existingImportAuthArtifact,
+    ]);
+    const nextGrantIds = providerGrantIdsFromArtifacts([
+      runtimeAuthArtifact,
+      importAuthArtifact,
+    ]);
+
+    yield* Effect.forEach(
+      [...nextGrantIds],
+      (grantId) =>
+        clearProviderGrantOrphanedAt(deps.rows, {
+          grantId,
+        }),
+      { discard: true },
+    );
+    yield* Effect.forEach(
+      [...previousGrantIds].filter((grantId) => !nextGrantIds.has(grantId)),
+      (grantId) =>
+        markProviderGrantOrphanedIfUnused(deps.rows, {
+          workspaceId: nextSource.workspaceId,
+          grantId,
+        }),
+      { discard: true },
+    );
 
     const existingSourceState = localWorkspace.workspaceState.sources[nextSource.id];
     const workspaceState: LocalWorkspaceState = {

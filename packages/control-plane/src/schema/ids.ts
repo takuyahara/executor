@@ -20,6 +20,12 @@ export const CredentialIdSchema = AuthArtifactIdSchema;
 export const WorkspaceSourceOauthClientIdSchema = Schema.String.pipe(
   Schema.brand("WorkspaceSourceOauthClientId"),
 );
+export const WorkspaceOauthClientIdSchema = Schema.String.pipe(
+  Schema.brand("WorkspaceOauthClientId"),
+);
+export const ProviderAuthGrantIdSchema = Schema.String.pipe(
+  Schema.brand("ProviderAuthGrantId"),
+);
 export const SecretMaterialIdSchema = Schema.String.pipe(
   Schema.brand("SecretMaterialId"),
 );
@@ -42,6 +48,8 @@ export type AuthArtifactId = typeof AuthArtifactIdSchema.Type;
 export type AuthLeaseId = typeof AuthLeaseIdSchema.Type;
 export type CredentialId = typeof CredentialIdSchema.Type;
 export type WorkspaceSourceOauthClientId = typeof WorkspaceSourceOauthClientIdSchema.Type;
+export type WorkspaceOauthClientId = typeof WorkspaceOauthClientIdSchema.Type;
+export type ProviderAuthGrantId = typeof ProviderAuthGrantIdSchema.Type;
 export type SecretMaterialId = typeof SecretMaterialIdSchema.Type;
 export type PolicyId = typeof PolicyIdSchema.Type;
 export type ExecutionId = typeof ExecutionIdSchema.Type;

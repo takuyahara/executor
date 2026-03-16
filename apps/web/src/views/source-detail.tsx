@@ -89,6 +89,13 @@ const readBindingTransport = (source: Source): "auto" | "streamable-http" | "sse
     : undefined;
 };
 
+const refreshableHttpAuth = (
+  auth: Source["auth"],
+): Extract<Source["auth"], { kind: "none" | "bearer" | "oauth2" }> | undefined =>
+  auth.kind === "none" || auth.kind === "bearer" || auth.kind === "oauth2"
+    ? auth
+    : undefined;
+
 const refreshPayloadFromSource = (source: Source): ConnectSourcePayload | null => {
   switch (source.kind) {
     case "mcp":
@@ -114,8 +121,8 @@ const refreshPayloadFromSource = (source: Source): ConnectSourcePayload | null =
         name: source.name,
         namespace: source.namespace,
         importAuthPolicy: source.importAuthPolicy,
-        importAuth: source.importAuth,
-        auth: source.auth,
+        importAuth: refreshableHttpAuth(source.importAuth),
+        auth: refreshableHttpAuth(source.auth),
       };
     }
     case "graphql":
@@ -125,8 +132,8 @@ const refreshPayloadFromSource = (source: Source): ConnectSourcePayload | null =
         name: source.name,
         namespace: source.namespace,
         importAuthPolicy: source.importAuthPolicy,
-        importAuth: source.importAuth,
-        auth: source.auth,
+        importAuth: refreshableHttpAuth(source.importAuth),
+        auth: refreshableHttpAuth(source.auth),
       };
     case "google_discovery": {
       const service = readBindingString(source, "service");
@@ -145,8 +152,8 @@ const refreshPayloadFromSource = (source: Source): ConnectSourcePayload | null =
         name: source.name,
         namespace: source.namespace,
         importAuthPolicy: source.importAuthPolicy,
-        importAuth: source.importAuth,
-        auth: source.auth,
+        importAuth: refreshableHttpAuth(source.importAuth),
+        auth: refreshableHttpAuth(source.auth),
       };
     }
   }
@@ -250,11 +257,16 @@ export function SourceDetailPage(props: {
                 {refreshFeedback && (
                   <span
                     className={cn(
-                      "hidden max-w-72 truncate text-[11px] sm:block",
-                      refreshFeedback.tone === "success" ? "text-emerald-600" : "text-destructive",
+                      "hidden max-w-72 truncate text-[11px] font-medium sm:inline-flex sm:items-center sm:gap-1.5",
+                      refreshFeedback.tone === "success"
+                        ? "text-primary"
+                        : "text-destructive",
                     )}
                     title={refreshFeedback.text}
                   >
+                    {refreshFeedback.tone === "success" && (
+                      <IconCheck className="size-3 shrink-0" />
+                    )}
                     {refreshFeedback.text}
                   </span>
                 )}

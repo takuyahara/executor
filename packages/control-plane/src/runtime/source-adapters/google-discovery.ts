@@ -10,7 +10,7 @@ import {
   type GoogleDiscoveryToolProviderData,
 } from "@executor/codemode-google-discovery";
 import type { Source } from "#schema";
-import { StringMapSchema } from "#schema";
+import { StringMapSchema, WorkspaceOauthClientIdSchema } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -45,6 +45,9 @@ const GoogleDiscoveryConnectPayloadSchema = Schema.extend(
     ),
     scopes: Schema.optional(
       Schema.Array(Schema.Trim.pipe(Schema.nonEmptyString())),
+    ),
+    workspaceOauthClientId: Schema.optional(
+      Schema.NullOr(WorkspaceOauthClientIdSchema),
     ),
     oauthClient: ConnectOauthClientSchema,
     name: OptionalNullableStringSchema,

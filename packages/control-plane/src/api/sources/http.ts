@@ -93,6 +93,8 @@ const serializeJsonForScript = (value: unknown): string =>
     .replaceAll(">", "\\u003e")
     .replaceAll("&", "\\u0026");
 
+const SOURCE_OAUTH_RESULT_STORAGE_KEY_PREFIX = "executor:oauth-result:";
+
 const credentialPageDocument = (input: {
   title: string;
   eyebrow: string;
@@ -460,10 +462,11 @@ const sourceOAuthPopupResultDocument = (input: {
   title: string;
   message: string;
   state: "stored" | "cancelled";
+  sessionId?: string | null;
   payload:
     | {
-        type: "executor:source-oauth-result";
-        ok: true;
+      type: "executor:source-oauth-result";
+      ok: true;
         sourceId: Source["id"];
       }
     | {
@@ -560,12 +563,22 @@ const sourceOAuthPopupResultDocument = (input: {
     <script>
       (() => {
         const payload = ${serializeJsonForScript(input.payload)};
+        const storageKey = ${serializeJsonForScript(
+          input.sessionId
+            ? `${SOURCE_OAUTH_RESULT_STORAGE_KEY_PREFIX}${input.sessionId}`
+            : null,
+        )};
+        try {
+          if (storageKey) {
+            window.localStorage.setItem(storageKey, JSON.stringify(payload));
+          }
+        } catch {}
         try {
           if (window.opener) {
             window.opener.postMessage(payload, window.location.origin);
           }
         } finally {
-          window.setTimeout(() => window.close(), 60);
+          window.setTimeout(() => window.close(), 120);
         }
       })();
     </script>
@@ -693,6 +706,105 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
                 Effect.fail(toBadRequestError("sources.connect", cause)),
               ),
             )
+          ),
+        ),
+      )
+      .handle("connectBatch", ({ path, payload }) =>
+        resolveRequestedLocalWorkspace("sources.connectBatch", path.workspaceId).pipe(
+          Effect.flatMap((runtimeLocalWorkspace) =>
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
+              const baseUrl = resolveRequestOrigin(request);
+
+              return yield* sourceAuthService.connectGoogleDiscoveryBatch({
+                workspaceId: path.workspaceId,
+                actorAccountId: runtimeLocalWorkspace.installation.accountId,
+                executionId: null,
+                interactionId: null,
+                workspaceOauthClientId: payload.workspaceOauthClientId,
+                sources: payload.sources,
+                baseUrl,
+              });
+            }).pipe(
+              Effect.catchAll((cause) =>
+                Effect.fail(toBadRequestError("sources.connectBatch", cause)),
+              ),
+            ),
+          ),
+        ),
+      )
+      .handle("listWorkspaceOauthClients", ({ path, urlParams }) =>
+        resolveRequestedLocalWorkspace("sources.listWorkspaceOauthClients", path.workspaceId).pipe(
+          Effect.flatMap(() =>
+            Effect.gen(function* () {
+              const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
+              return yield* sourceAuthService.listWorkspaceOauthClients({
+                workspaceId: path.workspaceId,
+                providerKey: urlParams.providerKey,
+              });
+            }).pipe(
+              Effect.catchAll((cause) =>
+                Effect.fail(toBadRequestError("sources.listWorkspaceOauthClients", cause)),
+              ),
+            ),
+          ),
+        ),
+      )
+      .handle("createWorkspaceOauthClient", ({ path, payload }) =>
+        resolveRequestedLocalWorkspace("sources.createWorkspaceOauthClient", path.workspaceId).pipe(
+          Effect.flatMap(() =>
+            Effect.gen(function* () {
+              const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
+              return yield* sourceAuthService.createWorkspaceOauthClient({
+                workspaceId: path.workspaceId,
+                providerKey: payload.providerKey,
+                label: payload.label,
+                oauthClient: payload.oauthClient,
+              });
+            }).pipe(
+              Effect.catchAll((cause) =>
+                Effect.fail(toBadRequestError("sources.createWorkspaceOauthClient", cause)),
+              ),
+            ),
+          ),
+        ),
+      )
+      .handle("removeWorkspaceOauthClient", ({ path }) =>
+        resolveRequestedLocalWorkspace("sources.removeWorkspaceOauthClient", path.workspaceId).pipe(
+          Effect.flatMap(() =>
+            Effect.gen(function* () {
+              const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
+              const removed = yield* sourceAuthService.removeWorkspaceOauthClient({
+                workspaceId: path.workspaceId,
+                oauthClientId: path.oauthClientId,
+              });
+
+              return { removed };
+            }).pipe(
+              Effect.catchAll((cause) =>
+                Effect.fail(toBadRequestError("sources.removeWorkspaceOauthClient", cause)),
+              ),
+            ),
+          ),
+        ),
+      )
+      .handle("removeProviderAuthGrant", ({ path }) =>
+        resolveRequestedLocalWorkspace("sources.removeProviderAuthGrant", path.workspaceId).pipe(
+          Effect.flatMap(() =>
+            Effect.gen(function* () {
+              const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
+              const removed = yield* sourceAuthService.removeProviderAuthGrant({
+                workspaceId: path.workspaceId,
+                grantId: path.grantId,
+              }).pipe(
+                Effect.catchAll((cause) =>
+                  Effect.fail(toBadRequestError("sources.removeProviderAuthGrant", cause)),
+                ),
+              );
+
+              return { removed };
+            }),
           ),
         ),
       )
@@ -899,18 +1011,86 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
           error: urlParams.error,
           errorDescription: urlParams.error_description,
         }).pipe(
-          Effect.map((source) =>
+          Effect.map((completed) =>
             htmlResponse(
               sourceOAuthPopupResultDocument({
                 title: "Source connected",
-                message: `Source connected: ${source.id}. You can close this window.`,
+                message: `Source connected: ${completed.source.id}. You can close this window.`,
                 state: "stored",
+                sessionId: completed.sessionId,
                 payload: {
                   type: "executor:source-oauth-result",
                   ok: true,
-                  sourceId: source.id,
+                  sourceId: completed.source.id,
                 },
               }),
+            ),
+          ),
+          Effect.catchAll((error) =>
+            Effect.succeed(
+              htmlResponse(
+                sourceOAuthPopupResultDocument({
+                  title: "OAuth failed",
+                  message: error instanceof Error ? error.message : "Failed completing OAuth",
+                  state: "cancelled",
+                  payload: {
+                    type: "executor:source-oauth-result",
+                    ok: false,
+                    error: error instanceof Error ? error.message : "Failed completing OAuth",
+                  },
+                }),
+                500,
+              ),
+            ),
+          ),
+        ),
+      )
+      .handle("providerOauthComplete", ({ path, urlParams }) =>
+        resolveRequestedLocalWorkspace("sources.providerOauthComplete", path.workspaceId).pipe(
+          Effect.flatMap((runtimeLocalWorkspace) =>
+            Effect.gen(function* () {
+              const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
+              const completed = yield* sourceAuthService.completeProviderOauthCallback({
+                workspaceId: path.workspaceId,
+                actorAccountId: runtimeLocalWorkspace.installation.accountId,
+                state: urlParams.state,
+                code: urlParams.code,
+                error: urlParams.error,
+                errorDescription: urlParams.error_description,
+              });
+              const primarySource = completed.sources[0] ?? null;
+
+              return htmlResponse(
+                sourceOAuthPopupResultDocument({
+                  title: "Sources connected",
+                  message: `Connected ${completed.sources.length} source${completed.sources.length === 1 ? "" : "s"}. You can close this window.`,
+                  state: "stored",
+                  sessionId: completed.sessionId,
+                  payload: {
+                    type: "executor:source-oauth-result",
+                    ok: true,
+                    sourceId: primarySource?.id ?? ("src_oauth_complete" as Source["id"]),
+                  },
+                }),
+              );
+            }).pipe(
+              Effect.catchAll((error) =>
+                Effect.succeed(
+                  htmlResponse(
+                    sourceOAuthPopupResultDocument({
+                      title: "OAuth failed",
+                      message: error instanceof Error ? error.message : "Failed completing OAuth",
+                      state: "cancelled",
+                      payload: {
+                        type: "executor:source-oauth-result",
+                        ok: false,
+                        error: error instanceof Error ? error.message : "Failed completing OAuth",
+                      },
+                    }),
+                    500,
+                  ),
+                ),
+              ),
             ),
           ),
           Effect.catchAll((error) =>

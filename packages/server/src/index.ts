@@ -115,6 +115,7 @@ const createRuntime = (
     executionResolver: options.executionResolver,
     resolveSecretMaterial: options.resolveSecretMaterial,
     getLocalServerBaseUrl,
+    localDataDir,
   }).pipe(
     Effect.mapError((cause) =>
       cause instanceof Error ? cause : new Error(String(cause)),

@@ -1,11 +1,14 @@
 import type {
   AuthArtifact,
   AuthLease,
+  ProviderAuthGrant,
   RequestPlacementTemplate,
   SecretRef,
 } from "#schema";
 import {
   AuthLeaseIdSchema,
+  decodeMcpOAuthAuthArtifactConfig,
+  decodeProviderGrantRefAuthArtifactConfig,
   RefreshableOAuth2AuthorizedUserAuthArtifactKind,
   authLeaseSecretRefs,
   decodeBuiltInAuthArtifactConfig,
@@ -23,6 +26,7 @@ import {
 } from "./secret-material-providers";
 import { refreshOAuth2AccessToken } from "./oauth2-pkce";
 import type { OAuth2TokenResponse } from "./oauth2-pkce";
+import { createPersistedMcpAuthProvider } from "./mcp-auth-provider";
 
 const LEASE_REFRESH_SKEW_MS = 60_000;
 
@@ -168,6 +172,155 @@ const refreshRefreshableOauth2AuthorizedUserArtifact = (input: {
     return nextLease;
   });
 
+const workspaceOauthClientSecretRef = (input: {
+  clientSecretProviderId: string | null;
+  clientSecretHandle: string | null;
+}): SecretRef | null =>
+  input.clientSecretProviderId && input.clientSecretHandle
+    ? {
+        providerId: input.clientSecretProviderId,
+        handle: input.clientSecretHandle,
+      }
+    : null;
+
+const cleanupProviderGrantRefreshToken = (rows: ControlPlaneStoreShape, input: {
+  previous: SecretRef;
+  next: SecretRef;
+}) =>
+  secretRefKey(input.previous) === secretRefKey(input.next)
+    ? Effect.void
+    : createDefaultSecretMaterialDeleter({ rows })(input.previous).pipe(
+        Effect.either,
+        Effect.ignore,
+      );
+
+const refreshProviderGrantRefArtifact = (input: {
+  rows: ControlPlaneStoreShape;
+  artifact: AuthArtifact;
+  lease: AuthLease | null;
+  resolveSecretMaterial: ResolveSecretMaterial;
+  context?: SecretMaterialResolveContext;
+}): Effect.Effect<AuthLease, Error, never> =>
+  Effect.gen(function* () {
+    const config = decodeProviderGrantRefAuthArtifactConfig(input.artifact);
+    if (config === null) {
+      return yield* Effect.fail(
+        new Error(`Unsupported auth artifact kind: ${input.artifact.artifactKind}`),
+      );
+    }
+
+    const grantOption = yield* input.rows.providerAuthGrants.getById(config.grantId);
+    if (Option.isNone(grantOption)) {
+      return yield* Effect.fail(
+        new Error(`Provider auth grant not found: ${config.grantId}`),
+      );
+    }
+    const grant = grantOption.value;
+
+    const oauthClientOption = yield* input.rows.workspaceOauthClients.getById(grant.oauthClientId);
+    if (Option.isNone(oauthClientOption)) {
+      return yield* Effect.fail(
+        new Error(`Workspace OAuth client not found: ${grant.oauthClientId}`),
+      );
+    }
+    const oauthClient = oauthClientOption.value;
+
+    const refreshToken = yield* input.resolveSecretMaterial({
+      ref: grant.refreshToken,
+      context: input.context,
+    });
+    const clientSecretRef = workspaceOauthClientSecretRef(oauthClient);
+    const clientSecret = clientSecretRef
+      ? yield* input.resolveSecretMaterial({
+          ref: clientSecretRef,
+          context: input.context,
+        })
+      : null;
+
+    const tokenResponse = yield* refreshOAuth2AccessToken({
+      tokenEndpoint: grant.tokenEndpoint,
+      clientId: oauthClient.clientId,
+      clientAuthentication: grant.clientAuthentication,
+      clientSecret,
+      refreshToken,
+    });
+
+    const storeSecretMaterial = createDefaultSecretMaterialStorer({
+      rows: input.rows,
+    });
+    const accessTokenRef = yield* storeSecretMaterial({
+      purpose: "oauth_access_token",
+      value: tokenResponse.access_token,
+      name: `${grant.providerKey} Access Token`,
+    });
+
+    const rotatedRefreshTokenRef = tokenResponse.refresh_token
+      ? yield* storeSecretMaterial({
+          purpose: "oauth_refresh_token",
+          value: tokenResponse.refresh_token,
+          name: `${grant.providerKey} Refresh Token`,
+        })
+      : grant.refreshToken;
+
+    const now = Date.now();
+    const nextGrant: ProviderAuthGrant = {
+      ...grant,
+      refreshToken: rotatedRefreshTokenRef,
+      lastRefreshedAt: now,
+      updatedAt: now,
+    };
+    yield* input.rows.providerAuthGrants.upsert(nextGrant);
+    yield* cleanupProviderGrantRefreshToken(input.rows, {
+      previous: grant.refreshToken,
+      next: rotatedRefreshTokenRef,
+    });
+
+    const expiresInMs =
+      typeof tokenResponse.expires_in === "number" && Number.isFinite(tokenResponse.expires_in)
+        ? Math.max(0, tokenResponse.expires_in * 1000)
+        : null;
+    const expiresAt = expiresInMs === null ? null : now + expiresInMs;
+    const refreshAfter =
+      expiresAt === null ? null : Math.max(now, expiresAt - LEASE_REFRESH_SKEW_MS);
+
+    const nextLease: AuthLease = {
+      id: input.lease?.id ?? AuthLeaseIdSchema.make(`auth_lease_${crypto.randomUUID()}`),
+      authArtifactId: input.artifact.id,
+      workspaceId: input.artifact.workspaceId,
+      sourceId: input.artifact.sourceId,
+      actorAccountId: input.artifact.actorAccountId,
+      slot: input.artifact.slot,
+      placementsTemplateJson: encodeLeasePlacementTemplatesJson([
+        {
+          location: "header",
+          name: config.headerName,
+          parts: [
+            {
+              kind: "literal",
+              value: config.prefix,
+            },
+            {
+              kind: "secret_ref",
+              ref: accessTokenRef,
+            },
+          ],
+        },
+      ]),
+      expiresAt,
+      refreshAfter,
+      createdAt: input.lease?.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    yield* input.rows.authLeases.upsert(nextLease);
+    yield* cleanupAuthLeaseSecretRefs(input.rows, {
+      previous: input.lease,
+      next: nextLease,
+    });
+
+    return nextLease;
+  });
+
 export const removeAuthLeaseAndSecrets = (rows: ControlPlaneStoreShape, input: {
   authArtifactId: AuthArtifact["id"];
 }): Effect.Effect<void, Error, never> =>
@@ -273,6 +426,8 @@ export const resolveAuthArtifactMaterialWithLeases = (input: {
     const existingLeaseOption = yield* input.rows.authLeases.getByAuthArtifactId(input.artifact.id);
     const existingLease = Option.isSome(existingLeaseOption) ? existingLeaseOption.value : null;
     const decoded = decodeBuiltInAuthArtifactConfig(input.artifact);
+    const providerGrantConfig = decodeProviderGrantRefAuthArtifactConfig(input.artifact);
+    const mcpOAuthConfig = decodeMcpOAuthAuthArtifactConfig(input.artifact);
 
     if (
       decoded !== null
@@ -294,6 +449,44 @@ export const resolveAuthArtifactMaterialWithLeases = (input: {
         resolveSecretMaterial: input.resolveSecretMaterial,
         context: input.context,
       });
+    }
+
+    if (providerGrantConfig !== null) {
+      const lease = leaseIsFresh(existingLease, Date.now())
+        ? existingLease
+        : yield* refreshProviderGrantRefArtifact({
+            rows: input.rows,
+            artifact: input.artifact,
+            lease: existingLease,
+            resolveSecretMaterial: input.resolveSecretMaterial,
+            context: input.context,
+          });
+
+      return yield* resolveAuthArtifactMaterial({
+        artifact: input.artifact,
+        lease,
+        resolveSecretMaterial: input.resolveSecretMaterial,
+        context: input.context,
+      });
+    }
+
+    if (mcpOAuthConfig !== null) {
+      const material = yield* resolveAuthArtifactMaterial({
+        artifact: input.artifact,
+        resolveSecretMaterial: input.resolveSecretMaterial,
+        context: input.context,
+      });
+
+      return {
+        ...material,
+        authProvider: createPersistedMcpAuthProvider({
+          rows: input.rows,
+          artifact: input.artifact,
+          config: mcpOAuthConfig,
+          resolveSecretMaterial: input.resolveSecretMaterial,
+          context: input.context,
+        }),
+      };
     }
 
     return yield* resolveAuthArtifactMaterial({

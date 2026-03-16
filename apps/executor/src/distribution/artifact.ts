@@ -90,25 +90,6 @@ const resolveQuickJsWasmPath = (): string => {
   return wasmPath;
 };
 
-const resolveJsoncParserUmdImplPath = async (): Promise<string> => {
-  const requireFromControlPlane = createRequire(
-    join(repoRoot, "packages/control-plane/package.json"),
-  );
-  const jsoncParserPackagePath = requireFromControlPlane.resolve(
-    "jsonc-parser/package.json",
-  );
-  const jsoncParserUmdImplPath = resolve(dirname(jsoncParserPackagePath), "lib/umd/impl");
-
-  if (!existsSync(jsoncParserUmdImplPath)) {
-    throw new Error(
-      `Unable to locate jsonc-parser UMD implementation files at ${jsoncParserUmdImplPath}`,
-    );
-  }
-
-  return jsoncParserUmdImplPath;
-};
-
-
 const createPackageJson = (input: {
   packageName: string;
   packageVersion: string;
@@ -169,7 +150,6 @@ export const buildDistributionPackage = async (
   const bundlePath = join(binDir, "executor.mjs");
   const launcherPath = join(binDir, "executor.js");
   const quickJsWasmPath = resolveQuickJsWasmPath();
-  const jsoncParserUmdImplPath = await resolveJsoncParserUmdImplPath();
   const webDistDir = join(repoRoot, "apps/web/dist");
   const readmePath = join(repoRoot, "README.md");
   const packageName = options.packageName ?? defaults.name;
@@ -205,7 +185,6 @@ export const buildDistributionPackage = async (
 
   await cp(webDistDir, webDir, { recursive: true });
   await cp(quickJsWasmPath, join(binDir, "emscripten-module.wasm"));
-  await cp(jsoncParserUmdImplPath, join(binDir, "impl"), { recursive: true });
   await mkdir(join(binDir, "openapi-extractor-wasm"), { recursive: true });
   await cp(
     join(repoRoot, "packages/codemode-openapi/src/openapi-extractor-wasm/openapi_extractor_bg.wasm"),
