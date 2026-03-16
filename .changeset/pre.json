@@ -1,0 +1,8 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "executor": "1.1.10-beta.5"
+  },
+  "changesets": []
+}
