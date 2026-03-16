@@ -97,10 +97,10 @@ const resolvePGliteAssetPaths = (): {
   const requireFromControlPlane = createRequire(
     join(repoRoot, "packages/control-plane/package.json"),
   );
-  const pglitePackagePath = requireFromControlPlane.resolve(
-    "@electric-sql/pglite/package.json",
+  const pgliteEntryPath = requireFromControlPlane.resolve(
+    "@electric-sql/pglite",
   );
-  const pgliteDistDir = join(dirname(pglitePackagePath), "dist");
+  const pgliteDistDir = dirname(pgliteEntryPath);
   const dataPath = join(pgliteDistDir, "pglite.data");
   const wasmPath = join(pgliteDistDir, "pglite.wasm");
 
