@@ -31,23 +31,51 @@ const graphqlBinding = (defaultHeaders: Record<string, string> | null = null) =>
   defaultHeaders,
 });
 
-const mcpBinding = (input: {
-  transport?: "auto" | "streamable-http" | "sse" | "stdio" | null;
+type McpRemoteBindingInput = {
+  transport?: "auto" | "streamable-http" | "sse" | null;
   queryParams?: Record<string, string> | null;
   headers?: Record<string, string> | null;
+  command?: never;
+  args?: never;
+  env?: never;
+  cwd?: never;
+};
+
+type McpStdioBindingInput = {
+  transport: "stdio";
   command?: string | null;
   args?: ReadonlyArray<string> | null;
   env?: Record<string, string> | null;
   cwd?: string | null;
-} = {}) => ({
-  transport: input.transport ?? null,
-  queryParams: input.queryParams ?? null,
-  headers: input.headers ?? null,
-  command: input.command ?? null,
-  args: input.args ?? null,
-  env: input.env ?? null,
-  cwd: input.cwd ?? null,
-});
+  queryParams?: never;
+  headers?: never;
+};
+
+const mcpBinding = (
+  input: McpRemoteBindingInput | McpStdioBindingInput = {},
+) => {
+  if (input.transport === "stdio") {
+    return {
+      transport: "stdio" as const,
+      queryParams: null,
+      headers: null,
+      command: input.command ?? null,
+      args: input.args ?? null,
+      env: input.env ?? null,
+      cwd: input.cwd ?? null,
+    };
+  }
+
+  return {
+    transport: input.transport ?? null,
+    queryParams: input.queryParams ?? null,
+    headers: input.headers ?? null,
+    command: null,
+    args: null,
+    env: null,
+    cwd: null,
+  };
+};
 
 const makeSource = (overrides: Partial<Source> = {}): Source => ({
   id: SourceIdSchema.make("src_source_definitions"),
@@ -445,6 +473,44 @@ describe("source-definitions", () => {
 
         expect(projected).toEqual(source);
       }
+    });
+
+    it("roundtrips stdio MCP bindings without remote fields", async () => {
+      const source = makeSource({
+        kind: "mcp",
+        endpoint: "stdio://local/chrome-devtools-mcp",
+        binding: mcpBinding({
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "chrome-devtools-mcp@latest"],
+          env: {
+            CHROME_PATH: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          },
+          cwd: "/tmp/chrome-devtools",
+        }),
+        auth: { kind: "none" },
+      });
+
+      const { sourceRecord, runtimeAuthArtifact } = splitSourceForStorage({
+        source,
+        catalogId: stableSourceCatalogId(source),
+        catalogRevisionId: stableSourceCatalogRevisionId(source),
+      });
+
+      expect(runtimeAuthArtifact).toBeNull();
+      expect(JSON.parse(sourceRecord.bindingConfigJson ?? "{}")).toEqual({
+        adapterKey: "mcp",
+        version: 1,
+        payload: source.binding,
+      });
+
+      const projected = await Effect.runPromise(projectSourceFromStorage({
+        sourceRecord,
+        runtimeAuthArtifact: null,
+        importAuthArtifact: null,
+      }));
+
+      expect(projected).toEqual(source);
     });
 
     it("stores no credential for auth.kind none and projects back correctly", async () => {
