@@ -193,31 +193,40 @@ export const createLiveExecutionManager = () => {
             response,
           };
 
-          yield* publishState({
-            executionId,
-            state: "waiting_for_interaction",
-          });
+          return yield* Effect.gen(function* () {
+            yield* publishState({
+              executionId,
+              state: "waiting_for_interaction",
+            });
 
-          const resolved = yield* Deferred.await(response);
-          const resolvedAt = Date.now();
+            const resolved = yield* Deferred.await(response);
+            const resolvedAt = Date.now();
 
-          yield* rows.executionInteractions.update(interaction.id, {
-            status: resolved.action === "cancel" ? "cancelled" : "resolved",
-            responseJson: serializeJson(sanitizePersistedElicitationResponse(resolved)),
-            responsePrivateJson: serializeJson(resolved),
-            updatedAt: resolvedAt,
-          });
-          yield* rows.executions.update(executionId, {
-            status: "running",
-            updatedAt: resolvedAt,
-          });
-          yield* publishState({
-            executionId,
-            state: "running",
-          });
+            yield* rows.executionInteractions.update(interaction.id, {
+              status: resolved.action === "cancel" ? "cancelled" : "resolved",
+              responseJson: serializeJson(sanitizePersistedElicitationResponse(resolved)),
+              responsePrivateJson: serializeJson(resolved),
+              updatedAt: resolvedAt,
+            });
+            yield* rows.executions.update(executionId, {
+              status: "running",
+              updatedAt: resolvedAt,
+            });
+            yield* publishState({
+              executionId,
+              state: "running",
+            });
 
-          run.currentInteraction = null;
-          return resolved;
+            return resolved;
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (run.currentInteraction?.interactionId === interaction.id) {
+                  run.currentInteraction = null;
+                }
+              }),
+            ),
+          );
         }),
 
     resolveInteraction: ({ executionId, response }) =>
@@ -234,20 +243,21 @@ export const createLiveExecutionManager = () => {
 
     finishRun: ({ executionId, state }) =>
       publishState({ executionId, state }).pipe(
-        Effect.zipRight(
-          clearMcpConnectionPoolRun(executionId).pipe(
-            Effect.zipRight(Effect.sync(() => {
-              runs.delete(executionId);
-            })),
-          ),
+        Effect.zipRight(clearMcpConnectionPoolRun(executionId)),
+        Effect.ensuring(
+          Effect.sync(() => {
+            runs.delete(executionId);
+          }),
         ),
       ),
 
     clearRun: (executionId) =>
       clearMcpConnectionPoolRun(executionId).pipe(
-        Effect.zipRight(Effect.sync(() => {
-          runs.delete(executionId);
-        })),
+        Effect.ensuring(
+          Effect.sync(() => {
+            runs.delete(executionId);
+          }),
+        ),
       ),
   } satisfies LiveExecutionManagerShape;
 

@@ -51,6 +51,7 @@ import {
   type McpTransportFields,
   type McpTransportValue,
 } from "./mcp-transport-state";
+import { parseJsonStringArray, parseJsonStringMap } from "./json-form";
 import { getDomain } from "tldts";
 
 // ---------------------------------------------------------------------------
@@ -212,68 +213,6 @@ const googleDiscoveryDefaultsFromUrl = (
   } catch {
     return null;
   }
-};
-
-const parseJsonStringMap = (
-  label: string,
-  text: string,
-): Record<string, string> | null => {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    throw new Error(`${label} must be valid JSON.`);
-  }
-
-  if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
-    throw new Error(`${label} must be a JSON object with string values.`);
-  }
-
-  const entries = Object.entries(parsed as Record<string, unknown>);
-  const normalized: Record<string, string> = {};
-  for (const [key, value] of entries) {
-    if (typeof value !== "string") {
-      throw new Error(`${label} must only contain string values.`);
-    }
-    normalized[key] = value;
-  }
-
-  return Object.keys(normalized).length === 0 ? null : normalized;
-};
-
-const parseJsonStringArray = (
-  label: string,
-  text: string,
-): Array<string> | null => {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    throw new Error(`${label} must be valid JSON.`);
-  }
-
-  if (
-    !Array.isArray(parsed) ||
-    !parsed.every((value) => typeof value === "string")
-  ) {
-    throw new Error(`${label} must be a JSON array of strings.`);
-  }
-
-  const normalized = parsed
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-
-  return normalized.length > 0 ? normalized : null;
 };
 
 const stringifyStringMap = (
