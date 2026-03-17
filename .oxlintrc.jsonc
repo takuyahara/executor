@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  // Keep the built-in default plugin set explicit so monorepo lint behavior
+  // does not drift when oxlint changes its defaults.
+  "plugins": ["typescript", "oxc", "unicorn"],
+
+  "categories": {
+    "correctness": "warn"
+  },
+
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/.turbo/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/.next/**",
+    "**/.mint/**"
+  ],
+
+  "settings": {
+    "executorMonorepo": {
+      "packageScopes": ["@executor/"]
+    }
+  },
+
+  "jsPlugins": [
+    {
+      "name": "executor-monorepo",
+      "specifier": "./tools/oxlint/plugin.mjs"
+    }
+  ],
+
+  "rules": {
+    // This repo uses Effect.gen heavily. The underlying generator syntax is an
+    // implementation detail, so "no yield" is not a useful signal here.
+    "require-yield": "off",
+
+    // Monorepo-specific rules.
+    "executor-monorepo/no-cross-workspace-relative-imports": "error",
+    "executor-monorepo/no-workspace-src-imports": "warn"
+  }
+}
