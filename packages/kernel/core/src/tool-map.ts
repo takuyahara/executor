@@ -22,6 +22,7 @@ import type {
   ToolMetadata,
   ToolPath,
 } from "./types";
+import { kernelCoreEffectError } from "./effect-errors";
 
 type ResolvedTool = {
   path: ToolPath;
@@ -88,7 +89,7 @@ const parseInput = (input: {
   const validate = getSchemaValidator(input.schema);
   if (!validate) {
     return Effect.fail(
-      new Error(`Tool ${input.path} has no Standard Schema validator on inputSchema`),
+      kernelCoreEffectError("tool-map", `Tool ${input.path} has no Standard Schema validator on inputSchema`),
     );
   }
 
@@ -99,7 +100,7 @@ const parseInput = (input: {
     Effect.flatMap((result) => {
       if ("issues" in result && result.issues) {
         return Effect.fail(
-          new Error(
+          kernelCoreEffectError("tool-map", 
             `Input validation failed for ${input.path}: ${formatIssues(result.issues)}`,
           ),
         );
@@ -213,7 +214,7 @@ const mergeAcceptedElicitationContent = (input: {
 
   if (!isRecord(input.args)) {
     return Effect.fail(
-      new Error(
+      kernelCoreEffectError("tool-map", 
         `Tool ${input.path} cannot merge elicitation content into non-object arguments`,
       ),
     );
@@ -492,7 +493,7 @@ export const makeToolInvokerFromTools = (input: {
       Effect.gen(function* () {
         const entry = byPath.get(path);
         if (!entry) {
-          return yield* Effect.fail(new Error(`Unknown tool path: ${path}`));
+          return yield* kernelCoreEffectError("tool-map", `Unknown tool path: ${path}`);
         }
 
         const parsedInput = yield* parseInput({

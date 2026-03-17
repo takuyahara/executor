@@ -10,6 +10,7 @@ import type { WorkspaceStorageServices } from "../../local/storage";
 import { invocationDescriptorFromTool } from "../ir-execution";
 import { evaluateInvocationPolicy } from "../../policy/invocation-policy-engine";
 import { loadRuntimeLocalWorkspacePolicies } from "../../policy/policies-operations";
+import { runtimeEffectError } from "../../effect-errors";
 
 const asToolPath = (value: string): ToolPath => value as ToolPath;
 
@@ -98,15 +99,13 @@ export const authorizePersistedToolInvocation = (input: {
     }
 
     if (decision.kind === "deny") {
-      return yield* Effect.fail(new Error(decision.reason));
+      return yield* runtimeEffectError("execution/workspace/authorization", decision.reason);
     }
 
     if (!input.onElicitation) {
-      return yield* Effect.fail(
-        new Error(
+      return yield* runtimeEffectError("execution/workspace/authorization", 
           `Approval required for ${descriptor.toolPath}, but no elicitation-capable host is available`,
-        ),
-      );
+        );
     }
 
     const interactionId =
@@ -145,10 +144,8 @@ export const authorizePersistedToolInvocation = (input: {
       );
 
     if (response.action !== "accept") {
-      return yield* Effect.fail(
-        new Error(
+      return yield* runtimeEffectError("execution/workspace/authorization", 
           `Tool invocation not approved for ${descriptor.toolPath}`,
-        ),
-      );
+        );
     }
   });

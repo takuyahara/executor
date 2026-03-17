@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import { googleDiscoverySourceAdapter } from "./google-discovery";
 import { snapshotFromSourceCatalogSyncResult } from "../catalog-sync-result";
 import { createSourceFromPayload } from "../source-definitions";
+import { runtimeEffectError } from "../../effect-errors";
 
 const fetchLiveDiscoveryDocument = async (): Promise<string> => {
   const response = await fetch("https://www.googleapis.com/discovery/v1/apis/sheets/v4/rest", {
@@ -90,7 +91,7 @@ describe("google discovery source adapter", () => {
           const syncResult = await Effect.runPromise(
             googleDiscoverySourceAdapter.syncCatalog({
               source,
-              resolveSecretMaterial: () => Effect.fail(new Error("unexpected secret lookup")),
+              resolveSecretMaterial: () => Effect.fail(runtimeEffectError("sources/source-adapters/google-discovery.test", "unexpected secret lookup")),
               resolveAuthMaterialForSlot: () =>
                 Effect.succeed({
                   placements: [],

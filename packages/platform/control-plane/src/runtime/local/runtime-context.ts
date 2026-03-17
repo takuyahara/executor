@@ -55,24 +55,20 @@ export const requireRuntimeLocalWorkspace = (
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
     if (runtimeLocalWorkspace === null) {
-      return yield* Effect.fail(
-        new RuntimeLocalWorkspaceUnavailableError({
+      return yield* new RuntimeLocalWorkspaceUnavailableError({
           message: "Runtime local workspace is unavailable",
-        }),
-      );
+        });
     }
 
     if (
       workspaceId !== undefined
       && runtimeLocalWorkspace.installation.workspaceId !== workspaceId
     ) {
-      return yield* Effect.fail(
-        new RuntimeLocalWorkspaceMismatchError({
+      return yield* new RuntimeLocalWorkspaceMismatchError({
           message: `Workspace ${workspaceId} is not the active local workspace ${runtimeLocalWorkspace.installation.workspaceId}`,
           requestedWorkspaceId: workspaceId,
           activeWorkspaceId: runtimeLocalWorkspace.installation.workspaceId,
-        }),
-      );
+        });
     }
 
     return runtimeLocalWorkspace;

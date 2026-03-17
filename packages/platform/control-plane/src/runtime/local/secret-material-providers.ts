@@ -22,6 +22,7 @@ import { fromConfigSecretProviderId } from "./config-secrets";
 import { getRuntimeLocalWorkspaceOption } from "./runtime-context";
 import { ControlPlaneStore } from "../store";
 import type { ControlPlaneStoreShape } from "../store";
+import { runtimeEffectError } from "../effect-errors";
 
 export const ENV_SECRET_PROVIDER_ID = "env";
 export const PARAMS_SECRET_PROVIDER_ID = "params";
@@ -304,7 +305,7 @@ const ensureCommandSuccess = (input: {
     ?? ensureNonEmptyString(input.result.stdout)
     ?? "command returned non-zero exit code";
 
-  return Effect.fail(new Error(`${input.operation}: ${input.message}: ${details}`));
+  return Effect.fail(runtimeEffectError("local/secret-material-providers", `${input.operation}: ${input.message}: ${details}`));
 };
 
 const commandAvailabilityCache = new Map<string, Promise<boolean>>();
@@ -389,9 +390,7 @@ const loadStoredSecretMaterial = (input: {
     const materialId = SecretMaterialIdSchema.make(input.id);
     const stored = yield* input.runtime.rows.secretMaterials.getById(materialId);
     if (Option.isNone(stored)) {
-      return yield* Effect.fail(
-        new Error(`${input.operation}: secret material not found: ${input.id}`),
-      );
+      return yield* runtimeEffectError("local/secret-material-providers", `${input.operation}: secret material not found: ${input.id}`);
     }
 
     return stored.value;
@@ -437,11 +436,9 @@ const loadManagedKeychainRef = (input: {
       operation: input.operation,
     });
     if (material.providerId !== KEYCHAIN_SECRET_PROVIDER_ID) {
-      return yield* Effect.fail(
-        new Error(
+      return yield* runtimeEffectError("local/secret-material-providers", 
           `${input.operation}: secret ${material.id} is stored in provider '${material.providerId}', not '${KEYCHAIN_SECRET_PROVIDER_ID}'`,
-        ),
-      );
+        );
     }
 
     return {
@@ -502,7 +499,7 @@ const readKeychainSecretValue = (input: {
       );
     default:
       return Effect.fail(
-        new Error(`keychain.get: keychain provider is unsupported on platform '${process.platform}'`),
+        runtimeEffectError("local/secret-material-providers", `keychain.get: keychain provider is unsupported on platform '${process.platform}'`),
       );
   }
 };
@@ -567,7 +564,7 @@ const writeKeychainSecretValue = (input: {
       );
     default:
       return Effect.fail(
-        new Error(`keychain.put: keychain provider is unsupported on platform '${process.platform}'`),
+        runtimeEffectError("local/secret-material-providers", `keychain.put: keychain provider is unsupported on platform '${process.platform}'`),
       );
   }
 };
@@ -609,7 +606,7 @@ const deleteKeychainSecretValue = (input: {
       );
     default:
       return Effect.fail(
-        new Error(`keychain.delete: keychain provider is unsupported on platform '${process.platform}'`),
+        runtimeEffectError("local/secret-material-providers", `keychain.delete: keychain provider is unsupported on platform '${process.platform}'`),
       );
   }
 };
@@ -618,7 +615,7 @@ const createParamsSecretMaterialProvider = (): SecretMaterialProvider => ({
   resolve: ({ ref, context }) => {
     const value = ensureNonEmptyString(context.params?.[ref.handle]);
     if (value === null) {
-      return Effect.fail(new Error(`Secret parameter ${ref.handle} is not set`));
+      return Effect.fail(runtimeEffectError("local/secret-material-providers", `Secret parameter ${ref.handle} is not set`));
     }
 
     return Effect.succeed(value);
@@ -631,7 +628,7 @@ const createEnvSecretMaterialProvider = (): SecretMaterialProvider => ({
   resolve: ({ ref, runtime }) => {
     if (!runtime.dangerouslyAllowEnvSecrets) {
       return Effect.fail(
-        new Error(
+        runtimeEffectError("local/secret-material-providers", 
           `Env-backed secrets are disabled. Set ${DANGEROUSLY_ALLOW_ENV_SECRETS_ENV}=true to allow provider '${ENV_SECRET_PROVIDER_ID}'.`,
         ),
       );
@@ -639,7 +636,7 @@ const createEnvSecretMaterialProvider = (): SecretMaterialProvider => ({
 
     const value = ensureNonEmptyString(runtime.env[ref.handle]);
     if (value === null) {
-      return Effect.fail(new Error(`Environment variable ${ref.handle} is not set`));
+      return Effect.fail(runtimeEffectError("local/secret-material-providers", `Environment variable ${ref.handle} is not set`));
     }
 
     return Effect.succeed(value);
@@ -657,16 +654,12 @@ const createLocalSecretMaterialProvider = (): SecretMaterialProvider => ({
         operation: "local.get",
       });
       if (stored.providerId !== LOCAL_SECRET_PROVIDER_ID) {
-        return yield* Effect.fail(
-          new Error(
+        return yield* runtimeEffectError("local/secret-material-providers", 
             `local.get: secret ${stored.id} is stored in provider '${stored.providerId}', not '${LOCAL_SECRET_PROVIDER_ID}'`,
-          ),
-        );
+          );
       }
       if (stored.value === null) {
-        return yield* Effect.fail(
-          new Error(`local.get: secret ${stored.id} does not have a local value`),
-        );
+        return yield* runtimeEffectError("local/secret-material-providers", `local.get: secret ${stored.id} does not have a local value`);
       }
 
       return stored.value;
@@ -690,11 +683,9 @@ const createLocalSecretMaterialProvider = (): SecretMaterialProvider => ({
         operation: "local.update",
       });
       if (stored.providerId !== LOCAL_SECRET_PROVIDER_ID) {
-        return yield* Effect.fail(
-          new Error(
+        return yield* runtimeEffectError("local/secret-material-providers", 
             `local.update: secret ${stored.id} is stored in provider '${stored.providerId}', not '${LOCAL_SECRET_PROVIDER_ID}'`,
-          ),
-        );
+          );
       }
 
       if (name === undefined && value === undefined) {
@@ -709,7 +700,7 @@ const createLocalSecretMaterialProvider = (): SecretMaterialProvider => ({
         },
       );
       if (Option.isNone(updated)) {
-        return yield* Effect.fail(new Error(`local.update: secret material not found: ${stored.id}`));
+        return yield* runtimeEffectError("local/secret-material-providers", `local.update: secret material not found: ${stored.id}`);
       }
 
       return {
@@ -797,9 +788,7 @@ const createKeychainSecretMaterialProvider = (): SecretMaterialProvider => ({
         },
       );
       if (Option.isNone(updated)) {
-        return yield* Effect.fail(
-          new Error(`keychain.update: secret material not found: ${loaded.material.id}`),
-        );
+        return yield* runtimeEffectError("local/secret-material-providers", `keychain.update: secret material not found: ${loaded.material.id}`);
       }
 
       return {
@@ -849,7 +838,7 @@ const getSecretMaterialProvider = (input: {
     return Effect.succeed(provider);
   }
 
-  return Effect.fail(new Error(`Unsupported secret provider: ${input.providerId}`));
+  return Effect.fail(runtimeEffectError("local/secret-material-providers", `Unsupported secret provider: ${input.providerId}`));
 };
 
 const createSecretMaterialProviderRuntime = (input: {
@@ -946,25 +935,25 @@ const resolveConfiguredSecretProvider = (input: {
 }): Effect.Effect<string, Error, never> => {
   const providerAlias = fromConfigSecretProviderId(input.ref.providerId);
   if (providerAlias === null) {
-    return Effect.fail(new Error(`Unsupported secret provider: ${input.ref.providerId}`));
+    return Effect.fail(runtimeEffectError("local/secret-material-providers", `Unsupported secret provider: ${input.ref.providerId}`));
   }
 
   const provider = input.runtime.localConfig?.secrets?.providers?.[providerAlias];
   if (!provider) {
     return Effect.fail(
-      new Error(`Config secret provider "${providerAlias}" is not configured`),
+      runtimeEffectError("local/secret-material-providers", `Config secret provider "${providerAlias}" is not configured`),
     );
   }
   if (input.runtime.workspaceRoot === null) {
     return Effect.fail(
-      new Error(`Config secret provider "${providerAlias}" requires a workspace root`),
+      runtimeEffectError("local/secret-material-providers", `Config secret provider "${providerAlias}" requires a workspace root`),
     );
   }
 
   if (provider.source === "env") {
     const value = ensureNonEmptyString(input.runtime.env[input.ref.handle]);
     return value === null
-      ? Effect.fail(new Error(`Environment variable ${input.ref.handle} is not set`))
+      ? Effect.fail(runtimeEffectError("local/secret-material-providers", `Environment variable ${input.ref.handle} is not set`))
       : Effect.succeed(value);
   }
 
@@ -979,17 +968,17 @@ const resolveConfiguredSecretProvider = (input: {
   const command = provider.command.trim();
   if (!isAbsolute(command)) {
     return Effect.fail(
-      new Error(`Exec secret provider command must be absolute: ${command}`),
+      runtimeEffectError("local/secret-material-providers", `Exec secret provider command must be absolute: ${command}`),
     );
   }
   if (!isRegularFilePath(command, provider.allowSymlinkCommand ?? false)) {
     return Effect.fail(
-      new Error(`Exec secret provider command is not an allowed regular file: ${command}`),
+      runtimeEffectError("local/secret-material-providers", `Exec secret provider command is not an allowed regular file: ${command}`),
     );
   }
   if (!ensureTrustedDir(command, provider.trustedDirs)) {
     return Effect.fail(
-      new Error(`Exec secret provider command is outside trustedDirs: ${command}`),
+      runtimeEffectError("local/secret-material-providers", `Exec secret provider command is outside trustedDirs: ${command}`),
     );
   }
 
@@ -1032,7 +1021,7 @@ export const createDefaultSecretMaterialResolver = (input: {
         Effect.catchAll(() =>
           fromConfigSecretProviderId(ref.providerId) !== null
             ? Effect.succeed(null)
-            : Effect.fail(new Error(`Unsupported secret provider: ${ref.providerId}`)),
+            : Effect.fail(runtimeEffectError("local/secret-material-providers", `Unsupported secret provider: ${ref.providerId}`)),
         ),
       );
 
@@ -1072,9 +1061,7 @@ export const createDefaultSecretMaterialStorer = (input: {
       });
 
       if (!provider.store) {
-        return yield* Effect.fail(
-          new Error(`Secret provider ${defaultStoreProviderId} does not support storing secret material`),
-        );
+        return yield* runtimeEffectError("local/secret-material-providers", `Secret provider ${defaultStoreProviderId} does not support storing secret material`);
       }
 
       return yield* provider.store({
@@ -1102,9 +1089,7 @@ export const createDefaultSecretMaterialUpdater = (input: {
       });
 
       if (!provider.update) {
-        return yield* Effect.fail(
-          new Error(`Secret provider ${ref.providerId} does not support updating secret material`),
-        );
+        return yield* runtimeEffectError("local/secret-material-providers", `Secret provider ${ref.providerId} does not support updating secret material`);
       }
 
       return yield* provider.update({

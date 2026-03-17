@@ -57,7 +57,7 @@ const loadSourceForMissingCatalog = (input: {
     });
 
     if (!canInspectSourceWithoutCatalog(source)) {
-      return yield* Effect.fail(input.cause);
+      return yield* input.cause;
     }
 
     return source;
@@ -414,12 +414,10 @@ export const getSourceInspectionToolDetail = (input: {
     const tool = inspection.tool;
 
     if (!tool) {
-      return yield* Effect.fail(
-        sourceInspectOps.tool.notFound(
+      return yield* sourceInspectOps.tool.notFound(
           "Tool not found",
           `workspaceId=${input.workspaceId} sourceId=${input.sourceId} path=${input.toolPath}`,
-        ),
-      );
+        );
     }
 
     return inspectionToolDetailFromTool(tool);

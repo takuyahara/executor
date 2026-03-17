@@ -11,6 +11,7 @@ import {
   toExecutorTool,
 } from "@executor/codemode-core";
 import { makeSesExecutor } from "@executor/runtime-ses";
+import { kitchenSinkEffectError } from "./effect-errors";
 
 const numberPairInputSchema = Schema.standardSchemaV1(
   Schema.Struct({
@@ -100,7 +101,7 @@ describe("kitchen-sink", () => {
       }).execute;
 
       if (!execute) {
-        return yield* Effect.fail(new Error("Code tool execute function is missing"));
+        return yield* kitchenSinkEffectError("kitchen-sink.test", "Code tool execute function is missing");
       }
 
       const output = yield* Effect.tryPromise({

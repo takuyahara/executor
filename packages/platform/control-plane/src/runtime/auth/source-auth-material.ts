@@ -21,6 +21,7 @@ import type {
   SecretMaterialResolveContext,
 } from "../local/secret-material-providers";
 import { SecretMaterialResolverService } from "../local/secret-material-providers";
+import { runtimeEffectError } from "../effect-errors";
 
 const authForSlot = (input: {
   source: Source;
@@ -114,9 +115,7 @@ export const resolveSourceAuthMaterialWithDeps = (input: {
       || artifact?.artifactKind === "provider_grant_ref"
       || artifact?.artifactKind === "mcp_oauth"
     ) {
-      return yield* Effect.fail(
-        new Error("Dynamic auth artifacts require persistence-backed lease resolution"),
-      );
+      return yield* runtimeEffectError("auth/source-auth-material", "Dynamic auth artifacts require persistence-backed lease resolution");
     }
 
     return yield* resolveAuthArtifactMaterial({

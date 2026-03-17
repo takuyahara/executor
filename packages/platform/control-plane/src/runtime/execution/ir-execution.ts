@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import type { LoadedSourceCatalogToolIndexEntry } from "../catalog/source/runtime";
 import type { ResolvedSourceAuthMaterial } from "../auth/source-auth-material";
 import { getSourceAdapter } from "../sources/source-adapters";
+import { runtimeEffectError } from "../effect-errors";
 
 export const invocationDescriptorFromTool = (input: {
   tool: LoadedSourceCatalogToolIndexEntry;
@@ -49,7 +50,7 @@ export const invokeIrTool = (input: {
   const adapter = getSourceAdapter(input.tool.executable.adapterKey);
   if (adapter.key !== input.tool.source.kind) {
     return Effect.fail(
-      new Error(
+      runtimeEffectError("execution/ir-execution", 
         `Executable ${input.tool.executable.id} expects adapter ${adapter.key}, but source ${input.tool.source.id} is ${input.tool.source.kind}`,
       ),
     );

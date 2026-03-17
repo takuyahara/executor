@@ -42,6 +42,7 @@ import {
   StringMapSchema,
   createCatalogImportMetadata,
   EXECUTABLE_BINDING_VERSION,
+  sourceCoreEffectError,
   type Source,
   type SourceAdapter,
 } from "@executor/source-core";
@@ -109,9 +110,7 @@ const openApiBindingConfigFromSource = (
         "headers",
       ])
     ) {
-      return yield* Effect.fail(
-        new Error("OpenAPI sources cannot define MCP transport settings"),
-      );
+      return yield* sourceCoreEffectError("openapi/adapter", "OpenAPI sources cannot define MCP transport settings");
     }
 
     const bindingConfig = yield* decodeSourceBindingPayload({
@@ -129,7 +128,7 @@ const openApiBindingConfigFromSource = (
         ? bindingConfig.specUrl.trim()
         : "";
     if (specUrl.length === 0) {
-      return yield* Effect.fail(new Error("OpenAPI sources require specUrl"));
+      return yield* sourceCoreEffectError("openapi/adapter", "OpenAPI sources require specUrl");
     }
 
     return {
@@ -168,17 +167,13 @@ const fetchOpenApiDocumentWithHeaders = (input: {
       );
 
     if (response.status === 401 || response.status === 403) {
-      return yield* Effect.fail(
-        new SourceCredentialRequiredError(
+      return yield* new SourceCredentialRequiredError(
           "import",
           `OpenAPI spec fetch requires credentials (status ${response.status})`,
-        ),
-      );
+        );
     }
     if (response.status < 200 || response.status >= 300) {
-      return yield* Effect.fail(
-        new Error(`OpenAPI spec fetch failed with status ${response.status}`),
-      );
+      return yield* sourceCoreEffectError("openapi/adapter", `OpenAPI spec fetch failed with status ${response.status}`);
     }
 
     return yield* response.text.pipe(

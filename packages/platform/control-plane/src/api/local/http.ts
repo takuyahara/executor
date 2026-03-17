@@ -127,22 +127,18 @@ export const ControlPlaneLocalLive = HttpApiBuilder.group(
             : parseSecretStoreProviderId(payload.providerId);
 
           if (name.length === 0) {
-            return yield* Effect.fail(
-              new ControlPlaneBadRequestError({
+            return yield* new ControlPlaneBadRequestError({
                 operation: "secrets.create",
                 message: "Secret name is required.",
                 details: "Secret name is required.",
-              }),
-            );
+              });
           }
           if (payload.providerId !== undefined && requestedProviderId === null) {
-            return yield* Effect.fail(
-              new ControlPlaneBadRequestError({
+            return yield* new ControlPlaneBadRequestError({
                 operation: "secrets.create",
                 message: `Unsupported secret provider: ${payload.providerId}`,
                 details: `Unsupported secret provider: ${payload.providerId}`,
-              }),
-            );
+              });
           }
 
           const store = yield* ControlPlaneStore;
@@ -165,7 +161,7 @@ export const ControlPlaneLocalLive = HttpApiBuilder.group(
           );
 
           if (Option.isNone(created)) {
-            return yield* Effect.fail(storageError(`Created secret not found: ${ref.handle}`));
+            return yield* storageError(`Created secret not found: ${ref.handle}`);
           }
 
           return {
@@ -188,13 +184,11 @@ export const ControlPlaneLocalLive = HttpApiBuilder.group(
           );
 
           if (Option.isNone(existing)) {
-            return yield* Effect.fail(
-              new ControlPlaneNotFoundError({
+            return yield* new ControlPlaneNotFoundError({
                 operation: "secrets.update",
                 message: `Secret not found: ${path.secretId}`,
                 details: `Secret not found: ${path.secretId}`,
-              }),
-            );
+              });
           }
 
           const update: { name?: string | null; value?: string } = {};
@@ -234,13 +228,11 @@ export const ControlPlaneLocalLive = HttpApiBuilder.group(
           );
 
           if (Option.isNone(existing)) {
-            return yield* Effect.fail(
-              new ControlPlaneNotFoundError({
+            return yield* new ControlPlaneNotFoundError({
                 operation: "secrets.delete",
                 message: `Secret not found: ${path.secretId}`,
                 details: `Secret not found: ${path.secretId}`,
-              }),
-            );
+              });
           }
 
           const deleteSecretMaterial = createDefaultSecretMaterialDeleter({
@@ -254,7 +246,7 @@ export const ControlPlaneLocalLive = HttpApiBuilder.group(
           );
 
           if (!removed) {
-            return yield* Effect.fail(storageError(`Failed removing secret: ${path.secretId}`));
+            return yield* storageError(`Failed removing secret: ${path.secretId}`);
           }
 
           return { removed: true };

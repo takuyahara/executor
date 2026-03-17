@@ -136,25 +136,21 @@ const toToolPath = (
       rawSegments.at(-1) === "index" ? rawSegments.slice(0, -1) : rawSegments;
 
     if (segments.length === 0) {
-      return yield* Effect.fail(
-        new LocalToolDefinitionError({
+      return yield* new LocalToolDefinitionError({
           message: `Invalid local tool path ${relativePath}: root index files are not supported`,
           path: relativePath,
           details:
             "Root index files are not supported. Use a named file such as hello.ts or a nested index.ts.",
-        }),
-      );
+        });
     }
 
     for (const segment of segments) {
       if (!LOCAL_TOOL_SEGMENT_PATTERN.test(segment)) {
-        return yield* Effect.fail(
-          new LocalToolDefinitionError({
+        return yield* new LocalToolDefinitionError({
             message: `Invalid local tool path ${relativePath}: segment ${segment} contains unsupported characters`,
             path: relativePath,
             details: `Tool path segments may only contain letters, numbers, underscores, and hyphens. Invalid segment: ${segment}`,
-          }),
-        );
+          });
       }
     }
 
@@ -329,7 +325,7 @@ const transpileSourceFile = (input: {
       transpiled.diagnostics,
     );
     if (diagnosticError) {
-      return yield* Effect.fail(diagnosticError);
+      return yield* diagnosticError;
     }
 
     return rewriteRelativeImportSpecifiers(transpiled.outputText);
@@ -608,26 +604,22 @@ export const loadLocalToolRuntime = (
       const toolPath = yield* toToolPath(relativePath);
       const existing = seenToolPaths.get(toolPath);
       if (existing) {
-        return yield* Effect.fail(
-          new LocalToolPathConflictError({
+        return yield* new LocalToolPathConflictError({
             message: `Local tool path conflict for ${toolPath}`,
             path: sourcePath,
             otherPath: existing,
             toolPath,
-          }),
-        );
+          });
       }
 
       const artifactPath = artifactPaths.get(sourcePath);
       if (!artifactPath) {
-        return yield* Effect.fail(
-          new LocalToolImportError({
+        return yield* new LocalToolImportError({
             message: `Missing compiled artifact for local tool ${sourcePath}`,
             path: sourcePath,
             details:
               "Expected a compiled local tool artifact, but none was produced.",
-          }),
-        );
+          });
       }
 
       tools[toolPath] = yield* importLocalToolModule({

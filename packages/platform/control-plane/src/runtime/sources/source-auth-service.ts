@@ -99,6 +99,7 @@ import {
 } from "./source-store";
 import type { WorkspaceStorageServices } from "../local/storage";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "../store";
+import { runtimeEffectError } from "../effect-errors";
 
 const trimOrNull = (value: string | null | undefined): string | null => {
   if (value === null || value === undefined) {
@@ -214,7 +215,7 @@ const probeMcpSourceWithoutAuth = (
 ) =>
   Effect.gen(function* () {
     if (!sourceAdapterRequiresInteractiveConnect(source.kind)) {
-      return yield* Effect.fail(new Error(`Expected MCP source, received ${source.kind}`));
+      return yield* runtimeEffectError("sources/source-auth-service", `Expected MCP source, received ${source.kind}`);
     }
     const bindingState = yield* sourceBindingStateFromSource(source);
 
@@ -739,9 +740,7 @@ const materializeExecutorHttpAuth = (input: {
         storeSecretMaterial: input.storeSecretMaterial,
       });
       if (tokenRef === null) {
-        return yield* Effect.fail(
-          new Error("Bearer auth requires token or tokenRef"),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", "Bearer auth requires token or tokenRef");
       }
 
       return {
@@ -770,9 +769,7 @@ const materializeExecutorHttpAuth = (input: {
       storeSecretMaterial: input.storeSecretMaterial,
     });
     if (accessTokenRef === null) {
-      return yield* Effect.fail(
-        new Error("OAuth2 auth requires accessToken or accessTokenRef"),
-      );
+      return yield* runtimeEffectError("sources/source-auth-service", "OAuth2 auth requires accessToken or accessTokenRef");
     }
 
     const refreshTokenRef = yield* materializeSecretRefInput({
@@ -908,9 +905,7 @@ const upsertSourceOauthClient = (input: {
         })
       : null;
     if (setupConfig === null) {
-      return yield* Effect.fail(
-        new Error(`Source ${input.source.id} does not support OAuth client configuration`),
-      );
+      return yield* runtimeEffectError("sources/source-auth-service", `Source ${input.source.id} does not support OAuth client configuration`);
     }
 
     const existing = yield* input.rows.sourceOauthClients.getByWorkspaceSourceAndProvider({
@@ -1075,9 +1070,7 @@ const resolveWorkspaceOauthClientById = (input: {
       existing.value.workspaceId !== input.workspaceId
       || existing.value.providerKey !== input.providerKey
     ) {
-      return yield* Effect.fail(
-        new Error(`Workspace OAuth client ${input.oauthClientId} is not valid for ${input.providerKey}`),
-      );
+      return yield* runtimeEffectError("sources/source-auth-service", `Workspace OAuth client ${input.oauthClientId} is not valid for ${input.providerKey}`);
     }
 
     return {
@@ -1152,9 +1145,7 @@ const upsertProviderAuthGrant = (input: {
     }
 
     if (refreshTokenRef === null) {
-      return yield* Effect.fail(
-        new Error(`Provider auth grant for ${input.providerKey} is missing a refresh token`),
-      );
+      return yield* runtimeEffectError("sources/source-auth-service", `Provider auth grant for ${input.providerKey} is missing a refresh token`);
     }
 
     const now = Date.now();
@@ -1340,7 +1331,7 @@ const startProviderOauthBatchCredentialSetup = (input: {
 }, Error, WorkspaceStorageServices> =>
   Effect.gen(function* () {
     if (input.targetSources.length === 0) {
-      return yield* Effect.fail(new Error("Provider OAuth setup requires at least one target source"));
+      return yield* runtimeEffectError("sources/source-auth-service", "Provider OAuth setup requires at least one target source");
     }
 
     const sessionId = SourceAuthSessionIdSchema.make(`src_auth_${crypto.randomUUID()}`);
@@ -1580,7 +1571,7 @@ const connectMcpSourceInternal = (input: {
             Effect.flatMap((source) =>
               sourceAdapterRequiresInteractiveConnect(source.kind)
                 ? Effect.succeed(source)
-                : Effect.fail(new Error(`Expected MCP source, received ${source.kind}`)),
+                : Effect.fail(runtimeEffectError("sources/source-auth-service", `Expected MCP source, received ${source.kind}`)),
             ),
           )
         : input.sourceStore.loadSourcesInWorkspace(input.workspaceId, {
@@ -1712,9 +1703,7 @@ const connectMcpSourceInternal = (input: {
 
     const localServerBaseUrl = trimOrNull(input.baseUrl) ?? input.getLocalServerBaseUrl?.() ?? null;
     if (!localServerBaseUrl) {
-      return yield* Effect.fail(
-        new Error("Local executor server base URL is unavailable for source credential setup"),
-      );
+      return yield* runtimeEffectError("sources/source-auth-service", "Local executor server base URL is unavailable for source credential setup");
     }
 
     const sessionId = SourceAuthSessionIdSchema.make(`src_auth_${crypto.randomUUID()}`);
@@ -2145,9 +2134,7 @@ const addExecutorGoogleDiscoverySource = (input: {
       }
 
       if (workspaceOauthClient === null) {
-        return yield* Effect.fail(
-          new Error("Google shared auth requires a workspace OAuth client"),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", "Google shared auth requires a workspace OAuth client");
       }
 
       const requiredScopes = normalizeScopes(googleSetupConfig.scopes);
@@ -2184,9 +2171,7 @@ const addExecutorGoogleDiscoverySource = (input: {
       const requestBaseUrl = trimOrNull(input.baseUrl);
       const baseUrl = requestBaseUrl ?? input.getLocalServerBaseUrl?.() ?? null;
       if (baseUrl === null) {
-        return yield* Effect.fail(
-          new Error("Local executor server base URL is unavailable for Google OAuth setup"),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", "Local executor server base URL is unavailable for Google OAuth setup");
       }
 
       const oauthRequired = yield* startProviderOauthBatchCredentialSetup({
@@ -2318,7 +2303,7 @@ const connectGoogleDiscoveryBatchInternal = (input: {
 }): Effect.Effect<ConnectGoogleDiscoveryBatchResult, Error, WorkspaceStorageServices> =>
   Effect.gen(function* () {
     if (input.sourceInput.sources.length === 0) {
-      return yield* Effect.fail(new Error("Google batch connect requires at least one source"));
+      return yield* runtimeEffectError("sources/source-auth-service", "Google batch connect requires at least one source");
     }
 
     const existingSources = yield* input.sourceStore.loadSourcesInWorkspace(
@@ -2426,9 +2411,7 @@ const connectGoogleDiscoveryBatchInternal = (input: {
               })
             : null;
           if (setupConfig === null) {
-            return yield* Effect.fail(
-              new Error(`Source ${persistedDraft.id} does not support Google shared auth`),
-            );
+            return yield* runtimeEffectError("sources/source-auth-service", `Source ${persistedDraft.id} does not support Google shared auth`);
           }
 
           return {
@@ -2451,9 +2434,7 @@ const connectGoogleDiscoveryBatchInternal = (input: {
       providerKey: baseSetupConfig.providerKey,
     });
     if (workspaceOauthClient === null) {
-      return yield* Effect.fail(
-        new Error(`Workspace OAuth client not found: ${input.sourceInput.workspaceOauthClientId}`),
-      );
+      return yield* runtimeEffectError("sources/source-auth-service", `Workspace OAuth client not found: ${input.sourceInput.workspaceOauthClientId}`);
     }
 
     const reusableGrant = yield* findReusableProviderGrant({
@@ -2491,9 +2472,7 @@ const connectGoogleDiscoveryBatchInternal = (input: {
 
     const baseUrl = trimOrNull(input.sourceInput.baseUrl) ?? input.getLocalServerBaseUrl?.() ?? null;
     if (baseUrl === null) {
-      return yield* Effect.fail(
-        new Error("Local executor server base URL is unavailable for Google OAuth setup"),
-      );
+      return yield* runtimeEffectError("sources/source-auth-service", "Local executor server base URL is unavailable for Google OAuth setup");
     }
 
     const oauthRequired = yield* startProviderOauthBatchCredentialSetup({
@@ -2706,7 +2685,7 @@ const createRuntimeSourceConnectionService = (
               baseUrl: options?.baseUrl,
               resolveSecretMaterial: input.resolveSecretMaterial,
             })
-          : Effect.fail(new Error(`Unsupported executor source input: ${JSON.stringify(sourceInput)}`))).pipe(
+          : Effect.fail(runtimeEffectError("sources/source-auth-service", `Unsupported executor source input: ${JSON.stringify(sourceInput)}`))).pipe(
               Effect.flatMap(mirrorLocalSourceResult),
             ),
       ),
@@ -2772,9 +2751,7 @@ const createRuntimeSourceConnectionService = (
           });
           const stored = yield* input.rows.workspaceOauthClients.getById(created.id);
           if (Option.isNone(stored)) {
-            return yield* Effect.fail(
-              new Error(`Workspace OAuth client ${created.id} was not persisted`),
-            );
+            return yield* runtimeEffectError("sources/source-auth-service", `Workspace OAuth client ${created.id} was not persisted`);
           }
 
           return stored.value;
@@ -2792,11 +2769,9 @@ const createRuntimeSourceConnectionService = (
           const grants = yield* input.rows.providerAuthGrants.listByWorkspaceId(workspaceId);
           const dependentGrant = grants.find((grant) => grant.oauthClientId === oauthClientId);
           if (dependentGrant) {
-            return yield* Effect.fail(
-              new Error(
+            return yield* runtimeEffectError("sources/source-auth-service", 
                 `Workspace OAuth client ${oauthClientId} is still referenced by provider grant ${dependentGrant.id}`,
-              ),
-            );
+              );
           }
 
           const secretRef = sourceOauthClientSecretRef(oauthClient.value);
@@ -2835,9 +2810,7 @@ const createRuntimeSourceOAuthSessionService = (
     Effect.gen(function* () {
       const resolvedBaseUrl = trimOrNull(oauthInput.baseUrl) ?? input.getLocalServerBaseUrl?.() ?? null;
       if (!resolvedBaseUrl) {
-        return yield* Effect.fail(
-          new Error("Local executor server base URL is unavailable for OAuth setup"),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", "Local executor server base URL is unavailable for OAuth setup");
       }
 
       const sessionId = SourceAuthSessionIdSchema.make(`src_auth_${crypto.randomUUID()}`);
@@ -2895,17 +2868,17 @@ const createRuntimeSourceOAuthSessionService = (
     provideLocalWorkspace(Effect.gen(function* () {
       const sessionOption = yield* input.rows.sourceAuthSessions.getByState(state);
       if (Option.isNone(sessionOption)) {
-        return yield* Effect.fail(new Error(`Source auth session not found for state ${state}`));
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session not found for state ${state}`);
       }
 
       const session = sessionOption.value;
       const sessionData = decodeMcpSourceAuthSessionData(session);
       if (session.status === "completed") {
-        return yield* Effect.fail(new Error(`Source auth session ${session.id} is already completed`));
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} is already completed`);
       }
 
       if (session.status !== "pending") {
-        return yield* Effect.fail(new Error(`Source auth session ${session.id} is not pending`));
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} is not pending`);
       }
 
       if (trimOrNull(error) !== null) {
@@ -2922,20 +2895,20 @@ const createRuntimeSourceOAuthSessionService = (
           }),
         );
 
-        return yield* Effect.fail(new Error(reason));
+        return yield* runtimeEffectError("sources/source-auth-service", reason);
       }
 
       const authorizationCode = trimOrNull(code);
       if (authorizationCode === null) {
-        return yield* Effect.fail(new Error("Missing OAuth authorization code"));
+        return yield* runtimeEffectError("sources/source-auth-service", "Missing OAuth authorization code");
       }
 
       if (sessionData.codeVerifier === null) {
-        return yield* Effect.fail(new Error("OAuth session is missing the PKCE code verifier"));
+        return yield* runtimeEffectError("sources/source-auth-service", "OAuth session is missing the PKCE code verifier");
       }
 
       if (sessionData.scope !== null && sessionData.scope !== "mcp") {
-        return yield* Effect.fail(new Error(`Unsupported OAuth provider: ${sessionData.scope}`));
+        return yield* runtimeEffectError("sources/source-auth-service", `Unsupported OAuth provider: ${sessionData.scope}`);
       }
 
       const exchanged = yield* exchangeMcpOAuthAuthorizationCode({
@@ -3007,24 +2980,18 @@ const createRuntimeSourceOAuthSessionService = (
     provideLocalWorkspace(Effect.gen(function* () {
       const sessionOption = yield* input.rows.sourceAuthSessions.getByState(state);
       if (Option.isNone(sessionOption)) {
-        return yield* Effect.fail(new Error(`Source auth session not found for state ${state}`));
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session not found for state ${state}`);
       }
 
       const session = sessionOption.value;
       if (session.workspaceId !== workspaceId) {
-        return yield* Effect.fail(
-          new Error(`Source auth session ${session.id} does not match workspaceId=${workspaceId}`),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} does not match workspaceId=${workspaceId}`);
       }
       if ((session.actorAccountId ?? null) !== (actorAccountId ?? null)) {
-        return yield* Effect.fail(
-          new Error(`Source auth session ${session.id} does not match the active account`),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} does not match the active account`);
       }
       if (session.providerKind !== "oauth2_provider_batch") {
-        return yield* Effect.fail(
-          new Error(`Source auth session ${session.id} is not a provider batch OAuth session`),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} is not a provider batch OAuth session`);
       }
       if (session.status === "completed") {
         const sessionData = decodeProviderOauthBatchSourceAuthSessionData(session);
@@ -3044,9 +3011,7 @@ const createRuntimeSourceOAuthSessionService = (
         } satisfies CompleteProviderOauthCallbackResult;
       }
       if (session.status !== "pending") {
-        return yield* Effect.fail(
-          new Error(`Source auth session ${session.id} is not pending`),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} is not pending`);
       }
 
       const sessionData = decodeProviderOauthBatchSourceAuthSessionData(session);
@@ -3061,15 +3026,15 @@ const createRuntimeSourceOAuthSessionService = (
             errorText: reason,
           }),
         );
-        return yield* Effect.fail(new Error(reason));
+        return yield* runtimeEffectError("sources/source-auth-service", reason);
       }
 
       const authorizationCode = trimOrNull(code);
       if (authorizationCode === null) {
-        return yield* Effect.fail(new Error("Missing OAuth authorization code"));
+        return yield* runtimeEffectError("sources/source-auth-service", "Missing OAuth authorization code");
       }
       if (sessionData.codeVerifier === null) {
-        return yield* Effect.fail(new Error("OAuth session is missing the PKCE code verifier"));
+        return yield* runtimeEffectError("sources/source-auth-service", "OAuth session is missing the PKCE code verifier");
       }
 
       const oauthClient = yield* resolveWorkspaceOauthClientById({
@@ -3079,9 +3044,7 @@ const createRuntimeSourceOAuthSessionService = (
         providerKey: sessionData.providerKey,
       });
       if (oauthClient === null) {
-        return yield* Effect.fail(
-          new Error(`Workspace OAuth client not found: ${sessionData.oauthClientId}`),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", `Workspace OAuth client not found: ${sessionData.oauthClientId}`);
       }
 
       let clientSecret: string | null = null;
@@ -3185,24 +3148,20 @@ const createRuntimeSourceOAuthSessionService = (
     provideLocalWorkspace(Effect.gen(function* () {
       const sessionOption = yield* input.rows.sourceAuthSessions.getByState(state);
       if (Option.isNone(sessionOption)) {
-        return yield* Effect.fail(new Error(`Source auth session not found for state ${state}`));
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session not found for state ${state}`);
       }
 
       const session = sessionOption.value;
       if (session.workspaceId !== workspaceId || session.sourceId !== sourceId) {
-        return yield* Effect.fail(
-          new Error(
+        return yield* runtimeEffectError("sources/source-auth-service", 
             `Source auth session ${session.id} does not match workspaceId=${workspaceId} sourceId=${sourceId}`,
-          ),
-        );
+          );
       }
       if (
         actorAccountId !== undefined
         && (session.actorAccountId ?? null) !== (actorAccountId ?? null)
       ) {
-        return yield* Effect.fail(
-          new Error(`Source auth session ${session.id} does not match the active account`),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} does not match the active account`);
       }
 
       const source = yield* input.sourceStore.loadSourceById({
@@ -3219,9 +3178,7 @@ const createRuntimeSourceOAuthSessionService = (
       }
 
       if (session.status !== "pending") {
-        return yield* Effect.fail(
-          new Error(`Source auth session ${session.id} is not pending`),
-        );
+        return yield* runtimeEffectError("sources/source-auth-service", `Source auth session ${session.id} is not pending`);
       }
 
       const sessionData = session.providerKind === "oauth2_pkce"
@@ -3260,16 +3217,16 @@ const createRuntimeSourceOAuthSessionService = (
           },
         });
 
-        return yield* Effect.fail(new Error(reason));
+        return yield* runtimeEffectError("sources/source-auth-service", reason);
       }
 
       const authorizationCode = trimOrNull(code);
       if (authorizationCode === null) {
-        return yield* Effect.fail(new Error("Missing OAuth authorization code"));
+        return yield* runtimeEffectError("sources/source-auth-service", "Missing OAuth authorization code");
       }
 
       if (sessionData.codeVerifier === null) {
-        return yield* Effect.fail(new Error("OAuth session is missing the PKCE code verifier"));
+        return yield* runtimeEffectError("sources/source-auth-service", "OAuth session is missing the PKCE code verifier");
       }
 
       const now = Date.now();
@@ -3294,9 +3251,7 @@ const createRuntimeSourceOAuthSessionService = (
         });
         const refreshToken = trimOrNull(exchanged.refresh_token);
         if (refreshToken === null) {
-          return yield* Effect.fail(
-            new Error("OAuth authorization did not return a refresh token"),
-          );
+          return yield* runtimeEffectError("sources/source-auth-service", "OAuth authorization did not return a refresh token");
         }
 
         const refreshTokenRef = yield* input.storeSecretMaterial({

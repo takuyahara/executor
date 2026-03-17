@@ -137,12 +137,10 @@ const loadSourceCredentialInteraction = (input: {
     );
 
     if (Option.isNone(stored)) {
-      return yield* Effect.fail(
-        input.operation.notFound(
+      return yield* input.operation.notFound(
           "Source credential request not found",
           `interactionId=${input.interactionId}`,
-        ),
-      );
+        );
     }
 
     const decoded = decodeSourceCredentialInteraction(stored.value);
@@ -151,12 +149,10 @@ const loadSourceCredentialInteraction = (input: {
       || decoded.workspaceId !== input.workspaceId
       || decoded.sourceId !== input.sourceId
     ) {
-      return yield* Effect.fail(
-        input.operation.notFound(
+      return yield* input.operation.notFound(
           "Source credential request not found",
           `workspaceId=${input.workspaceId} sourceId=${input.sourceId} interactionId=${input.interactionId}`,
-        ),
-      );
+        );
     }
 
     const source = yield* sourceAuthService.getSourceById({
@@ -226,12 +222,10 @@ export const submitSourceCredentialInteraction = (input: {
     });
 
     if (interaction.status !== "pending") {
-      return yield* Effect.fail(
-        localOps.sourceCredentialSubmit.badRequest(
+      return yield* localOps.sourceCredentialSubmit.badRequest(
           "Source credential request is no longer active",
           `interactionId=${interaction.interactionId} status=${interaction.status}`,
-        ),
-      );
+        );
     }
 
     const liveExecutionManager = yield* LiveExecutionManagerService;
@@ -260,12 +254,10 @@ export const submitSourceCredentialInteraction = (input: {
         );
 
         if (!persisted) {
-          return yield* Effect.fail(
-            localOps.sourceCredentialSubmit.badRequest(
+          return yield* localOps.sourceCredentialSubmit.badRequest(
               "Source credential request is no longer resumable",
               `interactionId=${interaction.interactionId}`,
-            ),
-          );
+            );
         }
       }
 
@@ -302,12 +294,10 @@ export const submitSourceCredentialInteraction = (input: {
         );
 
         if (!persisted) {
-          return yield* Effect.fail(
-            localOps.sourceCredentialSubmit.badRequest(
+          return yield* localOps.sourceCredentialSubmit.badRequest(
               "Source credential request is no longer resumable",
               `interactionId=${interaction.interactionId}`,
-            ),
-          );
+            );
         }
       }
 
@@ -320,12 +310,10 @@ export const submitSourceCredentialInteraction = (input: {
 
     const token = trimOrNull(input.token);
     if (token === null) {
-      return yield* Effect.fail(
-        localOps.sourceCredentialSubmit.badRequest(
+      return yield* localOps.sourceCredentialSubmit.badRequest(
           "Missing token",
           `interactionId=${interaction.interactionId}`,
-        ),
-      );
+        );
     }
 
     const sourceAuthService = yield* RuntimeSourceAuthServiceTag;
@@ -365,12 +353,10 @@ export const submitSourceCredentialInteraction = (input: {
       );
 
       if (!persisted) {
-        return yield* Effect.fail(
-          localOps.sourceCredentialSubmit.badRequest(
+        return yield* localOps.sourceCredentialSubmit.badRequest(
             "Source credential request is no longer resumable",
             `interactionId=${interaction.interactionId}`,
-          ),
-        );
+          );
       }
     }
 

@@ -32,6 +32,7 @@ import {
   authArtifactFromSourceAuth,
   sourceAuthFromAuthArtifact,
 } from "../auth/auth-artifacts";
+import { runtimeEffectError } from "../effect-errors";
 
 const trimOrNull = (value: string | null | undefined): string | null => {
   if (value === null || value === undefined) {
@@ -96,7 +97,7 @@ const normalizeAuth = (
       const providerId = trimOrNull(auth.token.providerId);
       const handle = trimOrNull(auth.token.handle);
       if (providerId === null || handle === null) {
-        return yield* Effect.fail(new Error("Bearer auth requires a token secret ref"));
+        return yield* runtimeEffectError("sources/source-definitions", "Bearer auth requires a token secret ref");
       }
 
       return {
@@ -116,9 +117,7 @@ const normalizeAuth = (
       const refreshProviderId = trimOrNull(auth.refreshToken.providerId);
       const refreshHandle = trimOrNull(auth.refreshToken.handle);
       if (refreshProviderId === null || refreshHandle === null) {
-        return yield* Effect.fail(
-          new Error("OAuth2 authorized-user auth requires a refresh token secret ref"),
-        );
+        return yield* runtimeEffectError("sources/source-definitions", "OAuth2 authorized-user auth requires a refresh token secret ref");
       }
 
       let clientSecret: { providerId: string; handle: string } | null = null;
@@ -126,9 +125,7 @@ const normalizeAuth = (
         const clientSecretProviderId = trimOrNull(auth.clientSecret.providerId);
         const clientSecretHandle = trimOrNull(auth.clientSecret.handle);
         if (clientSecretProviderId === null || clientSecretHandle === null) {
-          return yield* Effect.fail(
-            new Error("OAuth2 authorized-user client secret ref must include providerId and handle"),
-          );
+          return yield* runtimeEffectError("sources/source-definitions", "OAuth2 authorized-user client secret ref must include providerId and handle");
         }
         clientSecret = {
           providerId: clientSecretProviderId,
@@ -139,9 +136,7 @@ const normalizeAuth = (
       const tokenEndpoint = trimOrNull(auth.tokenEndpoint);
       const clientId = trimOrNull(auth.clientId);
       if (tokenEndpoint === null || clientId === null) {
-        return yield* Effect.fail(
-          new Error("OAuth2 authorized-user auth requires tokenEndpoint and clientId"),
-        );
+        return yield* runtimeEffectError("sources/source-definitions", "OAuth2 authorized-user auth requires tokenEndpoint and clientId");
       }
 
       return {
@@ -165,9 +160,7 @@ const normalizeAuth = (
       const prefix = auth.prefix ?? "Bearer ";
       const grantId = trimOrNull(auth.grantId);
       if (grantId === null) {
-        return yield* Effect.fail(
-          new Error("Provider grant auth requires a grantId"),
-        );
+        return yield* runtimeEffectError("sources/source-definitions", "Provider grant auth requires a grantId");
       }
 
       return {
@@ -187,9 +180,7 @@ const normalizeAuth = (
       const accessProviderId = trimOrNull(auth.accessToken.providerId);
       const accessHandle = trimOrNull(auth.accessToken.handle);
       if (redirectUri === null || accessProviderId === null || accessHandle === null) {
-        return yield* Effect.fail(
-          new Error("MCP OAuth auth requires redirectUri and access token secret ref"),
-        );
+        return yield* runtimeEffectError("sources/source-definitions", "MCP OAuth auth requires redirectUri and access token secret ref");
       }
 
       let refreshToken: { providerId: string; handle: string } | null = null;
@@ -197,9 +188,7 @@ const normalizeAuth = (
         const refreshProviderId = trimOrNull(auth.refreshToken.providerId);
         const refreshHandle = trimOrNull(auth.refreshToken.handle);
         if (refreshProviderId === null || refreshHandle === null) {
-          return yield* Effect.fail(
-            new Error("MCP OAuth refresh token ref must include providerId and handle"),
-          );
+          return yield* runtimeEffectError("sources/source-definitions", "MCP OAuth refresh token ref must include providerId and handle");
         }
 
         refreshToken = {
@@ -234,7 +223,7 @@ const normalizeAuth = (
     const accessProviderId = trimOrNull(auth.accessToken.providerId);
     const accessHandle = trimOrNull(auth.accessToken.handle);
     if (accessProviderId === null || accessHandle === null) {
-      return yield* Effect.fail(new Error("OAuth2 auth requires an access token secret ref"));
+      return yield* runtimeEffectError("sources/source-definitions", "OAuth2 auth requires an access token secret ref");
     }
 
     let refreshToken: { providerId: string; handle: string } | null = null;
@@ -242,9 +231,7 @@ const normalizeAuth = (
       const refreshProviderId = trimOrNull(auth.refreshToken.providerId);
       const refreshHandle = trimOrNull(auth.refreshToken.handle);
       if (refreshProviderId === null || refreshHandle === null) {
-        return yield* Effect.fail(
-          new Error("OAuth2 refresh token ref must include providerId and handle"),
-        );
+        return yield* runtimeEffectError("sources/source-definitions", "OAuth2 refresh token ref must include providerId and handle");
       }
 
       refreshToken = {
@@ -273,9 +260,7 @@ const normalizeImportAuthPolicy = (
 const validateSourceImportAuth = (source: Source): Effect.Effect<Source, Error, never> =>
   Effect.gen(function* () {
     if (source.importAuthPolicy !== "separate" && source.importAuth.kind !== "none") {
-      return yield* Effect.fail(
-        new Error("importAuth must be none unless importAuthPolicy is separate"),
-      );
+      return yield* runtimeEffectError("sources/source-definitions", "importAuth must be none unless importAuthPolicy is separate");
     }
 
     return source;

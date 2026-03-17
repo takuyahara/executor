@@ -46,6 +46,7 @@ import {
   RuntimeSourceStoreService,
   type RuntimeSourceStore,
 } from "../../sources/source-store";
+import { runtimeEffectError } from "../../effect-errors";
 
 type CatalogImportMetadata = CatalogSnapshotV1["import"];
 
@@ -672,7 +673,7 @@ const ensureRuntimeCatalogWorkspace = (
 ) => {
   if (deps.runtimeLocalWorkspace.installation.workspaceId !== workspaceId) {
     return Effect.fail(
-      new Error(
+      runtimeEffectError("catalog/source/runtime", 
         `Runtime local workspace mismatch: expected ${workspaceId}, got ${deps.runtimeLocalWorkspace.installation.workspaceId}`,
       ),
     );
@@ -762,12 +763,10 @@ const loadSourceWithCatalogWithDeps = (deps: RuntimeSourceCatalogStoreDeps, inpu
       sourceId: source.id,
     });
     if (artifact === null) {
-      return yield* Effect.fail(
-        new LocalSourceArtifactMissingError({
+      return yield* new LocalSourceArtifactMissingError({
           message: `Catalog artifact missing for source ${input.sourceId}`,
           sourceId: input.sourceId,
-        }),
-      );
+        });
     }
 
     const snapshot = buildSnapshotFromArtifact({

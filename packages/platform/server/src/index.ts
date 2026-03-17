@@ -36,6 +36,7 @@ import {
   createLocalTracingRuntimeFromEnv,
   tracingSearchUrl,
 } from "./tracing";
+import { platformServerEffectError } from "./effect-errors";
 
 export {
   DEFAULT_EXECUTOR_DATA_DIR,
@@ -403,7 +404,7 @@ export const createLocalExecutorServer = (
 
     const address = server.address();
     if (!address || typeof address === "string") {
-      return yield* Effect.fail(new Error("Failed to resolve local executor server address"));
+      return yield* platformServerEffectError("index", "Failed to resolve local executor server address");
     }
 
     const resolvedAddress = address as AddressInfo;

@@ -35,6 +35,7 @@ import { snapshotFromSourceCatalogSyncResult } from "../../sources/catalog-sync-
 import {
   refreshSourceTypeDeclarationInBackground,
 } from "./type-declarations";
+import { runtimeEffectError } from "../../effect-errors";
 
 const shouldIndexSource = (source: Source): boolean =>
   source.enabled
@@ -77,7 +78,7 @@ const ensureRuntimeCatalogSyncWorkspace = (
 ) => {
   if (deps.runtimeLocalWorkspace.installation.workspaceId !== workspaceId) {
     return Effect.fail(
-      new Error(
+      runtimeEffectError("catalog/source/sync", 
         `Runtime local workspace mismatch: expected ${workspaceId}, got ${deps.runtimeLocalWorkspace.installation.workspaceId}`,
       ),
     );

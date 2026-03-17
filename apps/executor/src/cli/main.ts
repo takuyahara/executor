@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+import { FileSystem } from "@effect/platform";
 import { Args, Command, Options } from "@effect/cli";
 import {
   NodeFileSystem,
@@ -52,6 +53,11 @@ import {
   parseInteractionPayload,
 } from "./pending-interaction-output";
 import { decideInteractionHandling } from "./interaction-handling";
+import {
+  executorAppEffectError,
+  type LocalServerReachabilityTimeoutError,
+  localServerReachabilityTimeoutError,
+} from "../effect-errors";
 
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
@@ -138,9 +144,7 @@ const readCode = (input: {
       }
     }
 
-    return yield* Effect.fail(
-      new Error("Provide code as a positional argument, use --file, or pipe code over stdin."),
-    );
+    return yield* executorAppEffectError("cli/main", "Provide code as a positional argument, use --file, or pipe code over stdin.");
   });
 
 const getBootstrapClient = (baseUrl: string = DEFAULT_SERVER_BASE_URL) =>
@@ -471,36 +475,42 @@ const isPidRunning = (pid: number): boolean => {
 };
 
 
-const readServerLogTail = async (
+const readServerLogTail = (
   logFile: string = DEFAULT_SERVER_LOG_FILE,
   maxLines: number = 40,
   maxChars: number = 6000,
-): Promise<string | null> => {
-  try {
-    const contents = await readFile(logFile, "utf8");
+): Effect.Effect<string | null, never, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const contents = yield* fs.readFileString(logFile, "utf8").pipe(
+      Effect.catchAll(() => Effect.succeed<string | null>(null)),
+    );
+
+    if (contents === null) {
+      return null;
+    }
+
     const lines = contents.split(/\r?\n/u).filter((line) => line.length > 0);
     const tail = lines.slice(-maxLines).join("\n");
     return tail.length > maxChars ? tail.slice(-maxChars) : tail;
-  } catch {
-    return null;
-  }
-};
+  });
 
-const buildReachabilityTimeoutError = async (
-  baseUrl: string,
-  expected: boolean,
-  logFile: string = DEFAULT_SERVER_LOG_FILE,
-): Promise<Error> => {
-  const action = expected ? "start" : "shutdown";
-  const prefix = `Timed out waiting for local executor server ${action} at ${baseUrl}`;
-  const logTail = await readServerLogTail(logFile);
+const failReachabilityTimeout = (input: {
+  baseUrl: string;
+  expected: boolean;
+  logFile?: string;
+}): Effect.Effect<never, LocalServerReachabilityTimeoutError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const logFile = input.logFile ?? DEFAULT_SERVER_LOG_FILE;
+    const logTail = yield* readServerLogTail(logFile);
 
-  if (!logTail) {
-    return new Error(`${prefix}\n\nDaemon log: ${logFile}`);
-  }
-
-  return new Error(`${prefix}\n\nRecent daemon log (${logFile}):\n${logTail}`);
-};
+    return yield* localServerReachabilityTimeoutError({
+      baseUrl: input.baseUrl,
+      expected: input.expected,
+      logFile,
+      logTail,
+    });
+  });
 
 const waitForReachability = (baseUrl: string, expected: boolean) =>
   Effect.gen(function* () {
@@ -513,12 +523,7 @@ const waitForReachability = (baseUrl: string, expected: boolean) =>
       yield* sleep(SERVER_POLL_INTERVAL_MS);
     }
 
-    const error = yield* Effect.tryPromise({
-      try: () => buildReachabilityTimeoutError(baseUrl, expected),
-      catch: toError,
-    });
-
-    return yield* Effect.fail(error);
+    return yield* failReachabilityTimeout({ baseUrl, expected });
   });
 
 type LocalServerStatus = {
@@ -668,7 +673,7 @@ const stopServer = (baseUrl: string) =>
       Effect.catchAll(() =>
         Effect.tryPromise(() => rm(DEFAULT_SERVER_PID_FILE, { force: true })).pipe(
           Effect.ignore,
-          Effect.zipRight(Effect.fail(new Error(`Timed out stopping local executor server pid ${pid}`))),
+          Effect.zipRight(Effect.fail(executorAppEffectError("cli/main", `Timed out stopping local executor server pid ${pid}`))),
         ),
       ),
     );

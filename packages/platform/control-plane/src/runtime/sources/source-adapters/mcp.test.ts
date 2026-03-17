@@ -30,6 +30,7 @@ import {
 import { snapshotFromSourceCatalogSyncResult } from "../catalog-sync-result";
 import { createSourceFromPayload } from "../source-definitions";
 import { mcpSourceAdapter } from "./mcp";
+import { runtimeEffectError } from "../../effect-errors";
 
 type RealMcpServer = {
   endpoint: string;
@@ -390,7 +391,7 @@ describe("mcp source adapter", () => {
       const syncResult = yield* mcpSourceAdapter.syncCatalog({
         source,
         resolveSecretMaterial: () =>
-          Effect.fail(new Error("unexpected secret lookup")),
+          Effect.fail(runtimeEffectError("sources/source-adapters/mcp.test", "unexpected secret lookup")),
         resolveAuthMaterialForSlot: () =>
           Effect.succeed({
             placements: [],
@@ -478,7 +479,7 @@ describe("mcp source adapter", () => {
       const syncResult = yield* mcpSourceAdapter.syncCatalog({
         source,
         resolveSecretMaterial: () =>
-          Effect.fail(new Error("unexpected secret lookup")),
+          Effect.fail(runtimeEffectError("sources/source-adapters/mcp.test", "unexpected secret lookup")),
         resolveAuthMaterialForSlot: () =>
           Effect.succeed({
             placements: [],
@@ -576,7 +577,7 @@ describe("mcp source adapter", () => {
       const syncResult = yield* mcpSourceAdapter.syncCatalog({
         source,
         resolveSecretMaterial: () =>
-          Effect.fail(new Error("unexpected secret lookup")),
+          Effect.fail(runtimeEffectError("sources/source-adapters/mcp.test", "unexpected secret lookup")),
         resolveAuthMaterialForSlot: () => Effect.succeed(resolvedAuth),
       });
       const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);

@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { buildDistributionPackage } from "./artifact";
+import { executorAppEffectError } from "../effect-errors";
 
 type CommandResult = {
   readonly stdout: string;
@@ -96,7 +97,7 @@ const runCommand = (input: {
         return;
       }
 
-      resume(Effect.fail(new Error(
+      resume(Effect.fail(executorAppEffectError("distribution/harness", 
         [
           `${input.command} ${input.args.join(" ")} exited with code ${exitCode}`,
           stdout.length > 0 ? `stdout:\n${stdout.trim()}` : null,
@@ -161,7 +162,7 @@ const packPackage = (packageDir: string, outputDir: string) =>
 
       if (!tarballName) {
         return Effect.fail(
-          new Error(`Unable to determine tarball name from npm pack output: ${result.stdout}`),
+          executorAppEffectError("distribution/harness", `Unable to determine tarball name from npm pack output: ${result.stdout}`),
         );
       }
 

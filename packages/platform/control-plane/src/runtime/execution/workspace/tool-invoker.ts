@@ -36,6 +36,7 @@ import {
   createWorkspaceSourceCatalog,
   loadWorkspaceCatalogToolByPath,
 } from "./source-catalog";
+import { runtimeEffectError } from "../../effect-errors";
 
 export const createWorkspaceToolInvoker = (input: {
   workspaceId: Source["workspaceId"];
@@ -120,9 +121,7 @@ export const createWorkspaceToolInvoker = (input: {
           includeSchemas: false,
         });
         if (!catalogTool) {
-          return yield* Effect.fail(
-            new Error(`Unknown tool path: ${invocation.path}`),
-          );
+          return yield* runtimeEffectError("execution/workspace/tool-invoker", `Unknown tool path: ${invocation.path}`);
         }
 
         yield* authorizePersistedToolInvocation({

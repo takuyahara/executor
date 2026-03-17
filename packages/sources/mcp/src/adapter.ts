@@ -31,6 +31,7 @@ import {
   StringMapSchema,
   createCatalogImportMetadata,
   EXECUTABLE_BINDING_VERSION,
+  sourceCoreEffectError,
   type Source,
   type SourceAdapter,
   type SourceCatalogSyncResult,
@@ -131,12 +132,10 @@ const mcpBindingConfigFromSource = (
 ): Effect.Effect<McpBindingConfig, Error, never> =>
   Effect.gen(function* () {
     if (bindingHasAnyField(source.binding, ["specUrl"])) {
-      return yield* Effect.fail(new Error("MCP sources cannot define specUrl"));
+      return yield* sourceCoreEffectError("mcp/adapter", "MCP sources cannot define specUrl");
     }
     if (bindingHasAnyField(source.binding, ["defaultHeaders"])) {
-      return yield* Effect.fail(
-        new Error("MCP sources cannot define HTTP source settings"),
-      );
+      return yield* sourceCoreEffectError("mcp/adapter", "MCP sources cannot define HTTP source settings");
     }
 
     const bindingConfig = yield* decodeSourceBindingPayload({

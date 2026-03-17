@@ -1,6 +1,8 @@
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { sourceCoreEffectError } from "./effect-errors";
 import {
   SecretRefSchema,
   SourceBindingVersionSchema,
@@ -86,14 +88,17 @@ export const parseJsonValue = <T>(input: {
             : new Error(`Invalid ${input.label}: ${String(cause)}`),
       });
 
-export class SourceCredentialRequiredError extends Error {
-  readonly _tag = "SourceCredentialRequiredError";
-
+export class SourceCredentialRequiredError extends Data.TaggedError(
+  "SourceCredentialRequiredError",
+)<{
+  readonly slot: CredentialSlot;
+  readonly message: string;
+}> {
   constructor(
-    readonly slot: CredentialSlot,
+    slot: CredentialSlot,
     message: string,
   ) {
-    super(message);
+    super({ slot, message });
   }
 }
 
@@ -150,7 +155,7 @@ export const decodeBindingConfig = <A>(input: {
 }): Effect.Effect<SourceBinding & { payload: A }, Error, never> => {
   if (input.value === null) {
     return Effect.fail(
-      new Error(`Missing ${input.label} binding config for ${input.sourceId}`),
+      sourceCoreEffectError("core/shared", `Missing ${input.label} binding config for ${input.sourceId}`),
     );
   }
 
@@ -173,7 +178,7 @@ export const decodeBindingConfig = <A>(input: {
             payload: decoded.payload,
           } as SourceBinding & { payload: A })
         : Effect.fail(
-            new Error(
+            sourceCoreEffectError("core/shared", 
               `Unsupported ${input.label} binding config version ${decoded.version} for ${input.sourceId}; expected ${input.version}`,
             ),
           ),
@@ -192,7 +197,7 @@ export const decodeSourceBindingPayload = <A>(input: {
 }): Effect.Effect<A, Error, never> =>
   input.version !== input.expectedVersion
     ? Effect.fail(
-        new Error(
+        sourceCoreEffectError("core/shared", 
           `Unsupported ${input.label} binding version ${input.version} for ${input.sourceId}; expected ${input.expectedVersion}`,
         ),
       )

@@ -52,12 +52,10 @@ export const buildLocalSourceRecord = (input: {
   Effect.gen(function* () {
     const sourceConfig = input.loadedConfig.config?.sources?.[input.sourceId];
     if (!sourceConfig) {
-      return yield* Effect.fail(
-        new LocalConfiguredSourceNotFoundError({
+      return yield* new LocalConfiguredSourceNotFoundError({
           message: `Configured source not found for id ${input.sourceId}`,
           sourceId: input.sourceId,
-        }),
-      );
+        });
     }
 
     const existingState = input.workspaceState.sources[input.sourceId];
@@ -313,12 +311,10 @@ export const loadSourceByIdWithDeps = (
       input.workspaceId,
     );
     if (!localWorkspace.loadedConfig.config?.sources?.[input.sourceId]) {
-      return yield* Effect.fail(
-        new LocalConfiguredSourceNotFoundError({
+      return yield* new LocalConfiguredSourceNotFoundError({
           message: `Source not found: workspaceId=${input.workspaceId} sourceId=${input.sourceId}`,
           sourceId: input.sourceId,
-        }),
-      );
+        });
     }
 
     const localSource = yield* buildLocalSourceRecord({

@@ -10,6 +10,7 @@ import {
   type Source,
   type SourceAdapter,
 } from "@executor/source-core";
+import { runtimeEffectError } from "../../effect-errors";
 
 const InternalBindingConfigSchema = Schema.Struct({});
 
@@ -37,9 +38,7 @@ const internalBindingConfigFromSource = (
         "headers",
       ])
     ) {
-      return yield* Effect.fail(
-        new Error("internal sources cannot define HTTP source settings"),
-      );
+      return yield* runtimeEffectError("sources/source-adapters/internal", "internal sources cannot define HTTP source settings");
     }
 
     return yield* decodeSourceBindingPayload({
@@ -123,6 +122,6 @@ export const internalSourceAdapter: SourceAdapter = {
     ),
   invoke: () =>
     Effect.fail(
-      new Error("Internal sources do not support persisted adapter invocation"),
+      runtimeEffectError("sources/source-adapters/internal", "Internal sources do not support persisted adapter invocation"),
     ),
 };

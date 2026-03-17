@@ -29,6 +29,7 @@ import {
   makeLocalStorageLayer,
 } from "../local/storage";
 import { provideOptionalRuntimeLocalWorkspace } from "../local/runtime-context";
+import { runtimeEffectError } from "../effect-errors";
 
 /** Run an Effect as a Promise, preserving the original error (not FiberFailure). */
 const runEffect = async <A>(
@@ -251,15 +252,11 @@ const promptForSourceCredentialSelection = (input: {
 }) =>
   Effect.gen(function* () {
     if (!input.onElicitation) {
-      return yield* Effect.fail(
-        new Error("executor.sources.add requires an elicitation-capable host"),
-      );
+      return yield* runtimeEffectError("sources/executor-tools", "executor.sources.add requires an elicitation-capable host");
     }
 
     if (input.localServerBaseUrl === null) {
-      return yield* Effect.fail(
-        new Error("executor.sources.add requires a local server base URL for credential capture"),
-      );
+      return yield* runtimeEffectError("sources/executor-tools", "executor.sources.add requires a local server base URL for credential capture");
     }
 
     const response: ElicitationResponse = yield* input.onElicitation({
@@ -287,9 +284,7 @@ const promptForSourceCredentialSelection = (input: {
     }).pipe(Effect.mapError((cause) => cause instanceof Error ? cause : new Error(String(cause))));
 
     if (response.action !== "accept") {
-      return yield* Effect.fail(
-        new Error(`Source credential setup was not completed for ${input.source.name}`),
-      );
+      return yield* runtimeEffectError("sources/executor-tools", `Source credential setup was not completed for ${input.source.name}`);
     }
 
     const content = yield* Effect.try({

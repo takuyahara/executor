@@ -66,13 +66,11 @@ export const resolveRuntimeLocalWorkspaceFromDeps = (
 > =>
   Effect.gen(function* () {
     if (deps.runtimeLocalWorkspace.installation.workspaceId !== workspaceId) {
-      return yield* Effect.fail(
-        new RuntimeLocalWorkspaceMismatchError({
+      return yield* new RuntimeLocalWorkspaceMismatchError({
           message: `Runtime local workspace mismatch: expected ${workspaceId}, got ${deps.runtimeLocalWorkspace.installation.workspaceId}`,
           requestedWorkspaceId: workspaceId,
           activeWorkspaceId: deps.runtimeLocalWorkspace.installation.workspaceId,
-        }),
-      );
+        });
     }
 
     const loadedConfig = yield* deps.workspaceConfigStore.load(

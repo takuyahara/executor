@@ -33,6 +33,7 @@ import {
   StringMapSchema,
   createCatalogImportMetadata,
   EXECUTABLE_BINDING_VERSION,
+  sourceCoreEffectError,
   type Source,
   type SourceAdapter,
 } from "@executor/source-core";
@@ -94,14 +95,10 @@ const graphqlBindingConfigFromSource = (
         "headers",
       ])
     ) {
-      return yield* Effect.fail(
-        new Error("GraphQL sources cannot define MCP transport settings"),
-      );
+      return yield* sourceCoreEffectError("graphql/adapter", "GraphQL sources cannot define MCP transport settings");
     }
     if (bindingHasAnyField(source.binding, ["specUrl"])) {
-      return yield* Effect.fail(
-        new Error("GraphQL sources cannot define specUrl"),
-      );
+      return yield* sourceCoreEffectError("graphql/adapter", "GraphQL sources cannot define specUrl");
     }
 
     const bindingConfig = yield* decodeSourceBindingPayload({

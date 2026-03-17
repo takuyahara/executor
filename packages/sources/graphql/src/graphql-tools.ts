@@ -12,6 +12,7 @@ import {
   type ToolPath,
   typeSignatureFromSchema,
 } from "@executor/codemode-core";
+import { sourceCoreEffectError } from "@executor/source-core";
 import {
   GraphqlToolProviderDataSchema,
   type GraphqlToolProviderData,
@@ -1612,9 +1613,7 @@ const invokeRawGraphqlTool = (input: {
     const record = asRecord(input.args);
     const query = asString(record.query);
     if (query === null) {
-      return yield* Effect.fail(
-        new Error(`GraphQL query must be a non-empty string for ${input.path}`),
-      );
+      return yield* sourceCoreEffectError("graphql/graphql-tools", `GraphQL query must be a non-empty string for ${input.path}`);
     }
 
     return yield* invokeGraphqlHttpRequest({

@@ -7,6 +7,7 @@ import { vi } from "vitest";
 
 import { createSourceFromPayload } from "../source-definitions";
 import { graphqlSourceAdapter } from "./graphql";
+import { runtimeEffectError } from "../../effect-errors";
 
 describe("graphql source adapter", () => {
   it("fails sync when introspection never responds", async () => {
@@ -71,7 +72,7 @@ describe("graphql source adapter", () => {
         Effect.runPromise(
           graphqlSourceAdapter.syncCatalog({
             source,
-            resolveSecretMaterial: () => Effect.fail(new Error("unexpected secret lookup")),
+            resolveSecretMaterial: () => Effect.fail(runtimeEffectError("sources/source-adapters/graphql.test", "unexpected secret lookup")),
             resolveAuthMaterialForSlot: () =>
               Effect.succeed({
                 placements: [],

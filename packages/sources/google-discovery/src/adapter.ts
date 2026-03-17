@@ -39,6 +39,7 @@ import {
   WorkspaceOauthClientIdSchema,
   createCatalogImportMetadata,
   EXECUTABLE_BINDING_VERSION,
+  sourceCoreEffectError,
   type Source,
   type SourceAdapter,
 } from "@executor/source-core";
@@ -116,11 +117,9 @@ const googleDiscoveryBindingConfigFromSource = (
         "specUrl",
       ])
     ) {
-      return yield* Effect.fail(
-        new Error(
+      return yield* sourceCoreEffectError("google-discovery/adapter", 
           "Google Discovery sources cannot define MCP or OpenAPI binding fields",
-        ),
-      );
+        );
     }
 
     const bindingConfig = yield* decodeSourceBindingPayload({
@@ -142,9 +141,7 @@ const googleDiscoveryBindingConfigFromSource = (
     const service = bindingConfig.service.trim();
     const version = bindingConfig.version.trim();
     if (service.length === 0 || version.length === 0) {
-      return yield* Effect.fail(
-        new Error("Google Discovery sources require service and version"),
-      );
+      return yield* sourceCoreEffectError("google-discovery/adapter", "Google Discovery sources require service and version");
     }
 
     const explicitDiscoveryUrl =
@@ -194,19 +191,15 @@ const fetchGoogleDiscoveryDocumentWithHeaders = (input: {
       );
 
     if (response.status === 401 || response.status === 403) {
-      return yield* Effect.fail(
-        new SourceCredentialRequiredError(
+      return yield* new SourceCredentialRequiredError(
           "import",
           `Google Discovery fetch requires credentials (status ${response.status})`,
-        ),
-      );
+        );
     }
     if (response.status < 200 || response.status >= 300) {
-      return yield* Effect.fail(
-        new Error(
+      return yield* sourceCoreEffectError("google-discovery/adapter", 
           `Google Discovery fetch failed with status ${response.status}`,
-        ),
-      );
+        );
     }
 
     return yield* response.text.pipe(

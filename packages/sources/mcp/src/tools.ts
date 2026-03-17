@@ -349,7 +349,7 @@ const runMcpListToolsEffect = (input: {
       }
 
       if (isExecutionSuspendedCause(attempt.left)) {
-        return yield* Effect.fail(attempt.left as McpToolsError);
+        return yield* (attempt.left as McpToolsError);
       }
 
       if (
@@ -370,13 +370,11 @@ const runMcpListToolsEffect = (input: {
         continue;
       }
 
-      return yield* Effect.fail(
-        new McpToolsError({
+      return yield* new McpToolsError({
           stage: "list_tools",
           message: "Failed listing MCP tools",
           details: toDetails(attempt.left),
-        }),
-      );
+        });
     }
   });
 
@@ -417,7 +415,7 @@ const runMcpToolCallEffect = (input: {
       }
 
       if (isExecutionSuspendedCause(attempt.left)) {
-        return yield* Effect.fail(attempt.left as McpToolsError);
+        return yield* (attempt.left as McpToolsError);
       }
 
       if (
@@ -438,13 +436,11 @@ const runMcpToolCallEffect = (input: {
         continue;
       }
 
-      return yield* Effect.fail(
-        new McpToolsError({
+      return yield* new McpToolsError({
           stage: "call_tool",
           message: `Failed invoking MCP tool: ${input.toolName}`,
           details: toDetails(attempt.left),
-        }),
-      );
+        });
     }
   });
 

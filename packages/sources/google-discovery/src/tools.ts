@@ -14,6 +14,7 @@ import {
   type HttpRequestPlacements,
   type ToolMetadata,
 } from "@executor/codemode-core";
+import { sourceCoreEffectError } from "@executor/source-core";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -503,11 +504,9 @@ export const createGoogleDiscoveryToolFromDefinition = (
             const body = yield* decodeResponseBody(response);
 
             if (response.status < 200 || response.status >= 300) {
-              return yield* Effect.fail(
-                new Error(
+              return yield* sourceCoreEffectError("google-discovery/tools", 
                   `Google Discovery request failed with HTTP ${response.status}: ${typeof body === "string" ? body : JSON.stringify(body)}`,
-                ),
-              );
+                );
             }
 
             return body;

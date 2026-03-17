@@ -248,12 +248,10 @@ export const getPolicy = (input: {
     );
     const policy = localWorkspace.policies.find((candidate) => candidate.id === input.policyId) ?? null;
     if (policy === null) {
-      return yield* Effect.fail(
-        policyOps.get.notFound(
+      return yield* policyOps.get.notFound(
           "Policy not found",
           `workspaceId=${input.workspaceId} policyId=${input.policyId}`,
-        ),
-      );
+        );
     }
     return policy;
   });
@@ -277,12 +275,10 @@ export const updatePolicy = (input: {
     );
     const existing = localWorkspace.policies.find((candidate) => candidate.id === input.policyId) ?? null;
     if (existing === null) {
-      return yield* Effect.fail(
-        policyOps.update.notFound(
+      return yield* policyOps.update.notFound(
           "Policy not found",
           `workspaceId=${input.workspaceId} policyId=${input.policyId}`,
-        ),
-      );
+        );
     }
 
     const projectConfig = cloneJson(localWorkspace.loadedConfig.projectConfig ?? {});

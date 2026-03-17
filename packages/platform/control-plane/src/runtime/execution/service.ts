@@ -23,6 +23,7 @@ import {
   type ExecutionInteraction,
   type WorkspaceId,
 } from "#schema";
+import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -48,6 +49,7 @@ import {
   type ControlPlaneStoreShape,
 } from "../store";
 import { RuntimeExecutionResolverService } from "./workspace/environment";
+import { runtimeEffectError } from "../effect-errors";
 
 const executionOps = {
   create: operationErrors("executions.create"),
@@ -164,15 +166,29 @@ const resolveInteractionMode = (
 ): InteractionMode =>
   value === "live" || value === "live_form" ? value : DEFAULT_INTERACTION_MODE;
 
+class ExecutionSuspendedError extends Data.TaggedError(
+  "ExecutionSuspendedError",
+)<{
+  readonly executionId: Execution["id"];
+  readonly interactionId: string;
+  readonly message: string;
+}> {}
+
 const createExecutionSuspendedError = (input: {
   executionId: Execution["id"];
   interactionId: string;
-}): Error =>
-  new Error(
-    `${EXECUTION_SUSPENDED_SENTINEL}:${input.executionId}:${input.interactionId}`,
-  );
+}): ExecutionSuspendedError =>
+  new ExecutionSuspendedError({
+    executionId: input.executionId,
+    interactionId: input.interactionId,
+    message: `${EXECUTION_SUSPENDED_SENTINEL}:${input.executionId}:${input.interactionId}`,
+  });
 
 const isExecutionSuspendedValue = (value: unknown): boolean => {
+  if (value instanceof ExecutionSuspendedError) {
+    return true;
+  }
+
   if (value instanceof Error) {
     return value.message.includes(EXECUTION_SUSPENDED_SENTINEL);
   }
@@ -242,12 +258,10 @@ const fetchExecution = (
     );
 
     if (Option.isNone(existing)) {
-      return yield* Effect.fail(
-        errors.notFound(
+      return yield* errors.notFound(
           "Execution not found",
           `workspaceId=${input.workspaceId} executionId=${input.executionId}`,
-        ),
-      );
+        );
     }
 
     return existing.value;
@@ -378,12 +392,10 @@ const suspendExecutionForInteraction = (input: {
       state: "waiting_for_interaction",
     });
 
-    return yield* Effect.fail(
-      createExecutionSuspendedError({
+    return yield* createExecutionSuspendedError({
         executionId: input.executionId,
         interactionId: input.interactionId,
-      }),
-    );
+      });
   });
 
 const createHybridOnElicitation = (input: {
@@ -487,12 +499,10 @@ const createReplayToolInvoker = (input: {
         }
 
         if (existing.value.status === "failed") {
-          return yield* Effect.fail(
-            new Error(
+          return yield* runtimeEffectError("execution/service", 
               existing.value.errorText
                 ?? `Stored tool step ${String(stepSequence)} failed`,
-            ),
-          );
+            );
         }
       } else {
         const now = Date.now();
@@ -834,12 +844,10 @@ const createExecutionWithDependencies = (
     );
 
     if (Option.isNone(running)) {
-      return yield* Effect.fail(
-        executionOps.create.notFound(
+      return yield* executionOps.create.notFound(
           "Execution not found after insert",
           `executionId=${execution.id}`,
-        ),
-      );
+        );
     }
 
     const nextState = yield* liveExecutionManager.registerStateWaiter(execution.id);
@@ -936,12 +944,10 @@ export const resumeExecution = (input: {
         && existing.pendingInteraction !== null
       )
     ) {
-      return yield* Effect.fail(
-        executionOps.resume.badRequest(
+      return yield* executionOps.resume.badRequest(
           "Execution is not waiting for interaction",
           `executionId=${input.executionId} status=${existing.execution.status}`,
-        ),
-      );
+        );
     }
 
     const responseJson = input.payload.responseJson;
@@ -988,12 +994,10 @@ export const resumeExecution = (input: {
       );
 
       if (!resumed) {
-        return yield* Effect.fail(
-          executionOps.resume.badRequest(
+        return yield* executionOps.resume.badRequest(
             "Resume is unavailable for this execution",
             `executionId=${input.executionId}`,
-          ),
-        );
+          );
       }
     }
 

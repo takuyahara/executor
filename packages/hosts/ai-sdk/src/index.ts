@@ -12,6 +12,7 @@ import {
   type ToolMap,
   type ToolInvoker,
 } from "@executor/codemode-core";
+import { aiSdkEffectError } from "./effect-errors";
 
 export type AiSdkToolMap = ToolSet;
 
@@ -49,7 +50,7 @@ export function createCodeTool(input: {
         input.executor.execute(code, input.toolInvoker).pipe(
           Effect.flatMap((result: ExecuteResult) =>
             result.error
-              ? Effect.fail(new Error(result.error))
+              ? Effect.fail(aiSdkEffectError("index", result.error))
               : Effect.succeed({
                   code,
                   result: result.result,

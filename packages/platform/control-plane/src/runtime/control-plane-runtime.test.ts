@@ -32,6 +32,7 @@ import { createSourceFromPayload } from "./sources/source-definitions";
 import { decodeSourceCredentialSelectionContent } from "./sources/source-credential-interactions";
 import { persistSource } from "./sources/source-store";
 import { withControlPlaneClient } from "./execution/test-http-client";
+import { runtimeEffectError } from "./effect-errors";
 
 const makeRuntime = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -369,7 +370,7 @@ const expectLeft = <A, E>(effect: Effect.Effect<A, E, never>) =>
     Effect.flatMap((result) =>
       result._tag === "Left"
         ? Effect.succeed(result.left)
-        : Effect.fail(new Error("Expected effect to fail")),
+        : Effect.fail(runtimeEffectError("control-plane-runtime.test", "Expected effect to fail")),
     ),
   );
 

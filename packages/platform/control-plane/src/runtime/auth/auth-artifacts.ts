@@ -35,6 +35,7 @@ import type {
   ResolveSecretMaterial,
   SecretMaterialResolveContext,
 } from "../local/secret-material-providers";
+import { runtimeEffectError } from "../effect-errors";
 
 export type ResolvedSourceAuthMaterial = {
   placements: ReadonlyArray<RequestPlacement>;
@@ -456,9 +457,7 @@ export const resolveAuthArtifactMaterial = (input: {
     const providerGrantRefConfig = decodeProviderGrantRefAuthArtifactConfig(input.artifact);
     if (providerGrantRefConfig !== null) {
       if (input.lease === null || input.lease === undefined) {
-        return yield* Effect.fail(
-          new Error(`Provider grant auth artifact ${input.artifact.id} requires a lease`),
-        );
+        return yield* runtimeEffectError("auth/auth-artifacts", `Provider grant auth artifact ${input.artifact.id} requires a lease`);
       }
     }
 
@@ -470,18 +469,16 @@ export const resolveAuthArtifactMaterial = (input: {
     }
 
     if (input.lease === null || input.lease === undefined) {
-      return yield* Effect.fail(
-        new Error(`Unsupported auth artifact kind: ${input.artifact.artifactKind}`),
-      );
+      return yield* runtimeEffectError("auth/auth-artifacts", `Unsupported auth artifact kind: ${input.artifact.artifactKind}`);
     }
 
     const templatesEither = decodeRequestPlacementTemplates(
       input.lease.placementsTemplateJson,
     );
     if (templatesEither._tag === "Left") {
-      return yield* Effect.fail(new Error(
+      return yield* runtimeEffectError("auth/auth-artifacts", 
         `Invalid auth lease placements for artifact ${input.artifact.id}`,
-      ));
+      );
     }
 
     const placements = yield* Effect.forEach(templatesEither.right, (placement) =>

@@ -27,6 +27,7 @@ import {
 import { refreshOAuth2AccessToken } from "./oauth2-pkce";
 import type { OAuth2TokenResponse } from "./oauth2-pkce";
 import { createPersistedMcpAuthProvider } from "./mcp-auth-provider";
+import { runtimeEffectError } from "../effect-errors";
 
 const LEASE_REFRESH_SKEW_MS = 60_000;
 
@@ -92,9 +93,7 @@ const refreshRefreshableOauth2AuthorizedUserArtifact = (input: {
       decoded === null
       || decoded.artifactKind !== RefreshableOAuth2AuthorizedUserAuthArtifactKind
     ) {
-      return yield* Effect.fail(
-        new Error(`Unsupported auth artifact kind: ${input.artifact.artifactKind}`),
-      );
+      return yield* runtimeEffectError("auth/auth-leases", `Unsupported auth artifact kind: ${input.artifact.artifactKind}`);
     }
 
     const refreshToken = yield* input.resolveSecretMaterial({
@@ -204,24 +203,18 @@ const refreshProviderGrantRefArtifact = (input: {
   Effect.gen(function* () {
     const config = decodeProviderGrantRefAuthArtifactConfig(input.artifact);
     if (config === null) {
-      return yield* Effect.fail(
-        new Error(`Unsupported auth artifact kind: ${input.artifact.artifactKind}`),
-      );
+      return yield* runtimeEffectError("auth/auth-leases", `Unsupported auth artifact kind: ${input.artifact.artifactKind}`);
     }
 
     const grantOption = yield* input.rows.providerAuthGrants.getById(config.grantId);
     if (Option.isNone(grantOption)) {
-      return yield* Effect.fail(
-        new Error(`Provider auth grant not found: ${config.grantId}`),
-      );
+      return yield* runtimeEffectError("auth/auth-leases", `Provider auth grant not found: ${config.grantId}`);
     }
     const grant = grantOption.value;
 
     const oauthClientOption = yield* input.rows.workspaceOauthClients.getById(grant.oauthClientId);
     if (Option.isNone(oauthClientOption)) {
-      return yield* Effect.fail(
-        new Error(`Workspace OAuth client not found: ${grant.oauthClientId}`),
-      );
+      return yield* runtimeEffectError("auth/auth-leases", `Workspace OAuth client not found: ${grant.oauthClientId}`);
     }
     const oauthClient = oauthClientOption.value;
 
@@ -349,9 +342,7 @@ export const upsertOauth2AuthorizedUserLeaseFromTokenResponse = (input: {
       decoded === null
       || decoded.artifactKind !== RefreshableOAuth2AuthorizedUserAuthArtifactKind
     ) {
-      return yield* Effect.fail(
-        new Error(`Unsupported auth artifact kind: ${input.artifact.artifactKind}`),
-      );
+      return yield* runtimeEffectError("auth/auth-leases", `Unsupported auth artifact kind: ${input.artifact.artifactKind}`);
     }
 
     const existingLeaseOption = yield* input.rows.authLeases.getByAuthArtifactId(input.artifact.id);
