@@ -1,5 +1,11 @@
 # executor
 
+## 1.2.4-beta.4
+
+### Patch Changes
+
+- ec5e3a3: Fix Google Discovery tool execution for sources stored with discovery document endpoints
+
 ## 1.2.4-beta.3
 
 ### Patch Changes
