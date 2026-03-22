@@ -13,15 +13,21 @@ import * as Effect from "effect/Effect";
 
 import { RuntimeSourceAuthMaterialService } from "../../auth/source-auth-material";
 import { RuntimeSourceCatalogStoreService } from "../../catalog/source/runtime";
-import type { RuntimeLocalWorkspaceState } from "../../local/runtime-context";
-import { type LocalToolRuntime } from "../../local/tools";
+import type { RuntimeLocalWorkspaceState } from "../../workspace/runtime-context";
+import { type LocalToolRuntime } from "../../local-tool-runtime";
 import {
   type InstallationStoreShape,
   makeWorkspaceStorageLayer,
   type SourceArtifactStoreShape,
   type WorkspaceConfigStoreShape,
   type WorkspaceStateStoreShape,
-} from "../../local/storage";
+} from "../../workspace/storage";
+import type {
+  DeleteSecretMaterial,
+  ResolveInstanceConfig,
+  StoreSecretMaterial,
+  UpdateSecretMaterial,
+} from "../../workspace/secret-material-providers";
 import type { ControlPlaneStoreShape } from "../../store";
 import { RuntimeSourceAuthService } from "../../sources/source-auth-service";
 import { type RuntimeSourceStore } from "../../sources/source-store";
@@ -49,6 +55,10 @@ export type WorkspaceInternalToolContext = {
   >;
   sourceAuthService: RuntimeSourceAuthService;
   installationStore: InstallationStoreShape;
+  instanceConfigResolver: ResolveInstanceConfig;
+  storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
+  updateSecretMaterial: UpdateSecretMaterial;
   workspaceConfigStore: WorkspaceConfigStoreShape;
   workspaceStateStore: WorkspaceStateStoreShape;
   sourceArtifactStore: SourceArtifactStoreShape;
@@ -71,6 +81,10 @@ export const createWorkspaceToolInvoker = (input: {
     typeof RuntimeSourceCatalogStoreService
   >;
   installationStore: InstallationStoreShape;
+  instanceConfigResolver: ResolveInstanceConfig;
+  storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
+  updateSecretMaterial: UpdateSecretMaterial;
   workspaceConfigStore: WorkspaceConfigStoreShape;
   workspaceStateStore: WorkspaceStateStoreShape;
   sourceArtifactStore: SourceArtifactStoreShape;
@@ -115,6 +129,10 @@ export const createWorkspaceToolInvoker = (input: {
       sourceCatalogSyncService: input.sourceCatalogSyncService,
       sourceAuthService: input.sourceAuthService,
       installationStore: input.installationStore,
+      instanceConfigResolver: input.instanceConfigResolver,
+      storeSecretMaterial: input.storeSecretMaterial,
+      deleteSecretMaterial: input.deleteSecretMaterial,
+      updateSecretMaterial: input.updateSecretMaterial,
       workspaceConfigStore: input.workspaceConfigStore,
       workspaceStateStore: input.workspaceStateStore,
       sourceArtifactStore: input.sourceArtifactStore,

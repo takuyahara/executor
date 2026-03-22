@@ -10,14 +10,14 @@ import {
   type LoadedSourceCatalogToolIndexEntry,
   catalogToolCatalogEntry,
 } from "../../catalog/source/runtime";
-import type { RuntimeLocalWorkspaceState } from "../../local/runtime-context";
+import type { RuntimeLocalWorkspaceState } from "../../workspace/runtime-context";
 import {
   makeWorkspaceStorageLayer,
   type SourceArtifactStoreShape,
   type WorkspaceConfigStoreShape,
   type WorkspaceStateStoreShape,
   type WorkspaceStorageServices,
-} from "../../local/storage";
+} from "../../workspace/storage";
 import { provideRuntimeLocalWorkspace } from "./local";
 
 const tokenize = (value: string): string[] =>

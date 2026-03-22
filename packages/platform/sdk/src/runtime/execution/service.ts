@@ -38,7 +38,7 @@ import {
 import {
   getRuntimeLocalWorkspaceOption,
   provideOptionalRuntimeLocalWorkspace,
-} from "../local/runtime-context";
+} from "../workspace/runtime-context";
 import {
   asOperationErrors,
   operationErrors,

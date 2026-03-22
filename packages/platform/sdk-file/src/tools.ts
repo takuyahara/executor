@@ -15,11 +15,10 @@ import {
   type ToolMetadata,
   type ToolPath,
 } from "@executor/codemode-core";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as ts from "typescript";
 
+import type { LocalToolRuntime } from "../../sdk/src/runtime/local-tool-runtime";
 import type { ResolvedLocalWorkspaceContext } from "./config";
 import {
   LocalFileSystemError,
@@ -78,13 +77,6 @@ export const defineLocalTool = <
     | LocalTool<TInputSchema, TOutputSchema>
     | LocalToolWithMetadata<TInputSchema, TOutputSchema>,
 ): typeof input => input;
-
-export type LocalToolRuntime = {
-  tools: ToolMap;
-  catalog: ToolCatalog;
-  toolInvoker: ToolInvoker;
-  toolPaths: Set<string>;
-};
 
 const emptyLocalToolRuntime = (): LocalToolRuntime => {
   const tools: ToolMap = {};
@@ -651,35 +643,3 @@ export const loadLocalToolRuntime = (
       toolPaths: new Set(Object.keys(tools)),
     } satisfies LocalToolRuntime;
   });
-
-export type LocalToolRuntimeLoaderShape = {
-  load: (
-    context: ResolvedLocalWorkspaceContext,
-  ) => Effect.Effect<
-    LocalToolRuntime,
-    | LocalFileSystemError
-    | LocalToolDefinitionError
-    | LocalToolImportError
-    | LocalToolPathConflictError
-    | LocalToolTranspileError,
-    never
-  >;
-};
-
-export class LocalToolRuntimeLoaderService extends Context.Tag(
-  "#runtime/LocalToolRuntimeLoaderService",
-)<LocalToolRuntimeLoaderService, LocalToolRuntimeLoaderShape>() {}
-
-export const LocalToolRuntimeLoaderLive = Layer.effect(
-  LocalToolRuntimeLoaderService,
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-
-    return LocalToolRuntimeLoaderService.of({
-      load: (context) =>
-        loadLocalToolRuntime(context).pipe(
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-        ),
-    });
-  }),
-);

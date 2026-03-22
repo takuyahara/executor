@@ -17,10 +17,16 @@ import {
 } from "./auth-artifacts";
 import { resolveAuthArtifactMaterialWithLeases } from "./auth-leases";
 import type {
+  DeleteSecretMaterial,
   ResolveSecretMaterial,
   SecretMaterialResolveContext,
-} from "../local/secret-material-providers";
-import { SecretMaterialResolverService } from "../local/secret-material-providers";
+  StoreSecretMaterial,
+} from "../workspace/secret-material-providers";
+import {
+  SecretMaterialDeleterService,
+  SecretMaterialResolverService,
+  SecretMaterialStorerService,
+} from "../workspace/secret-material-providers";
 import { runtimeEffectError } from "../effect-errors";
 
 const authForSlot = (input: {
@@ -61,6 +67,8 @@ export const resolveSourceAuthMaterialWithDeps = (input: {
   actorAccountId?: AccountId | null;
   rows?: ControlPlaneStoreShape;
   resolveSecretMaterial: ResolveSecretMaterial;
+  storeSecretMaterial?: StoreSecretMaterial;
+  deleteSecretMaterial?: DeleteSecretMaterial;
   context?: SecretMaterialResolveContext;
 }): Effect.Effect<ResolvedSourceAuthMaterial, Error, never> =>
   Effect.gen(function* () {
@@ -85,6 +93,8 @@ export const resolveSourceAuthMaterialWithDeps = (input: {
             rows: input.rows,
             artifact: artifactOption.value,
             resolveSecretMaterial: input.resolveSecretMaterial,
+            storeSecretMaterial: input.storeSecretMaterial ?? (() => Effect.dieMessage("storeSecretMaterial unavailable")),
+            deleteSecretMaterial: input.deleteSecretMaterial ?? (() => Effect.dieMessage("deleteSecretMaterial unavailable")),
             context: input.context,
           });
         }
@@ -106,6 +116,8 @@ export const resolveSourceAuthMaterialWithDeps = (input: {
         rows: input.rows,
         artifact,
         resolveSecretMaterial: input.resolveSecretMaterial,
+        storeSecretMaterial: input.storeSecretMaterial ?? (() => Effect.dieMessage("storeSecretMaterial unavailable")),
+        deleteSecretMaterial: input.deleteSecretMaterial ?? (() => Effect.dieMessage("deleteSecretMaterial unavailable")),
         context: input.context,
       });
     }
@@ -138,6 +150,8 @@ export const RuntimeSourceAuthMaterialLive = Layer.effect(
   Effect.gen(function* () {
     const rows = yield* ControlPlaneStore;
     const resolveSecretMaterial = yield* SecretMaterialResolverService;
+    const storeSecretMaterial = yield* SecretMaterialStorerService;
+    const deleteSecretMaterial = yield* SecretMaterialDeleterService;
 
     return RuntimeSourceAuthMaterialService.of({
       resolve: (input) =>
@@ -145,6 +159,8 @@ export const RuntimeSourceAuthMaterialLive = Layer.effect(
           ...input,
           rows,
           resolveSecretMaterial,
+          storeSecretMaterial,
+          deleteSecretMaterial,
         }),
     });
   }),

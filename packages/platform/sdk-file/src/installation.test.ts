@@ -5,7 +5,7 @@ import { NodeFileSystem } from "@effect/platform-node";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
-import { createLocalControlPlaneRuntime as createControlPlaneRuntime } from "../../../../sdk-file/src/index";
+import { createLocalControlPlaneRuntime as createControlPlaneRuntime } from "./index";
 import { getOrProvisionLocalInstallation } from "./installation";
 import { resolveLocalWorkspaceContext } from "./config";
 

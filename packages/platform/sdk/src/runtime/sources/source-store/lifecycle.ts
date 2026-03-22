@@ -6,7 +6,8 @@ import {
   clearProviderGrantOrphanedAt,
   markProviderGrantOrphanedIfUnused,
 } from "../../auth/provider-grant-lifecycle";
-import type { LocalWorkspaceState } from "../../local/workspace-state";
+import type { DeleteSecretMaterial } from "../../workspace/secret-material-providers";
+import type { LocalWorkspaceState } from "../../workspace-state";
 import {
   stableSourceCatalogId,
   stableSourceCatalogRevisionId,
@@ -39,6 +40,7 @@ export const removeSourceByIdWithDeps = (
     workspaceId: WorkspaceId;
     sourceId: Source["id"];
   },
+  deleteSecretMaterial: DeleteSecretMaterial,
 ): Effect.Effect<boolean, Error, never> =>
   Effect.gen(function* () {
     const localWorkspace = yield* resolveRuntimeLocalWorkspaceFromDeps(
@@ -55,7 +57,6 @@ export const removeSourceByIdWithDeps = (
     };
     delete sources[input.sourceId];
     yield* localWorkspace.workspaceConfigStore.writeProject({
-      context: localWorkspace.context,
       config: {
         ...projectConfig,
         sources,
@@ -69,11 +70,9 @@ export const removeSourceByIdWithDeps = (
       sources: remainingSources,
     };
     yield* localWorkspace.workspaceStateStore.write({
-      context: localWorkspace.context,
       state: workspaceState,
     });
     yield* localWorkspace.sourceArtifactStore.remove({
-      context: localWorkspace.context,
       sourceId: input.sourceId,
     });
     const existingAuthArtifacts =
@@ -91,7 +90,7 @@ export const removeSourceByIdWithDeps = (
       workspaceId: input.workspaceId,
       sourceId: input.sourceId,
     });
-    yield* removeAuthArtifactsForSource(deps.rows, input);
+    yield* removeAuthArtifactsForSource(deps.rows, input, deleteSecretMaterial);
     yield* Effect.forEach(
       [...removedGrantIds],
       (grantId) =>
@@ -112,6 +111,7 @@ export const persistSourceWithDeps = (
   options: {
     actorAccountId?: AccountId | null;
   } = {},
+  deleteSecretMaterial: DeleteSecretMaterial,
 ): Effect.Effect<Source, Error, never> =>
   Effect.gen(function* () {
     const localWorkspace = yield* resolveRuntimeLocalWorkspaceFromDeps(
@@ -155,7 +155,6 @@ export const persistSourceWithDeps = (
       config: localWorkspace.loadedConfig.config,
     });
     yield* localWorkspace.workspaceConfigStore.writeProject({
-      context: localWorkspace.context,
       config: {
         ...projectConfig,
         sources,
@@ -175,7 +174,7 @@ export const persistSourceWithDeps = (
       if (existingRuntimeAuthArtifact !== null) {
         yield* removeAuthLeaseAndSecrets(deps.rows, {
           authArtifactId: existingRuntimeAuthArtifact.id,
-        });
+        }, deleteSecretMaterial);
       }
       yield* deps.rows.authArtifacts.removeByWorkspaceSourceAndActor({
         workspaceId: nextSource.workspaceId,
@@ -191,20 +190,20 @@ export const persistSourceWithDeps = (
       ) {
         yield* removeAuthLeaseAndSecrets(deps.rows, {
           authArtifactId: existingRuntimeAuthArtifact.id,
-        });
+        }, deleteSecretMaterial);
       }
     }
 
     yield* cleanupAuthArtifactSecretRefs(deps.rows, {
       previous: existingRuntimeAuthArtifact ?? null,
       next: runtimeAuthArtifact,
-    });
+    }, deleteSecretMaterial);
 
     if (importAuthArtifact === null) {
       if (existingImportAuthArtifact !== null) {
         yield* removeAuthLeaseAndSecrets(deps.rows, {
           authArtifactId: existingImportAuthArtifact.id,
-        });
+        }, deleteSecretMaterial);
       }
       yield* deps.rows.authArtifacts.removeByWorkspaceSourceAndActor({
         workspaceId: nextSource.workspaceId,
@@ -220,14 +219,14 @@ export const persistSourceWithDeps = (
       ) {
         yield* removeAuthLeaseAndSecrets(deps.rows, {
           authArtifactId: existingImportAuthArtifact.id,
-        });
+        }, deleteSecretMaterial);
       }
     }
 
     yield* cleanupAuthArtifactSecretRefs(deps.rows, {
       previous: existingImportAuthArtifact ?? null,
       next: importAuthArtifact,
-    });
+    }, deleteSecretMaterial);
 
     const previousGrantIds = providerGrantIdsFromArtifacts([
       existingRuntimeAuthArtifact,
@@ -271,7 +270,6 @@ export const persistSourceWithDeps = (
       },
     };
     yield* localWorkspace.workspaceStateStore.write({
-      context: localWorkspace.context,
       state: workspaceState,
     });
 

@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
-import type { RuntimeLocalWorkspaceState } from "../local/runtime-context";
+import type { RuntimeLocalWorkspaceState } from "../workspace/runtime-context";
 import {
   type LocalStorageServices,
   type InstallationStoreShape,
@@ -27,8 +27,8 @@ import {
   type WorkspaceConfigStoreShape,
   type WorkspaceStateStoreShape,
   makeLocalStorageLayer,
-} from "../local/storage";
-import { provideOptionalRuntimeLocalWorkspace } from "../local/runtime-context";
+} from "../workspace/storage";
+import { provideOptionalRuntimeLocalWorkspace } from "../workspace/runtime-context";
 import { runtimeEffectError } from "../effect-errors";
 
 /** Run an Effect as a Promise, preserving the original error (not FiberFailure). */

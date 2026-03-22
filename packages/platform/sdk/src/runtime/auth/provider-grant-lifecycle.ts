@@ -9,7 +9,9 @@ import {
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import { createDefaultSecretMaterialDeleter } from "../local/secret-material-providers";
+import {
+  type DeleteSecretMaterial,
+} from "../workspace/secret-material-providers";
 import type { ControlPlaneStoreShape } from "../store";
 
 const providerGrantRefFromArtifact = (
@@ -81,11 +83,8 @@ export const markProviderGrantOrphanedIfUnused = (rows: ControlPlaneStoreShape, 
 
 export const removeProviderAuthGrantSecret = (rows: ControlPlaneStoreShape, input: {
   grant: ProviderAuthGrant;
-}): Effect.Effect<void, Error, never> =>
+}, deleteSecretMaterial: DeleteSecretMaterial): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
-    const deleteSecretMaterial = createDefaultSecretMaterialDeleter({
-      rows,
-    });
     yield* deleteSecretMaterial(input.grant.refreshToken).pipe(
       Effect.either,
       Effect.ignore,

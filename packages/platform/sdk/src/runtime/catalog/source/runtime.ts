@@ -27,7 +27,7 @@ import type {
   Executable,
   ShapeSymbol,
 } from "@executor/ir/model";
-import { LocalSourceArtifactMissingError } from "../../local/errors";
+import { LocalSourceArtifactMissingError } from "../../workspace-errors";
 import {
   createCatalogTypeProjector,
   documentationComment,
@@ -40,12 +40,12 @@ import { formatWithPrettier } from "../prettier-format";
 import {
   RuntimeLocalWorkspaceService,
   type RuntimeLocalWorkspaceState,
-} from "../../local/runtime-context";
-import type { LocalSourceArtifact } from "../../local/source-artifacts";
+} from "../../workspace/runtime-context";
+import type { LocalSourceArtifact } from "../../source-artifacts";
 import {
   SourceArtifactStore,
   type SourceArtifactStoreShape,
-} from "../../local/storage";
+} from "../../workspace/storage";
 import {
   RuntimeSourceStoreService,
   type RuntimeSourceStore,
@@ -704,17 +704,16 @@ type SourceCatalogRuntimeServices =
 const ensureRuntimeCatalogWorkspace = (
   deps: RuntimeSourceCatalogStoreDeps,
   workspaceId: WorkspaceId,
-) => {
+) =>
+  Effect.gen(function* () {
   if (deps.runtimeLocalWorkspace.installation.workspaceId !== workspaceId) {
-    return Effect.fail(
-      runtimeEffectError("catalog/source/runtime", 
+    return yield* Effect.fail(
+      runtimeEffectError("catalog/source/runtime",
         `Runtime local workspace mismatch: expected ${workspaceId}, got ${deps.runtimeLocalWorkspace.installation.workspaceId}`,
       ),
     );
   }
-
-  return Effect.succeed(deps.runtimeLocalWorkspace.context);
-};
+  });
 
 const buildSnapshotFromArtifact = (input: {
   source: Source;
@@ -728,10 +727,7 @@ const loadWorkspaceSourceCatalogsWithDeps = (deps: RuntimeSourceCatalogStoreDeps
   actorAccountId?: AccountId | null;
 }): Effect.Effect<readonly LoadedSourceCatalog[], Error, never> =>
   Effect.gen(function* () {
-    const workspaceContext = yield* ensureRuntimeCatalogWorkspace(
-      deps,
-      input.workspaceId,
-    );
+    yield* ensureRuntimeCatalogWorkspace(deps, input.workspaceId);
     const sources = yield* deps.sourceStore.loadSourcesInWorkspace(
       input.workspaceId,
       {
@@ -742,7 +738,6 @@ const loadWorkspaceSourceCatalogsWithDeps = (deps: RuntimeSourceCatalogStoreDeps
     const localCatalogs = yield* Effect.forEach(sources, (source) =>
       Effect.gen(function* () {
         const artifact = yield* deps.sourceArtifactStore.read({
-          context: workspaceContext,
           sourceId: source.id,
         });
         if (artifact === null) {
@@ -783,17 +778,13 @@ const loadSourceWithCatalogWithDeps = (deps: RuntimeSourceCatalogStoreDeps, inpu
   actorAccountId?: AccountId | null;
 }): Effect.Effect<LoadedSourceCatalog, Error | LocalSourceArtifactMissingError, never> =>
   Effect.gen(function* () {
-    const workspaceContext = yield* ensureRuntimeCatalogWorkspace(
-      deps,
-      input.workspaceId,
-    );
+    yield* ensureRuntimeCatalogWorkspace(deps, input.workspaceId);
     const source = yield* deps.sourceStore.loadSourceById({
       workspaceId: input.workspaceId,
       sourceId: input.sourceId,
       actorAccountId: input.actorAccountId,
     });
     const artifact = yield* deps.sourceArtifactStore.read({
-      context: workspaceContext,
       sourceId: source.id,
     });
     if (artifact === null) {

@@ -1,33 +1,31 @@
 import type { AccountId, WorkspaceId } from "#schema";
 import * as Effect from "effect/Effect";
 
-import type {
-  LoadedLocalExecutorConfig,
-  ResolvedLocalWorkspaceContext,
-} from "../../local/config";
+import type { LoadedLocalExecutorConfig } from "../../workspace-config";
 import {
-  LocalExecutorConfigDecodeError,
-  LocalFileSystemError,
-  LocalWorkspaceStateDecodeError,
+  SourceTypeDeclarationsRefresherService,
+  type SourceTypeDeclarationsRefresherShape,
+} from "../../catalog/source/type-declarations";
+import {
   RuntimeLocalWorkspaceMismatchError,
   RuntimeLocalWorkspaceUnavailableError,
-} from "../../local/errors";
+} from "../../workspace-errors";
 import {
   requireRuntimeLocalWorkspace,
   type RuntimeLocalWorkspaceState,
-} from "../../local/runtime-context";
+} from "../../workspace/runtime-context";
 import type {
   SourceArtifactStoreShape,
   WorkspaceStorageServices,
   WorkspaceConfigStoreShape,
   WorkspaceStateStoreShape,
-} from "../../local/storage";
+} from "../../workspace/storage";
 import {
   SourceArtifactStore,
   WorkspaceConfigStore,
   WorkspaceStateStore,
-} from "../../local/storage";
-import type { LocalWorkspaceState } from "../../local/workspace-state";
+} from "../../workspace/storage";
+import type { LocalWorkspaceState } from "../../workspace-state";
 import type { ControlPlaneStoreShape } from "../../store";
 
 export type RuntimeSourceStoreDeps = {
@@ -36,10 +34,10 @@ export type RuntimeSourceStoreDeps = {
   workspaceConfigStore: WorkspaceConfigStoreShape;
   workspaceStateStore: WorkspaceStateStoreShape;
   sourceArtifactStore: SourceArtifactStoreShape;
+  sourceTypeDeclarationsRefresher: SourceTypeDeclarationsRefresherShape;
 };
 
 export type ResolvedSourceStoreWorkspace = {
-  context: ResolvedLocalWorkspaceContext;
   installation: {
     workspaceId: WorkspaceId;
     accountId: AccountId;
@@ -51,6 +49,9 @@ export type ResolvedSourceStoreWorkspace = {
   workspaceState: LocalWorkspaceState;
 };
 
+export type RuntimeSourceStoreServices =
+  WorkspaceStorageServices | SourceTypeDeclarationsRefresherService;
+
 export const resolveRuntimeLocalWorkspaceFromDeps = (
   deps: RuntimeSourceStoreDeps,
   workspaceId: WorkspaceId,
@@ -58,9 +59,6 @@ export const resolveRuntimeLocalWorkspaceFromDeps = (
   ResolvedSourceStoreWorkspace,
   | RuntimeLocalWorkspaceUnavailableError
   | RuntimeLocalWorkspaceMismatchError
-  | LocalFileSystemError
-  | LocalExecutorConfigDecodeError
-  | LocalWorkspaceStateDecodeError
   | Error,
   never
 > =>
@@ -73,15 +71,10 @@ export const resolveRuntimeLocalWorkspaceFromDeps = (
         });
     }
 
-    const loadedConfig = yield* deps.workspaceConfigStore.load(
-      deps.runtimeLocalWorkspace.context,
-    );
-    const workspaceState = yield* deps.workspaceStateStore.load(
-      deps.runtimeLocalWorkspace.context,
-    );
+    const loadedConfig = yield* deps.workspaceConfigStore.load();
+    const workspaceState = yield* deps.workspaceStateStore.load();
 
     return {
-      context: deps.runtimeLocalWorkspace.context,
       installation: deps.runtimeLocalWorkspace.installation,
       workspaceConfigStore: deps.workspaceConfigStore,
       workspaceStateStore: deps.workspaceStateStore,
@@ -98,17 +91,16 @@ export const loadRuntimeSourceStoreDeps = (
   RuntimeSourceStoreDeps,
   | RuntimeLocalWorkspaceUnavailableError
   | RuntimeLocalWorkspaceMismatchError
-  | LocalFileSystemError
-  | LocalExecutorConfigDecodeError
-  | LocalWorkspaceStateDecodeError
   | Error,
-  WorkspaceStorageServices
+  RuntimeSourceStoreServices
 > =>
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* requireRuntimeLocalWorkspace(workspaceId);
     const workspaceConfigStore = yield* WorkspaceConfigStore;
     const workspaceStateStore = yield* WorkspaceStateStore;
     const sourceArtifactStore = yield* SourceArtifactStore;
+    const sourceTypeDeclarationsRefresher =
+      yield* SourceTypeDeclarationsRefresherService;
 
     return {
       rows,
@@ -116,5 +108,6 @@ export const loadRuntimeSourceStoreDeps = (
       workspaceConfigStore,
       workspaceStateStore,
       sourceArtifactStore,
+      sourceTypeDeclarationsRefresher,
     };
   });

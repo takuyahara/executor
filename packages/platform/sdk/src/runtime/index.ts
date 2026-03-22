@@ -13,16 +13,22 @@ import { RuntimeSourceAuthMaterialLive } from "./auth/source-auth-material";
 import { RuntimeSourceCatalogStoreLive } from "./catalog/source/runtime";
 import { reconcileMissingSourceCatalogArtifacts } from "./catalog/source/reconcile";
 import { RuntimeSourceCatalogSyncLive } from "./catalog/source/sync";
+import {
+  SourceTypeDeclarationsRefresherService,
+  type SourceTypeDeclarationsRefresherShape,
+} from "./catalog/source/type-declarations";
 import { createLiveExecutionManager, LiveExecutionManagerService } from "./execution/live";
 import { RuntimeExecutionResolverLive } from "./execution/workspace/environment";
 import type { CreateWorkspaceInternalToolMap, WorkspaceInternalToolContext } from "./execution/workspace/tool-invoker";
-import type {
-  LoadedLocalExecutorConfig,
-  ResolvedLocalWorkspaceContext,
-} from "./local/config";
+import type { LoadedLocalExecutorConfig } from "./workspace-config";
 import type { LocalExecutorConfig } from "#schema";
-import type { LocalControlPlanePersistence } from "./local/control-plane-store";
+import type { InstanceConfig } from "../local/contracts";
+import type {
+  ExecutorWorkspaceContext,
+  ExecutorWorkspaceDescriptor,
+} from "../workspace";
 import {
+  LocalInstanceConfigService,
   type DeleteSecretMaterial,
   type ResolveSecretMaterial,
   SecretMaterialDeleterService,
@@ -31,17 +37,17 @@ import {
   SecretMaterialUpdaterService,
   type StoreSecretMaterial,
   type UpdateSecretMaterial,
-} from "./local/secret-material-providers";
-import type { LocalSourceArtifact } from "./local/source-artifacts";
+} from "./workspace/secret-material-providers";
+import type { LocalSourceArtifact } from "./source-artifacts";
 import {
   type RuntimeLocalWorkspaceState,
   RuntimeLocalWorkspaceLive,
-} from "./local/runtime-context";
+} from "./workspace/runtime-context";
 import {
   type LocalToolRuntime,
   type LocalToolRuntimeLoaderShape,
   LocalToolRuntimeLoaderService,
-} from "./local/tools";
+} from "./local-tool-runtime";
 import {
   InstallationStore,
   makeLocalStorageLayer,
@@ -49,9 +55,9 @@ import {
   type SourceArtifactStoreShape,
   type WorkspaceConfigStoreShape,
   type WorkspaceStateStoreShape,
-} from "./local/storage";
-import type { LocalWorkspaceState } from "./local/workspace-state";
-import { synchronizeLocalWorkspaceState } from "./local/workspace-sync";
+} from "./workspace/storage";
+import type { LocalWorkspaceState } from "./workspace-state";
+import { synchronizeLocalWorkspaceState } from "./workspace/workspace-sync";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
 import { RuntimeSourceAuthServiceLive } from "./sources/source-auth-service";
 import { RuntimeSourceStoreLive } from "./sources/source-store";
@@ -59,19 +65,10 @@ import { RuntimeSourceStoreLive } from "./sources/source-store";
 export * from "./execution/state";
 export * from "./sources/executor-tools";
 export * from "./execution/live";
-export * from "./local/config";
-export * from "./local/control-plane-store";
-export * from "./local/errors";
-export * from "./local/installation";
-export * from "./local/runtime-context";
-export * from "./local/storage";
-export * from "./local/source-artifacts";
-export * from "./local/tools";
 export * from "./catalog/schema-type-signature";
 export * from "./catalog/source/runtime";
 export * from "./catalog/source/sync";
 export * from "./sources/source-auth-service";
-export * from "./local/secret-material-providers";
 export * from "./sources/source-credential-interactions";
 export * from "./sources/source-adapters/mcp";
 export * from "./sources/source-store";
@@ -84,6 +81,20 @@ export type {
   CreateWorkspaceInternalToolMap,
   WorkspaceInternalToolContext,
 } from "./execution/workspace/tool-invoker";
+export {
+  LocalInstanceConfigService,
+  SecretMaterialDeleterService,
+  SecretMaterialResolverService,
+  SecretMaterialStorerService,
+  SecretMaterialUpdaterService,
+} from "./workspace/secret-material-providers";
+export type {
+  DeleteSecretMaterial,
+  ResolveInstanceConfig,
+  ResolveSecretMaterial,
+  StoreSecretMaterial,
+  UpdateSecretMaterial,
+} from "./workspace/secret-material-providers";
 export {
   builtInSourceAdapters,
   connectableSourceAdapters,
@@ -154,6 +165,9 @@ export type BoundLocalToolRuntimeLoader = {
   load: () => ReturnType<LocalToolRuntimeLoaderShape["load"]>;
 };
 
+export type BoundSourceTypeDeclarationsRefresher =
+  SourceTypeDeclarationsRefresherShape;
+
 export type RuntimeSecretMaterialServices = {
   resolve: ResolveSecretMaterial;
   store: StoreSecretMaterial;
@@ -161,15 +175,26 @@ export type RuntimeSecretMaterialServices = {
   update: UpdateSecretMaterial;
 };
 
+export type RuntimeInstanceConfigService = {
+  resolve: () => Effect.Effect<InstanceConfig, Error, never>;
+};
+
+export type RuntimePersistence = {
+  rows: ControlPlaneStoreShape;
+  close: () => Promise<void>;
+};
+
 export type RuntimeControlPlaneServices = {
-  workspaceContext: ResolvedLocalWorkspaceContext;
+  workspace: ExecutorWorkspaceDescriptor;
   installationStore: BoundInstallationStore;
   workspaceConfigStore: BoundWorkspaceConfigStore;
   workspaceStateStore: BoundWorkspaceStateStore;
   sourceArtifactStore: BoundSourceArtifactStore;
   localToolRuntimeLoader?: BoundLocalToolRuntimeLoader;
+  sourceTypeDeclarationsRefresher?: BoundSourceTypeDeclarationsRefresher;
   secretMaterial: RuntimeSecretMaterialServices;
-  persistence: LocalControlPlanePersistence;
+  instanceConfig: RuntimeInstanceConfigService;
+  persistence: RuntimePersistence;
 };
 
 const emptyToolRuntime = (): LocalToolRuntime => {
@@ -182,17 +207,22 @@ const emptyToolRuntime = (): LocalToolRuntime => {
   };
 };
 
+const noopSourceTypeDeclarationsRefresher: BoundSourceTypeDeclarationsRefresher = {
+  refreshWorkspaceInBackground: () => Effect.void,
+  refreshSourceInBackground: () => Effect.void,
+};
+
 const toInstallationStoreShape = (
   input: BoundInstallationStore,
 ): InstallationStoreShape => ({
-  load: () => input.load(),
-  getOrProvision: () => input.getOrProvision(),
+  load: input.load,
+  getOrProvision: input.getOrProvision,
 });
 
 const toWorkspaceConfigStoreShape = (
   input: BoundWorkspaceConfigStore,
 ): WorkspaceConfigStoreShape => ({
-  load: () => input.load(),
+  load: input.load,
   writeProject: ({ config }) => input.writeProject(config),
   resolveRelativePath: input.resolveRelativePath,
 });
@@ -200,7 +230,7 @@ const toWorkspaceConfigStoreShape = (
 const toWorkspaceStateStoreShape = (
   input: BoundWorkspaceStateStore,
 ): WorkspaceStateStoreShape => ({
-  load: () => input.load(),
+  load: input.load,
   write: ({ state }) => input.write(state),
 });
 
@@ -220,6 +250,9 @@ const makeSecretMaterialLayer = (input: RuntimeSecretMaterialServices) =>
     Layer.succeed(SecretMaterialDeleterService, input.delete),
     Layer.succeed(SecretMaterialUpdaterService, input.update),
   );
+
+const makeInstanceConfigLayer = (input: RuntimeInstanceConfigService) =>
+  Layer.succeed(LocalInstanceConfigService, input.resolve);
 
 export const createRuntimeControlPlaneLayer = (
   input: RuntimeControlPlaneOptions & RuntimeControlPlaneServices & {
@@ -241,19 +274,30 @@ export const createRuntimeControlPlaneLayer = (
         input.localToolRuntimeLoader?.load() ?? Effect.succeed(emptyToolRuntime()),
     }),
   );
+  const sourceTypeDeclarationsRefresherLayer = Layer.succeed(
+    SourceTypeDeclarationsRefresherService,
+    SourceTypeDeclarationsRefresherService.of(
+      input.sourceTypeDeclarationsRefresher
+        ?? noopSourceTypeDeclarationsRefresher,
+    ),
+  );
 
   const baseLayer = Layer.mergeAll(
     Layer.succeed(ControlPlaneStore, input.store),
     RuntimeLocalWorkspaceLive(input.localWorkspaceState),
     storageLayer,
     Layer.succeed(LiveExecutionManagerService, input.liveExecutionManager),
+    sourceTypeDeclarationsRefresherLayer,
   );
 
   const secretMaterialLayer = makeSecretMaterialLayer(input.secretMaterial).pipe(
     Layer.provide(baseLayer),
   );
+  const instanceConfigLayer = makeInstanceConfigLayer(input.instanceConfig);
 
-  const sourceStoreLayer = RuntimeSourceStoreLive.pipe(Layer.provide(baseLayer));
+  const sourceStoreLayer = RuntimeSourceStoreLive.pipe(
+    Layer.provide(Layer.mergeAll(baseLayer, secretMaterialLayer)),
+  );
 
   const sourceCatalogStoreLayer = RuntimeSourceCatalogStoreLive.pipe(
     Layer.provide(Layer.mergeAll(baseLayer, sourceStoreLayer)),
@@ -275,6 +319,7 @@ export const createRuntimeControlPlaneLayer = (
     Layer.provide(
       Layer.mergeAll(
         baseLayer,
+        instanceConfigLayer,
         secretMaterialLayer,
         sourceStoreLayer,
         sourceCatalogSyncLayer,
@@ -289,6 +334,7 @@ export const createRuntimeControlPlaneLayer = (
     Layer.provide(
       Layer.mergeAll(
         baseLayer,
+        instanceConfigLayer,
         secretMaterialLayer,
         sourceStoreLayer,
         sourceAuthMaterialLayer,
@@ -302,6 +348,7 @@ export const createRuntimeControlPlaneLayer = (
 
   return Layer.mergeAll(
     baseLayer,
+    instanceConfigLayer,
     secretMaterialLayer,
     sourceStoreLayer,
     sourceAuthMaterialLayer,
@@ -314,7 +361,7 @@ export const createRuntimeControlPlaneLayer = (
 };
 
 export type ControlPlaneRuntime = {
-  persistence: LocalControlPlanePersistence;
+  persistence: RuntimePersistence;
   localInstallation: LocalInstallation;
   managedRuntime: ManagedRuntime.ManagedRuntime<any, never>;
   runtimeLayer: RuntimeControlPlaneLayer;
@@ -339,8 +386,12 @@ export const createControlPlaneRuntimeFromServices = (input: {
       .load()
       .pipe(Effect.mapError(toRuntimeBootstrapError));
 
+    const runtimeWorkspace: ExecutorWorkspaceContext = {
+      ...input.services.workspace,
+      workspaceId: localInstallation.workspaceId,
+      accountId: localInstallation.accountId,
+    };
     const effectiveLocalConfig = yield* synchronizeLocalWorkspaceState({
-      context: input.services.workspaceContext,
       loadedConfig: loadedLocalConfig,
     })
       .pipe(
@@ -362,9 +413,8 @@ export const createControlPlaneRuntimeFromServices = (input: {
         ),
       )
       .pipe(Effect.mapError(toRuntimeBootstrapError));
-
     const runtimeLocalWorkspaceState: RuntimeLocalWorkspaceState = {
-      context: input.services.workspaceContext,
+      workspace: runtimeWorkspace,
       installation: {
         workspaceId: localInstallation.workspaceId,
         accountId: localInstallation.accountId,

@@ -7,13 +7,15 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { SourceTypeDeclarationsRefresherService } from "../catalog/source/type-declarations";
 import {
   SourceArtifactStore,
   type WorkspaceStorageServices,
   WorkspaceConfigStore,
   WorkspaceStateStore,
-} from "../local/storage";
-import { RuntimeLocalWorkspaceService } from "../local/runtime-context";
+} from "../workspace/storage";
+import { SecretMaterialDeleterService } from "../workspace/secret-material-providers";
+import { RuntimeLocalWorkspaceService } from "../workspace/runtime-context";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "../store";
 import {
   loadRuntimeSourceStoreDeps,
@@ -64,7 +66,11 @@ export const loadSourcesInWorkspace = (
   options: {
     actorAccountId?: AccountId | null;
   } = {},
-): Effect.Effect<readonly Source[], Error, WorkspaceStorageServices> =>
+): Effect.Effect<
+  readonly Source[],
+  Error,
+  WorkspaceStorageServices | SourceTypeDeclarationsRefresherService
+> =>
   Effect.flatMap(
     loadRuntimeSourceStoreDeps(rows, workspaceId),
     (deps) => loadSourcesInWorkspaceWithDeps(deps, workspaceId, options),
@@ -79,7 +85,7 @@ export const listLinkedSecretSourcesInWorkspace = (
 ): Effect.Effect<
   Map<string, Array<{ sourceId: string; sourceName: string }>>,
   Error,
-  WorkspaceStorageServices
+  WorkspaceStorageServices | SourceTypeDeclarationsRefresherService
 > =>
   Effect.flatMap(
     loadRuntimeSourceStoreDeps(rows, workspaceId),
@@ -93,7 +99,11 @@ export const loadSourceById = (
     sourceId: Source["id"];
     actorAccountId?: AccountId | null;
   },
-): Effect.Effect<Source, Error, WorkspaceStorageServices> =>
+): Effect.Effect<
+  Source,
+  Error,
+  WorkspaceStorageServices | SourceTypeDeclarationsRefresherService
+> =>
   Effect.flatMap(
     loadRuntimeSourceStoreDeps(rows, input.workspaceId),
     (deps) => loadSourceByIdWithDeps(deps, input),
@@ -105,11 +115,18 @@ export const removeSourceById = (
     workspaceId: WorkspaceId;
     sourceId: Source["id"];
   },
-): Effect.Effect<boolean, Error, WorkspaceStorageServices> =>
-  Effect.flatMap(
-    loadRuntimeSourceStoreDeps(rows, input.workspaceId),
-    (deps) => removeSourceByIdWithDeps(deps, input),
-  );
+): Effect.Effect<
+  boolean,
+  Error,
+  | WorkspaceStorageServices
+  | SourceTypeDeclarationsRefresherService
+  | SecretMaterialDeleterService
+> =>
+  Effect.gen(function* () {
+    const deps = yield* loadRuntimeSourceStoreDeps(rows, input.workspaceId);
+    const deleteSecretMaterial = yield* SecretMaterialDeleterService;
+    return yield* removeSourceByIdWithDeps(deps, input, deleteSecretMaterial);
+  });
 
 export const persistSource = (
   rows: ControlPlaneStoreShape,
@@ -117,11 +134,18 @@ export const persistSource = (
   options: {
     actorAccountId?: AccountId | null;
   } = {},
-): Effect.Effect<Source, Error, WorkspaceStorageServices> =>
-  Effect.flatMap(
-    loadRuntimeSourceStoreDeps(rows, source.workspaceId),
-    (deps) => persistSourceWithDeps(deps, source, options),
-  );
+): Effect.Effect<
+  Source,
+  Error,
+  | WorkspaceStorageServices
+  | SourceTypeDeclarationsRefresherService
+  | SecretMaterialDeleterService
+> =>
+  Effect.gen(function* () {
+    const deps = yield* loadRuntimeSourceStoreDeps(rows, source.workspaceId);
+    const deleteSecretMaterial = yield* SecretMaterialDeleterService;
+    return yield* persistSourceWithDeps(deps, source, options, deleteSecretMaterial);
+  });
 
 export class RuntimeSourceStoreService extends Context.Tag(
   "#runtime/RuntimeSourceStoreService",
@@ -135,6 +159,9 @@ export const RuntimeSourceStoreLive = Layer.effect(
     const workspaceConfigStore = yield* WorkspaceConfigStore;
     const workspaceStateStore = yield* WorkspaceStateStore;
     const sourceArtifactStore = yield* SourceArtifactStore;
+    const sourceTypeDeclarationsRefresher =
+      yield* SourceTypeDeclarationsRefresherService;
+    const deleteSecretMaterial = yield* SecretMaterialDeleterService;
 
     const deps: RuntimeSourceStoreDeps = {
       rows,
@@ -142,6 +169,7 @@ export const RuntimeSourceStoreLive = Layer.effect(
       workspaceConfigStore,
       workspaceStateStore,
       sourceArtifactStore,
+      sourceTypeDeclarationsRefresher,
     };
 
     return RuntimeSourceStoreService.of({
@@ -152,9 +180,9 @@ export const RuntimeSourceStoreLive = Layer.effect(
       loadSourceById: (input) =>
         loadSourceByIdWithDeps(deps, input),
       removeSourceById: (input) =>
-        removeSourceByIdWithDeps(deps, input),
+        removeSourceByIdWithDeps(deps, input, deleteSecretMaterial),
       persistSource: (source, options = {}) =>
-        persistSourceWithDeps(deps, source, options),
+        persistSourceWithDeps(deps, source, options, deleteSecretMaterial),
     });
   }),
 );

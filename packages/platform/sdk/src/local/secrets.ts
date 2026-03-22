@@ -16,21 +16,15 @@ import {
   ControlPlaneNotFoundError,
   ControlPlaneStorageError,
 } from "../errors";
-import { requireRuntimeLocalWorkspace } from "../runtime/local/runtime-context";
+import { requireRuntimeLocalWorkspace } from "../runtime/workspace/runtime-context";
 import {
-  createDefaultSecretMaterialDeleter,
-  createDefaultSecretMaterialStorer,
-  createDefaultSecretMaterialUpdater,
-  ENV_SECRET_PROVIDER_ID,
-  KEYCHAIN_SECRET_PROVIDER_ID,
-  LOCAL_SECRET_PROVIDER_ID,
-  parseSecretStoreProviderId,
-  resolveDefaultSecretStoreProviderId,
-} from "../runtime/local/secret-material-providers";
+  LocalInstanceConfigService,
+  SecretMaterialDeleterService,
+  SecretMaterialStorerService,
+  SecretMaterialUpdaterService,
+} from "../runtime/workspace/secret-material-providers";
 import { RuntimeSourceStoreService } from "../runtime/sources/source-store";
 import { ControlPlaneStore } from "../runtime/store";
-
-const SECRET_STORE_PROVIDER_ENV = "EXECUTOR_SECRET_STORE_PROVIDER";
 
 const secretStorageError = (operation: string, message: string) =>
   new ControlPlaneStorageError({
@@ -39,45 +33,8 @@ const secretStorageError = (operation: string, message: string) =>
     details: message,
   });
 
-export const getLocalInstanceConfig = (): Effect.Effect<InstanceConfig> => {
-  const explicitDefaultStoreProvider = parseSecretStoreProviderId(
-    process.env[SECRET_STORE_PROVIDER_ENV],
-  );
-  const providers = [
-    {
-      id: LOCAL_SECRET_PROVIDER_ID,
-      name: "Local store",
-      canStore: true,
-    },
-  ];
-
-  if (process.platform === "darwin" || process.platform === "linux") {
-    providers.push({
-      id: KEYCHAIN_SECRET_PROVIDER_ID,
-      name:
-        process.platform === "darwin" ? "macOS Keychain" : "Desktop Keyring",
-      canStore:
-        process.platform === "darwin" ||
-        explicitDefaultStoreProvider === KEYCHAIN_SECRET_PROVIDER_ID,
-    });
-  }
-
-  providers.push({
-    id: ENV_SECRET_PROVIDER_ID,
-    name: "Environment variable",
-    canStore: false,
-  });
-
-  return resolveDefaultSecretStoreProviderId({
-    storeProviderId: explicitDefaultStoreProvider ?? undefined,
-  }).pipe(
-    Effect.map((resolvedDefaultStoreProvider) => ({
-      platform: process.platform,
-      secretProviders: providers,
-      defaultSecretStoreProvider: resolvedDefaultStoreProvider,
-    })),
-  );
-};
+export const getLocalInstanceConfig = (): Effect.Effect<InstanceConfig, Error, LocalInstanceConfigService> =>
+  Effect.flatMap(LocalInstanceConfigService, (resolveInstanceConfig) => resolveInstanceConfig());
 
 export const listLocalSecrets = () =>
   Effect.gen(function* () {
@@ -119,10 +76,6 @@ export const createLocalSecret = (payload: CreateSecretPayload) =>
     const name = payload.name.trim();
     const value = payload.value;
     const purpose = payload.purpose ?? "auth_material";
-    const requestedProviderId =
-      payload.providerId === undefined
-        ? null
-        : parseSecretStoreProviderId(payload.providerId);
 
     if (name.length === 0) {
       return yield* new ControlPlaneBadRequestError({
@@ -131,23 +84,14 @@ export const createLocalSecret = (payload: CreateSecretPayload) =>
         details: "Secret name is required.",
       });
     }
-    if (payload.providerId !== undefined && requestedProviderId === null) {
-      return yield* new ControlPlaneBadRequestError({
-        operation: "secrets.create",
-        message: `Unsupported secret provider: ${payload.providerId}`,
-        details: `Unsupported secret provider: ${payload.providerId}`,
-      });
-    }
 
     const store = yield* ControlPlaneStore;
-    const storeSecretMaterial = createDefaultSecretMaterialStorer({
-      rows: store,
-      ...(requestedProviderId ? { storeProviderId: requestedProviderId } : {}),
-    });
+    const storeSecretMaterial = yield* SecretMaterialStorerService;
     const ref = yield* storeSecretMaterial({
       name,
       purpose,
       value,
+      providerId: payload.providerId,
     }).pipe(
       Effect.mapError((cause) =>
         secretStorageError(
@@ -214,9 +158,7 @@ export const updateLocalSecret = (input: {
       update.name = input.payload.name.trim() || null;
     if (input.payload.value !== undefined) update.value = input.payload.value;
 
-    const updateSecretMaterial = createDefaultSecretMaterialUpdater({
-      rows: store,
-    });
+    const updateSecretMaterial = yield* SecretMaterialUpdaterService;
     const updated = yield* updateSecretMaterial({
       ref: {
         providerId: existing.value.providerId,
@@ -260,9 +202,7 @@ export const deleteLocalSecret = (secretId: string) =>
       });
     }
 
-    const deleteSecretMaterial = createDefaultSecretMaterialDeleter({
-      rows: store,
-    });
+    const deleteSecretMaterial = yield* SecretMaterialDeleterService;
     const removed = yield* deleteSecretMaterial({
       providerId: existing.value.providerId,
       handle: existing.value.id,

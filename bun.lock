@@ -30,6 +30,7 @@
         "@executor/platform-api": "workspace:*",
         "@executor/platform-internal": "workspace:*",
         "@executor/platform-sdk": "workspace:*",
+        "@executor/platform-sdk-file": "workspace:*",
         "@executor/server": "workspace:*",
         "effect": "catalog:",
       },
@@ -136,6 +137,7 @@
         "@effect/platform": "catalog:",
         "@effect/platform-node": "catalog:",
         "@effect/vitest": "catalog:",
+        "@executor/platform-sdk-file": "workspace:*",
         "@types/jsdom": "^21.1.7",
         "@types/node": "catalog:",
         "@types/react": "^19.2.10",
@@ -332,6 +334,29 @@
         "zod": "catalog:",
       },
     },
+    "packages/platform/sdk-file": {
+      "name": "@executor/platform-sdk-file",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform": "catalog:",
+        "@effect/platform-node": "catalog:",
+        "@executor/codemode-core": "workspace:*",
+        "@executor/ir": "workspace:*",
+        "@executor/platform-sdk": "workspace:*",
+        "@executor/source-core": "workspace:*",
+        "@executor/source-graphql": "workspace:*",
+        "@executor/source-openapi": "workspace:*",
+        "effect": "catalog:",
+        "jsonc-parser": "3.3.1",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "@types/node": "catalog:",
+        "bun-types": "catalog:",
+        "typescript": "^5.9.3",
+        "vitest": "catalog:",
+      },
+    },
     "packages/platform/server": {
       "name": "@executor/server",
       "version": "0.0.0",
@@ -343,6 +368,7 @@
         "@executor/platform-api": "workspace:*",
         "@executor/platform-internal": "workspace:*",
         "@executor/platform-sdk": "workspace:*",
+        "@executor/platform-sdk-file": "workspace:*",
         "@opentelemetry/api": "^1.9.0",
         "@opentelemetry/exporter-trace-otlp-grpc": "^0.213.0",
         "@opentelemetry/resources": "^2.6.0",
@@ -683,6 +709,8 @@
     "@executor/platform-internal": ["@executor/platform-internal@workspace:packages/platform/internal"],
 
     "@executor/platform-sdk": ["@executor/platform-sdk@workspace:packages/platform/sdk"],
+
+    "@executor/platform-sdk-file": ["@executor/platform-sdk-file@workspace:packages/platform/sdk-file"],
 
     "@executor/react": ["@executor/react@workspace:packages/clients/react"],
 

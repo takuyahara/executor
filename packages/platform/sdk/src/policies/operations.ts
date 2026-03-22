@@ -13,18 +13,17 @@ import {
 } from "../schema";
 import * as Effect from "effect/Effect";
 
-import { requireRuntimeLocalWorkspace } from "../runtime/local/runtime-context";
+import { requireRuntimeLocalWorkspace } from "../runtime/workspace/runtime-context";
 import type {
   WorkspaceConfigStoreShape,
   WorkspaceStateStoreShape,
-} from "../runtime/local/storage";
+} from "../runtime/workspace/storage";
 import {
   WorkspaceConfigStore,
   WorkspaceStateStore,
-} from "../runtime/local/storage";
-import type { ResolvedLocalWorkspaceContext } from "../runtime/local/config";
-import { type LocalWorkspaceState } from "../runtime/local/workspace-state";
-import { derivePolicyConfigKey } from "../runtime/local/workspace-sync";
+} from "../runtime/workspace/storage";
+import { type LocalWorkspaceState } from "../runtime/workspace-state";
+import { derivePolicyConfigKey } from "../runtime/workspace/workspace-sync";
 import {
   type OperationErrors,
   operationErrors,
@@ -40,17 +39,22 @@ const policyOps = {
 
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+const workspacePolicyStableKey = (input: {
+  workspaceId: WorkspaceId;
+  workspaceRoot?: string | null;
+}): string => input.workspaceRoot?.trim() || input.workspaceId;
+
 const localPolicyIdForKey = (input: {
-  workspaceRoot: string;
+  workspaceStableKey: string;
   key: string;
 }): PolicyId =>
   PolicyIdSchema.make(
-    `pol_local_${createHash("sha256").update(`${input.workspaceRoot}:${input.key}`).digest("hex").slice(0, 16)}`,
+    `pol_local_${createHash("sha256").update(`${input.workspaceStableKey}:${input.key}`).digest("hex").slice(0, 16)}`,
   );
 
 const toLocalWorkspacePolicy = (input: {
   workspaceId: WorkspaceId;
-  workspaceRoot: string;
+  workspaceStableKey: string;
   key: string;
   policyConfig: NonNullable<LocalExecutorConfig["policies"]>[string];
   state: LocalWorkspaceState["policies"][string] | undefined;
@@ -58,7 +62,7 @@ const toLocalWorkspacePolicy = (input: {
   id:
     input.state?.id ??
     localPolicyIdForKey({
-      workspaceRoot: input.workspaceRoot,
+      workspaceStableKey: input.workspaceStableKey,
       key: input.key,
     }),
   key: input.key,
@@ -78,18 +82,17 @@ export const loadRuntimeLocalWorkspacePolicies = (workspaceId: WorkspaceId) =>
       yield* requireRuntimeLocalWorkspace(workspaceId);
     const workspaceConfigStore = yield* WorkspaceConfigStore;
     const workspaceStateStore = yield* WorkspaceStateStore;
-    const loadedConfig = yield* workspaceConfigStore.load(
-      runtimeLocalWorkspace.context,
-    );
-    const workspaceState = yield* workspaceStateStore.load(
-      runtimeLocalWorkspace.context,
-    );
+    const loadedConfig = yield* workspaceConfigStore.load();
+    const workspaceState = yield* workspaceStateStore.load();
 
     const policies = Object.entries(loadedConfig.config?.policies ?? {}).map(
       ([key, policyConfig]) =>
         toLocalWorkspacePolicy({
           workspaceId,
-          workspaceRoot: runtimeLocalWorkspace.context.workspaceRoot,
+          workspaceStableKey: workspacePolicyStableKey({
+            workspaceId,
+            workspaceRoot: runtimeLocalWorkspace.workspace.workspaceRoot,
+          }),
           key,
           policyConfig,
           state: workspaceState.policies[key],
@@ -106,7 +109,6 @@ export const loadRuntimeLocalWorkspacePolicies = (workspaceId: WorkspaceId) =>
 
 const writeLocalPolicyFiles = (input: {
   operation: OperationErrors;
-  context: ResolvedLocalWorkspaceContext;
   workspaceConfigStore: WorkspaceConfigStoreShape;
   workspaceStateStore: WorkspaceStateStoreShape;
   projectConfig: LocalExecutorConfig;
@@ -115,11 +117,9 @@ const writeLocalPolicyFiles = (input: {
   Effect.all(
     [
       input.workspaceConfigStore.writeProject({
-        context: input.context,
         config: input.projectConfig,
       }),
       input.workspaceStateStore.write({
-        context: input.context,
         state: input.workspaceState,
       }),
     ],
@@ -219,7 +219,10 @@ export const createPolicy = (input: {
           id:
             existingState?.id ??
             localPolicyIdForKey({
-              workspaceRoot: runtimeLocalWorkspace.context.workspaceRoot,
+              workspaceStableKey: workspacePolicyStableKey({
+                workspaceId: input.workspaceId,
+                workspaceRoot: runtimeLocalWorkspace.workspace.workspaceRoot,
+              }),
               key,
             }),
           createdAt: existingState?.createdAt ?? now,
@@ -230,7 +233,6 @@ export const createPolicy = (input: {
 
     yield* writeLocalPolicyFiles({
       operation: policyOps.create,
-      context: runtimeLocalWorkspace.context,
       workspaceConfigStore,
       workspaceStateStore,
       projectConfig: {
@@ -242,7 +244,10 @@ export const createPolicy = (input: {
 
     return toLocalWorkspacePolicy({
       workspaceId: input.workspaceId,
-      workspaceRoot: runtimeLocalWorkspace.context.workspaceRoot,
+      workspaceStableKey: workspacePolicyStableKey({
+        workspaceId: input.workspaceId,
+        workspaceRoot: runtimeLocalWorkspace.workspace.workspaceRoot,
+      }),
       key,
       policyConfig: policies[key]!,
       state: workspaceState.policies[key],
@@ -355,7 +360,6 @@ export const updatePolicy = (input: {
 
     yield* writeLocalPolicyFiles({
       operation: policyOps.update,
-      context: runtimeLocalWorkspace.context,
       workspaceConfigStore,
       workspaceStateStore,
       projectConfig: {
@@ -367,7 +371,10 @@ export const updatePolicy = (input: {
 
     return toLocalWorkspacePolicy({
       workspaceId: input.workspaceId,
-      workspaceRoot: runtimeLocalWorkspace.context.workspaceRoot,
+      workspaceStableKey: workspacePolicyStableKey({
+        workspaceId: input.workspaceId,
+        workspaceRoot: runtimeLocalWorkspace.workspace.workspaceRoot,
+      }),
       key: existing.key,
       policyConfig: policies[existing.key]!,
       state: workspaceState.policies[existing.key],
@@ -413,7 +420,6 @@ export const removePolicy = (input: {
       localWorkspace.workspaceState.policies;
     yield* writeLocalPolicyFiles({
       operation: policyOps.remove,
-      context: runtimeLocalWorkspace.context,
       workspaceConfigStore,
       workspaceStateStore,
       projectConfig: {

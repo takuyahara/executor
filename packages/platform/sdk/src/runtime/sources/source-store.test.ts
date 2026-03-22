@@ -7,9 +7,9 @@ import {
   type Source,
 } from "#schema";
 
-import type { LoadedLocalExecutorConfig } from "../local/config";
+import type { LoadedLocalExecutorConfig } from "../workspace-config";
 import { buildLocalSourceRecord } from "./source-store";
-import type { LocalWorkspaceState } from "../local/workspace-state";
+import type { LocalWorkspaceState } from "../workspace-state";
 
 const workspaceId = WorkspaceIdSchema.make("ws_source_store");
 const sourceId = SourceIdSchema.make("linear");

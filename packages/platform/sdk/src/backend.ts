@@ -12,6 +12,10 @@ import {
   type RuntimeControlPlaneServices,
   type RuntimeSecretMaterialServices,
 } from "./runtime";
+export type {
+  ExecutorWorkspaceContext,
+  ExecutorWorkspaceDescriptor,
+} from "./workspace";
 
 export type ExecutorBackend = {
   createRuntime: (

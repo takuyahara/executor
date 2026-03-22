@@ -35,7 +35,7 @@ import * as Schema from "effect/Schema";
 import type {
   ResolveSecretMaterial,
   SecretMaterialResolveContext,
-} from "../local/secret-material-providers";
+} from "../workspace/secret-material-providers";
 import { runtimeEffectError } from "../effect-errors";
 
 export type ResolvedSourceAuthMaterial = {

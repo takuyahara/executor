@@ -5,7 +5,11 @@ import { NodeFileSystem } from "@effect/platform-node";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
-import { SourceIdSchema, WorkspaceIdSchema, type Source } from "#schema";
+import {
+  SourceIdSchema,
+  WorkspaceIdSchema,
+  type Source,
+} from "@executor/platform-sdk/schema";
 
 import {
   buildLocalSourceArtifact,
@@ -76,7 +80,7 @@ const makeArtifact = () => {
     documents: [
       {
         documentKind: "openapi",
-        documentKey: source.binding.specUrl,
+        documentKey: String(source.binding.specUrl),
         contentText: '{"openapi":"3.1.0"}',
         fetchedAt: 1,
       },

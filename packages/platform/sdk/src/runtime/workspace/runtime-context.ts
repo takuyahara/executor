@@ -4,17 +4,15 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import type { AccountId, WorkspaceId } from "#schema";
-import type {
-  LoadedLocalExecutorConfig,
-  ResolvedLocalWorkspaceContext,
-} from "./config";
+import type { ExecutorWorkspaceContext } from "../../workspace";
+import type { LoadedLocalExecutorConfig } from "../workspace-config";
 import {
   RuntimeLocalWorkspaceMismatchError,
   RuntimeLocalWorkspaceUnavailableError,
-} from "./errors";
+} from "../workspace-errors";
 
 export type RuntimeLocalWorkspaceState = {
-  context: ResolvedLocalWorkspaceContext;
+  workspace: ExecutorWorkspaceContext;
   installation: {
     workspaceId: WorkspaceId;
     accountId: AccountId;

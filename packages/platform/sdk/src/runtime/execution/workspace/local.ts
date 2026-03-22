@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import {
   provideOptionalRuntimeLocalWorkspace,
   type RuntimeLocalWorkspaceState,
-} from "../../local/runtime-context";
+} from "../../workspace/runtime-context";
 
 export const provideRuntimeLocalWorkspace = <A, E, R>(
   effect: Effect.Effect<A, E, R>,

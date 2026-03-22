@@ -1,15 +1,8 @@
-import { FileSystem } from "@effect/platform";
 import * as Effect from "effect/Effect";
 
-import {
-  type LoadedLocalExecutorConfig,
-  type ResolvedLocalWorkspaceContext,
-} from "./config";
-import {
-  loadLocalWorkspaceState,
-  writeLocalWorkspaceState,
-  type LocalWorkspaceState,
-} from "./workspace-state";
+import { type LoadedLocalExecutorConfig } from "../workspace-config";
+import { WorkspaceStateStore } from "./storage";
+import { type LocalWorkspaceState } from "../workspace-state";
 
 const trimOrNull = (value: string | null | undefined): string | null => {
   if (value == null) {
@@ -41,11 +34,11 @@ export const derivePolicyConfigKey = (
 };
 
 const pruneLocalWorkspaceState = (input: {
-  context: ResolvedLocalWorkspaceContext;
   loadedConfig: LoadedLocalExecutorConfig;
-}): Effect.Effect<LocalWorkspaceState, Error, FileSystem.FileSystem> =>
+}): Effect.Effect<LocalWorkspaceState, Error, WorkspaceStateStore> =>
   Effect.gen(function* () {
-    const currentState = yield* loadLocalWorkspaceState(input.context);
+    const workspaceStateStore = yield* WorkspaceStateStore;
+    const currentState = yield* workspaceStateStore.load();
 
     const configuredSourceIds = new Set(
       Object.keys(input.loadedConfig.config?.sources ?? {}),
@@ -72,8 +65,7 @@ const pruneLocalWorkspaceState = (input: {
       return currentState;
     }
 
-    yield* writeLocalWorkspaceState({
-      context: input.context,
+    yield* workspaceStateStore.write({
       state: nextState,
     });
 
@@ -81,12 +73,10 @@ const pruneLocalWorkspaceState = (input: {
   });
 
 export const synchronizeLocalWorkspaceState = (input: {
-  context: ResolvedLocalWorkspaceContext;
   loadedConfig: LoadedLocalExecutorConfig;
-}): Effect.Effect<LoadedLocalExecutorConfig["config"], Error, FileSystem.FileSystem> =>
+}): Effect.Effect<LoadedLocalExecutorConfig["config"], Error, WorkspaceStateStore> =>
   Effect.gen(function* () {
     yield* pruneLocalWorkspaceState({
-      context: input.context,
       loadedConfig: input.loadedConfig,
     });
 

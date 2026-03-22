@@ -5,8 +5,8 @@ import type {
 } from "#schema";
 import * as Effect from "effect/Effect";
 
-import { RuntimeLocalWorkspaceService } from "../../local/runtime-context";
-import { SourceArtifactStore } from "../../local/storage";
+import { RuntimeLocalWorkspaceService } from "../../workspace/runtime-context";
+import { SourceArtifactStore } from "../../workspace/storage";
 import { getSourceAdapterForSource } from "../../sources/source-adapters";
 import { RuntimeSourceStoreService } from "../../sources/source-store";
 import { RuntimeSourceCatalogSyncService } from "./sync";
@@ -42,7 +42,6 @@ export const reconcileMissingSourceCatalogArtifacts = (input: {
       }
 
       const artifact = yield* sourceArtifactStore.read({
-        context: runtimeLocalWorkspace.context,
         sourceId: source.id,
       });
       if (artifact !== null) {

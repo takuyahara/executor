@@ -9,7 +9,7 @@ Each fixture directory should contain:
 - `.executor/state/workspace-state.json`: a trimmed workspace state with only the captured source
 - `.executor/artifacts/sources/...`: the real artifact JSON and any sidecar files that release wrote
 
-`src/runtime/local/source-artifacts.test.ts` auto-discovers every fixture directory here that has a `fixture.json` file. Adding a new release fixture should not require changing the test.
+`packages/platform/sdk-file/src/source-artifacts.test.ts` auto-discovers every fixture directory here that has a `fixture.json` file. Adding a new release fixture should not require changing the test.
 
 ## Capture A New Release Fixture
 
@@ -35,4 +35,4 @@ On releases where you want upgrade coverage:
 1. Start from a real workspace that has a fully synced source on the released version.
 2. Run `bun run fixture:release:capture -- ...` for that source.
 3. Review the fixture for secrets before committing it.
-4. Run `bun run --cwd packages/platform/sdk test -- src/runtime/local/source-artifacts.test.ts`.
+4. Run `bun run --cwd packages/platform/sdk-file test -- src/source-artifacts.test.ts`.

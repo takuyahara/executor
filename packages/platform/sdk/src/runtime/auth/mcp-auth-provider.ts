@@ -22,11 +22,11 @@ import * as Schema from "effect/Schema";
 
 import type { ControlPlaneStoreShape } from "../store";
 import {
-  createDefaultSecretMaterialDeleter,
-  createDefaultSecretMaterialStorer,
+  type DeleteSecretMaterial,
   type ResolveSecretMaterial,
   type SecretMaterialResolveContext,
-} from "../local/secret-material-providers";
+  type StoreSecretMaterial,
+} from "../workspace/secret-material-providers";
 
 const encodeMcpOAuthAuthArtifactConfig = Schema.encodeSync(
   McpOAuthAuthArtifactConfigJsonSchema,
@@ -62,24 +62,23 @@ const secretRefEquals = (left: SecretRef | null, right: SecretRef | null): boole
   (left?.providerId ?? null) === (right?.providerId ?? null)
   && (left?.handle ?? null) === (right?.handle ?? null);
 
-const cleanupReplacedSecretRefs = (rows: ControlPlaneStoreShape, input: {
+const cleanupReplacedSecretRefs = (input: {
+  deleteSecretMaterial: DeleteSecretMaterial;
   previousAccessToken: SecretRef;
   nextAccessToken: SecretRef;
   previousRefreshToken: SecretRef | null;
   nextRefreshToken: SecretRef | null;
 }) =>
   Effect.gen(function* () {
-    const deleteSecretMaterial = createDefaultSecretMaterialDeleter({ rows });
-
     if (!secretRefEquals(input.previousAccessToken, input.nextAccessToken)) {
-      yield* Effect.either(deleteSecretMaterial(input.previousAccessToken));
+      yield* Effect.either(input.deleteSecretMaterial(input.previousAccessToken));
     }
 
     if (
       input.previousRefreshToken !== null
       && !secretRefEquals(input.previousRefreshToken, input.nextRefreshToken)
     ) {
-      yield* Effect.either(deleteSecretMaterial(input.previousRefreshToken));
+      yield* Effect.either(input.deleteSecretMaterial(input.previousRefreshToken));
     }
   });
 
@@ -115,12 +114,10 @@ export const createPersistedMcpAuthProvider = (input: {
   artifact: AuthArtifact;
   config: McpOAuthAuthArtifactConfig;
   resolveSecretMaterial: ResolveSecretMaterial;
+  storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   context?: SecretMaterialResolveContext;
 }): OAuthClientProvider => {
-  const storeSecretMaterial = createDefaultSecretMaterialStorer({
-    rows: input.rows,
-  });
-
   let currentArtifact = input.artifact;
   let currentConfig = input.config;
 
@@ -186,13 +183,13 @@ export const createPersistedMcpAuthProvider = (input: {
     saveTokens: (tokens) =>
       Effect.runPromise(Effect.gen(function* () {
         const previousConfig = currentConfig;
-        const accessTokenRef = yield* storeSecretMaterial({
+        const accessTokenRef = yield* input.storeSecretMaterial({
           purpose: "oauth_access_token",
           value: tokens.access_token,
           name: `${currentArtifact.sourceId} MCP Access Token`,
         });
         const refreshTokenRef = tokens.refresh_token
-          ? yield* storeSecretMaterial({
+          ? yield* input.storeSecretMaterial({
               purpose: "oauth_refresh_token",
               value: tokens.refresh_token,
               name: `${currentArtifact.sourceId} MCP Refresh Token`,
@@ -212,7 +209,8 @@ export const createPersistedMcpAuthProvider = (input: {
         };
 
         yield* persistConfig(nextConfig);
-        yield* cleanupReplacedSecretRefs(input.rows, {
+        yield* cleanupReplacedSecretRefs({
+          deleteSecretMaterial: input.deleteSecretMaterial,
           previousAccessToken: previousConfig.accessToken,
           nextAccessToken: accessTokenRef,
           previousRefreshToken: previousConfig.refreshToken,

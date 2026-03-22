@@ -20,13 +20,22 @@ import * as Schema from "effect/Schema";
 
 import {
   ControlPlaneStore,
+  LocalInstanceConfigService,
+  SecretMaterialDeleterService,
+  SecretMaterialStorerService,
+  SecretMaterialUpdaterService,
   type ControlPlaneStoreShape,
   type WorkspaceInternalToolContext,
-  RuntimeLocalWorkspaceState,
   RuntimeSourceAuthService,
   RuntimeSourceCatalogSyncService,
   RuntimeSourceStore,
   RuntimeSourceStoreService,
+} from "@executor/platform-sdk/runtime";
+import {
+  type RuntimeLocalWorkspaceState,
+  provideOptionalRuntimeLocalWorkspace,
+} from "../../../sdk/src/runtime/workspace/runtime-context";
+import {
   SourceArtifactStore,
   type SourceArtifactStoreShape,
   WorkspaceConfigStore,
@@ -34,8 +43,7 @@ import {
   WorkspaceStateStore,
   type WorkspaceStateStoreShape,
   makeWorkspaceStorageLayer,
-  provideOptionalRuntimeLocalWorkspace,
-} from "@executor/platform-sdk/runtime";
+} from "../../../sdk/src/runtime/workspace/storage";
 import {
   CreateSecretPayloadSchema,
   CreateSecretResultSchema,
@@ -53,7 +61,6 @@ import {
   deleteLocalSecret,
   discoverSource,
   discoverSourceInspectionTools,
-  getLocalInstanceConfig,
   getPolicy,
   getSource,
   getSourceInspection,
@@ -201,6 +208,10 @@ const makeRuntimeLayer = (input: {
   workspaceConfigStore: WorkspaceConfigStoreShape;
   workspaceStateStore: WorkspaceStateStoreShape;
   sourceArtifactStore: SourceArtifactStoreShape;
+  instanceConfigResolver: WorkspaceInternalToolContext["instanceConfigResolver"];
+  storeSecretMaterial: WorkspaceInternalToolContext["storeSecretMaterial"];
+  deleteSecretMaterial: WorkspaceInternalToolContext["deleteSecretMaterial"];
+  updateSecretMaterial: WorkspaceInternalToolContext["updateSecretMaterial"];
 }) =>
   Layer.mergeAll(
     Layer.succeed(ControlPlaneStore, input.controlPlaneStore),
@@ -209,6 +220,10 @@ const makeRuntimeLayer = (input: {
       RuntimeSourceCatalogSyncService,
       input.sourceCatalogSyncService,
     ),
+    Layer.succeed(LocalInstanceConfigService, input.instanceConfigResolver),
+    Layer.succeed(SecretMaterialStorerService, input.storeSecretMaterial),
+    Layer.succeed(SecretMaterialDeleterService, input.deleteSecretMaterial),
+    Layer.succeed(SecretMaterialUpdaterService, input.updateSecretMaterial),
     makeWorkspaceStorageLayer({
       workspaceConfigStore: input.workspaceConfigStore,
       workspaceStateStore: input.workspaceStateStore,
@@ -220,8 +235,12 @@ const runRuntimeEffect = <A, E, R>(input: {
   effect: Effect.Effect<A, E, R>;
   runtimeLayer: Layer.Layer<
     | ControlPlaneStore
+    | LocalInstanceConfigService
     | RuntimeSourceStoreService
     | RuntimeSourceCatalogSyncService
+    | SecretMaterialStorerService
+    | SecretMaterialDeleterService
+    | SecretMaterialUpdaterService
     | WorkspaceConfigStore
     | WorkspaceStateStore
     | SourceArtifactStore,
@@ -263,6 +282,10 @@ export const createWorkspaceExecutorAdminToolMap = (
     workspaceConfigStore: input.workspaceConfigStore,
     workspaceStateStore: input.workspaceStateStore,
     sourceArtifactStore: input.sourceArtifactStore,
+    instanceConfigResolver: input.instanceConfigResolver,
+    storeSecretMaterial: input.storeSecretMaterial,
+    deleteSecretMaterial: input.deleteSecretMaterial,
+    updateSecretMaterial: input.updateSecretMaterial,
   });
   const workspaceStorageLayer = makeWorkspaceStorageLayer({
     workspaceConfigStore: input.workspaceConfigStore,
@@ -295,7 +318,7 @@ export const createWorkspaceExecutorAdminToolMap = (
           "Get local instance config such as supported secret providers.",
         inputSchema: emptyInputSchema,
         outputSchema: instanceConfigOutputSchema,
-        execute: () => Effect.runPromise(getLocalInstanceConfig()),
+        execute: () => Effect.runPromise(input.instanceConfigResolver()),
       },
       metadata,
     }),

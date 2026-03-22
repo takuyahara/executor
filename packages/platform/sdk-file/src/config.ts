@@ -13,9 +13,11 @@ import {
   type LocalConfigPolicy,
   type LocalConfigSecretProvider,
   type LocalConfigSource,
-} from "#schema";
+} from "@executor/platform-sdk/schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import type { ExecutorWorkspaceDescriptor } from "@executor/platform-sdk";
+import type { LoadedLocalExecutorConfig } from "../../sdk/src/runtime/workspace-config";
 import {
   LocalExecutorConfigDecodeError,
   LocalFileSystemError,
@@ -23,6 +25,33 @@ import {
 } from "./errors";
 
 const decodeLocalExecutorConfig = Schema.decodeUnknownSync(LocalExecutorConfigSchema);
+
+export type FileLoadedExecutorConfig = LoadedLocalExecutorConfig & {
+  homeConfigPath: string;
+  projectConfigPath: string;
+};
+
+export const encodeLocalExecutorConfig = (config: LocalExecutorConfig): string =>
+  `${JSON.stringify(config, null, 2)}\n`;
+
+export const resolveConfigRelativePath = (input: {
+  path: string;
+  workspaceRoot: string;
+}): string => {
+  const trimmed = input.path.trim();
+  if (trimmed.startsWith("~/")) {
+    return join(homedir(), trimmed.slice(2));
+  }
+  if (trimmed === "~") {
+    return homedir();
+  }
+  if (isAbsolute(trimmed)) {
+    return trimmed;
+  }
+  return resolve(input.workspaceRoot, trimmed);
+};
+
+export type { LoadedLocalExecutorConfig } from "../../sdk/src/runtime/workspace-config";
 
 const PROJECT_CONFIG_BASENAME = "executor.jsonc";
 const PROJECT_CONFIG_DIRECTORY = ".executor";
@@ -329,14 +358,6 @@ export type ResolvedLocalWorkspaceContext = {
   stateDirectory: string;
 };
 
-export type LoadedLocalExecutorConfig = {
-  config: LocalExecutorConfig | null;
-  homeConfig: LocalExecutorConfig | null;
-  projectConfig: LocalExecutorConfig | null;
-  homeConfigPath: string;
-  projectConfigPath: string;
-};
-
 export const resolveLocalWorkspaceContext = (input: {
   cwd?: string;
   workspaceRoot?: string;
@@ -409,7 +430,7 @@ export const readOptionalLocalExecutorConfig = (
 export const loadLocalExecutorConfig = (
   context: ResolvedLocalWorkspaceContext,
 ): Effect.Effect<
-  LoadedLocalExecutorConfig,
+  FileLoadedExecutorConfig,
   LocalFileSystemError | LocalExecutorConfigDecodeError,
   FileSystem.FileSystem
 > =>
@@ -428,9 +449,6 @@ export const loadLocalExecutorConfig = (
     };
   });
 
-export const encodeLocalExecutorConfig = (config: LocalExecutorConfig): string =>
-  `${JSON.stringify(config, null, 2)}\n`;
-
 export const writeProjectLocalExecutorConfig = (input: {
   context: ResolvedLocalWorkspaceContext;
   config: LocalExecutorConfig;
@@ -447,23 +465,6 @@ export const writeProjectLocalExecutorConfig = (input: {
       Effect.mapError(mapFileSystemError(input.context.projectConfigPath, "write config")),
     );
   });
-
-export const resolveConfigRelativePath = (input: {
-  path: string;
-  workspaceRoot: string;
-}): string => {
-  const trimmed = input.path.trim();
-  if (trimmed.startsWith("~/")) {
-    return join(homedir(), trimmed.slice(2));
-  }
-  if (trimmed === "~") {
-    return homedir();
-  }
-  if (isAbsolute(trimmed)) {
-    return trimmed;
-  }
-  return resolve(input.workspaceRoot, trimmed);
-};
 
 export const defaultWorkspaceDisplayName = (context: ResolvedLocalWorkspaceContext): string =>
   trimOrUndefined(context.workspaceName) ?? "workspace";

@@ -5,12 +5,11 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { LoadedSourceCatalogToolIndexEntry } from "../../catalog/source/runtime";
-import type { SecretMaterialResolveContext } from "../../local/secret-material-providers";
-import type { WorkspaceStorageServices } from "../../local/storage";
+import type { SecretMaterialResolveContext } from "../../workspace/secret-material-providers";
+import type { WorkspaceStorageServices } from "../../workspace/storage";
 import { invocationDescriptorFromTool } from "../ir-execution";
 import { evaluateInvocationPolicy } from "../../policy/invocation-policy-engine";
-import { loadRuntimeLocalWorkspacePolicies } from "../../policy/policies-operations";
-import { runtimeEffectError } from "../../effect-errors";
+import { loadRuntimeLocalWorkspacePolicies } from "../../../policies/operations";
 
 const asToolPath = (value: string): ToolPath => value as ToolPath;
 
@@ -62,6 +61,9 @@ export const toSecretResolutionContext = (
   };
 };
 
+const failAuthorization = (message: string): Effect.Effect<never, Error, never> =>
+  Effect.fail(new Error(message));
+
 type WorkspaceToolElicitation = Parameters<
   typeof makeToolInvokerFromTools
 >[0]["onElicitation"];
@@ -99,13 +101,13 @@ export const authorizePersistedToolInvocation = (input: {
     }
 
     if (decision.kind === "deny") {
-      return yield* runtimeEffectError("execution/workspace/authorization", decision.reason);
+      return yield* failAuthorization(decision.reason);
     }
 
     if (!input.onElicitation) {
-      return yield* runtimeEffectError("execution/workspace/authorization", 
-          `Approval required for ${descriptor.toolPath}, but no elicitation-capable host is available`,
-        );
+      return yield* failAuthorization(
+        `Approval required for ${descriptor.toolPath}, but no elicitation-capable host is available`,
+      );
     }
 
     const interactionId =
@@ -144,8 +146,8 @@ export const authorizePersistedToolInvocation = (input: {
       );
 
     if (response.action !== "accept") {
-      return yield* runtimeEffectError("execution/workspace/authorization", 
-          `Tool invocation not approved for ${descriptor.toolPath}`,
-        );
+      return yield* failAuthorization(
+        `Tool invocation not approved for ${descriptor.toolPath}`,
+      );
     }
   });

@@ -18,7 +18,6 @@
     "#schema": "./src/schema/index.ts"
   },
   "scripts": {
-    "fixture:release:capture": "bun run ./src/runtime/local/capture-release-workspace-fixture.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json"

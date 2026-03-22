@@ -4,7 +4,7 @@ import {
   AccountIdSchema,
   WorkspaceIdSchema,
   type LocalInstallation,
-} from "#schema";
+} from "@executor/platform-sdk/schema";
 import * as Effect from "effect/Effect";
 
 import type { ResolvedLocalWorkspaceContext } from "./config";

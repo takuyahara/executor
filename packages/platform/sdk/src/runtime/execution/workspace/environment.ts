@@ -19,12 +19,18 @@ import { RuntimeSourceAuthServiceTag } from "../../sources/source-auth-service";
 import { RuntimeSourceCatalogStoreService } from "../../catalog/source/runtime";
 import { RuntimeSourceAuthMaterialService } from "../../auth/source-auth-material";
 import { RuntimeSourceCatalogSyncService } from "../../catalog/source/sync";
-import { getRuntimeLocalWorkspaceOption } from "../../local/runtime-context";
+import { getRuntimeLocalWorkspaceOption } from "../../workspace/runtime-context";
+import {
+  LocalInstanceConfigService,
+  SecretMaterialDeleterService,
+  SecretMaterialStorerService,
+  SecretMaterialUpdaterService,
+} from "../../workspace/secret-material-providers";
 import {
   LocalToolRuntimeLoaderService,
   type LocalToolRuntimeLoaderShape,
   type LocalToolRuntime,
-} from "../../local/tools";
+} from "../../local-tool-runtime";
 import {
   InstallationStore,
   type InstallationStoreShape,
@@ -34,7 +40,7 @@ import {
   type WorkspaceConfigStoreShape,
   WorkspaceStateStore,
   type WorkspaceStateStoreShape,
-} from "../../local/storage";
+} from "../../workspace/storage";
 import { ControlPlaneStore } from "../../store";
 import { RuntimeSourceStoreService } from "../../sources/source-store";
 import type { CreateWorkspaceInternalToolMap } from "./tool-invoker";
@@ -68,6 +74,10 @@ export const createWorkspaceExecutionEnvironmentResolver =
     >;
     localToolRuntimeLoader: LocalToolRuntimeLoaderShape;
     installationStore: InstallationStoreShape;
+    instanceConfigResolver: Effect.Effect.Success<typeof LocalInstanceConfigService>;
+    storeSecretMaterial: Effect.Effect.Success<typeof SecretMaterialStorerService>;
+    deleteSecretMaterial: Effect.Effect.Success<typeof SecretMaterialDeleterService>;
+    updateSecretMaterial: Effect.Effect.Success<typeof SecretMaterialUpdaterService>;
     workspaceConfigStore: WorkspaceConfigStoreShape;
     workspaceStateStore: WorkspaceStateStoreShape;
     sourceArtifactStore: SourceArtifactStoreShape;
@@ -79,15 +89,11 @@ export const createWorkspaceExecutionEnvironmentResolver =
       const loadedConfig =
         runtimeLocalWorkspace === null
           ? null
-          : yield* input.workspaceConfigStore.load(
-              runtimeLocalWorkspace.context,
-            );
+          : yield* input.workspaceConfigStore.load();
       const localToolRuntime =
         runtimeLocalWorkspace === null
           ? createEmptyLocalToolRuntime()
-          : yield* input.localToolRuntimeLoader.load(
-              runtimeLocalWorkspace.context,
-            );
+          : yield* input.localToolRuntimeLoader.load();
       const { catalog, toolInvoker } = createWorkspaceToolInvoker({
         workspaceId,
         accountId,
@@ -96,6 +102,10 @@ export const createWorkspaceExecutionEnvironmentResolver =
         sourceCatalogSyncService: input.sourceCatalogSyncService,
         sourceCatalogStore: input.sourceCatalogStore,
         installationStore: input.installationStore,
+        instanceConfigResolver: input.instanceConfigResolver,
+        storeSecretMaterial: input.storeSecretMaterial,
+        deleteSecretMaterial: input.deleteSecretMaterial,
+        updateSecretMaterial: input.updateSecretMaterial,
         workspaceConfigStore: input.workspaceConfigStore,
         workspaceStateStore: input.workspaceStateStore,
         sourceArtifactStore: input.sourceArtifactStore,
@@ -146,6 +156,10 @@ export const RuntimeExecutionResolverLive = (
           const sourceCatalogStore = yield* RuntimeSourceCatalogStoreService;
           const localToolRuntimeLoader = yield* LocalToolRuntimeLoaderService;
           const installationStore = yield* InstallationStore;
+          const instanceConfigResolver = yield* LocalInstanceConfigService;
+          const storeSecretMaterial = yield* SecretMaterialStorerService;
+          const deleteSecretMaterial = yield* SecretMaterialDeleterService;
+          const updateSecretMaterial = yield* SecretMaterialUpdaterService;
           const workspaceConfigStore = yield* WorkspaceConfigStore;
           const workspaceStateStore = yield* WorkspaceStateStore;
           const sourceArtifactStore = yield* SourceArtifactStore;
@@ -159,6 +173,10 @@ export const RuntimeExecutionResolverLive = (
             sourceCatalogStore,
             localToolRuntimeLoader,
             installationStore,
+            instanceConfigResolver,
+            storeSecretMaterial,
+            deleteSecretMaterial,
+            updateSecretMaterial,
             workspaceConfigStore,
             workspaceStateStore,
             sourceArtifactStore,

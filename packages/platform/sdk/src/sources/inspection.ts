@@ -16,7 +16,7 @@ import {
 } from "../errors";
 import * as Effect from "effect/Effect";
 
-import { LocalSourceArtifactMissingError } from "../runtime/local/errors";
+import { LocalSourceArtifactMissingError } from "../runtime/workspace-errors";
 import { operationErrors } from "../runtime/policy/operation-errors";
 import {
   buildLoadedSourceCatalogToolContract,

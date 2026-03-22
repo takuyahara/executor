@@ -5,7 +5,11 @@ import { NodeFileSystem } from "@effect/platform-node";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
-import { SourceIdSchema, WorkspaceIdSchema, type Source } from "#schema";
+import {
+  SourceIdSchema,
+  WorkspaceIdSchema,
+  type Source,
+} from "@executor/platform-sdk/schema";
 
 import {
   createCatalogSnapshotV1,
@@ -21,7 +25,7 @@ import {
   ShapeSymbolIdSchema,
 } from "@executor/ir/ids";
 import type { CatalogV1, ProvenanceRef } from "@executor/ir/model";
-import { syncWorkspaceSourceTypeDeclarationsNode } from "./type-declarations";
+import { syncWorkspaceSourceTypeDeclarationsNode } from "./source-type-declarations";
 
 const put = <K extends string, V>(record: Record<K, V>, key: K, value: V) => {
   record[key] = value;

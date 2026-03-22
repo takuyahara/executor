@@ -10,17 +10,13 @@ import * as Effect from "effect/Effect";
 
 import { sourceAuthFromAuthArtifact } from "../../auth/auth-artifacts";
 import { authArtifactSecretMaterialRefs } from "../../auth/auth-artifacts";
-import { refreshWorkspaceSourceTypeDeclarationsInBackground } from "../../catalog/source/type-declarations";
-import type { LoadedLocalExecutorConfig } from "../../local/config";
+import type { LoadedLocalExecutorConfig } from "../../workspace-config";
 import {
   LocalConfiguredSourceNotFoundError,
-  LocalExecutorConfigDecodeError,
-  LocalFileSystemError,
-  LocalWorkspaceStateDecodeError,
   RuntimeLocalWorkspaceMismatchError,
   RuntimeLocalWorkspaceUnavailableError,
-} from "../../local/errors";
-import type { LocalWorkspaceState } from "../../local/workspace-state";
+} from "../../workspace-errors";
+import type { LocalWorkspaceState } from "../../workspace-state";
 import { getSourceAdapter } from "../source-adapters";
 import {
   resolveRuntimeLocalWorkspaceFromDeps,
@@ -131,9 +127,6 @@ export const loadSourcesInWorkspaceWithDeps = (
   readonly Source[],
   | RuntimeLocalWorkspaceUnavailableError
   | RuntimeLocalWorkspaceMismatchError
-  | LocalFileSystemError
-  | LocalExecutorConfigDecodeError
-  | LocalWorkspaceStateDecodeError
   | LocalConfiguredSourceNotFoundError
   | Error,
   never
@@ -191,7 +184,6 @@ export const syncWorkspaceSourceTypeDeclarationsWithDeps = (
     const entries = yield* Effect.forEach(sources, (source) =>
       Effect.map(
         deps.sourceArtifactStore.read({
-          context: localWorkspace.context,
           sourceId: source.id,
         }),
         (artifact) =>
@@ -204,13 +196,10 @@ export const syncWorkspaceSourceTypeDeclarationsWithDeps = (
       ),
     );
 
-    yield* Effect.sync(() => {
-      refreshWorkspaceSourceTypeDeclarationsInBackground({
-        context: localWorkspace.context,
-        entries: entries.filter(
-          (entry): entry is NonNullable<typeof entry> => entry !== null,
-        ),
-      });
+    yield* deps.sourceTypeDeclarationsRefresher.refreshWorkspaceInBackground({
+      entries: entries.filter(
+        (entry): entry is NonNullable<typeof entry> => entry !== null,
+      ),
     });
   }).pipe(
     Effect.withSpan("source.types.refresh_workspace.schedule", {
@@ -236,9 +225,6 @@ export const listLinkedSecretSourcesInWorkspaceWithDeps = (
   Map<string, Array<{ sourceId: string; sourceName: string }>>,
   | RuntimeLocalWorkspaceUnavailableError
   | RuntimeLocalWorkspaceMismatchError
-  | LocalFileSystemError
-  | LocalExecutorConfigDecodeError
-  | LocalWorkspaceStateDecodeError
   | LocalConfiguredSourceNotFoundError
   | Error,
   never
@@ -295,9 +281,6 @@ export const loadSourceByIdWithDeps = (
   Source,
   | RuntimeLocalWorkspaceUnavailableError
   | RuntimeLocalWorkspaceMismatchError
-  | LocalFileSystemError
-  | LocalExecutorConfigDecodeError
-  | LocalWorkspaceStateDecodeError
   | LocalConfiguredSourceNotFoundError
   | Error,
   never

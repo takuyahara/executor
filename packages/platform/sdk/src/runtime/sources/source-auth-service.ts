@@ -54,7 +54,7 @@ import {
   getRuntimeLocalWorkspaceOption,
   provideOptionalRuntimeLocalWorkspace,
   type RuntimeLocalWorkspaceState,
-} from "../local/runtime-context";
+} from "../workspace/runtime-context";
 import {
   exchangeMcpOAuthAuthorizationCode,
   startMcpOAuthAuthorization,
@@ -73,12 +73,13 @@ import {
   sourceBindingStateFromSource,
 } from "./source-adapters";
 import {
-  createDefaultSecretMaterialDeleter,
+  type DeleteSecretMaterial,
   type ResolveSecretMaterial,
+  SecretMaterialDeleterService,
   SecretMaterialResolverService,
   SecretMaterialStorerService,
   type StoreSecretMaterial,
-} from "../local/secret-material-providers";
+} from "../workspace/secret-material-providers";
 import {
   removeAuthLeaseAndSecrets,
   upsertOauth2AuthorizedUserLeaseFromTokenResponse,
@@ -101,7 +102,7 @@ import {
   type RuntimeSourceStore,
   RuntimeSourceStoreService,
 } from "./source-store";
-import type { WorkspaceStorageServices } from "../local/storage";
+import type { WorkspaceStorageServices } from "../workspace/storage";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "../store";
 import { runtimeEffectError } from "../effect-errors";
 
@@ -994,6 +995,7 @@ const upsertSourceOauthClient = (input: {
   source: Source;
   oauthClient: SourceOauthClientInput;
   storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
 }): Effect.Effect<ResolvedSourceOauthClient, Error, never> =>
   Effect.gen(function* () {
     const adapter = getSourceAdapterForSource(input.source);
@@ -1052,10 +1054,7 @@ const upsertSourceOauthClient = (input: {
         || previousClientSecretRef.handle !== clientSecretRef.handle
       )
     ) {
-      const deleteSecretMaterial = createDefaultSecretMaterialDeleter({
-        rows: input.rows,
-      });
-      yield* deleteSecretMaterial(previousClientSecretRef).pipe(
+      yield* input.deleteSecretMaterial(previousClientSecretRef).pipe(
         Effect.either,
         Effect.ignore,
       );
@@ -1308,6 +1307,7 @@ const upsertProviderAuthGrant = (input: {
   grantedScopes: ReadonlyArray<string>;
   refreshToken: string | null;
   storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   existingGrant?: import("#schema").ProviderAuthGrant | null;
 }): Effect.Effect<import("#schema").ProviderAuthGrant, Error, never> =>
   Effect.gen(function* () {
@@ -1356,10 +1356,7 @@ const upsertProviderAuthGrant = (input: {
         || existingGrant.refreshToken.handle !== refreshTokenRef.handle
       )
     ) {
-      const deleteSecretMaterial = createDefaultSecretMaterialDeleter({
-        rows: input.rows,
-      });
-      yield* deleteSecretMaterial(existingGrant.refreshToken).pipe(
+      yield* input.deleteSecretMaterial(existingGrant.refreshToken).pipe(
         Effect.either,
         Effect.ignore,
       );
@@ -1747,6 +1744,7 @@ const removeProviderAuthGrantInternal = (input: {
   sourceStore: RuntimeSourceStore;
   workspaceId: WorkspaceId;
   grantId: ProviderAuthGrant["id"];
+  deleteSecretMaterial: DeleteSecretMaterial;
 }): Effect.Effect<boolean, Error, WorkspaceStorageServices> =>
   Effect.gen(function* () {
     const grantOption = yield* input.rows.providerAuthGrants.getById(input.grantId);
@@ -1774,7 +1772,7 @@ const removeProviderAuthGrantInternal = (input: {
           if (latestSource === null) {
             yield* removeAuthLeaseAndSecrets(input.rows, {
               authArtifactId: artifact.id,
-            });
+            }, input.deleteSecretMaterial);
             yield* input.rows.authArtifacts.removeByWorkspaceSourceAndActor({
               workspaceId: artifact.workspaceId,
               sourceId: artifact.sourceId,
@@ -1800,7 +1798,7 @@ const removeProviderAuthGrantInternal = (input: {
 
     yield* removeProviderAuthGrantSecret(input.rows, {
       grant: grantOption.value,
-    });
+    }, input.deleteSecretMaterial);
     yield* input.rows.providerAuthGrants.removeById(input.grantId);
     return true;
   });
@@ -2093,6 +2091,7 @@ const addExecutorHttpSource = (input: {
   sourceCatalogSync: RuntimeSourceCatalogSyncShape;
   sourceInput: ExecutorHttpEndpointSourceInput;
   storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   resolveSecretMaterial: ResolveSecretMaterial;
   getLocalServerBaseUrl?: () => string | undefined;
   baseUrl?: string | null;
@@ -2305,6 +2304,7 @@ const addExecutorGoogleDiscoverySource = (input: {
   sourceCatalogSync: RuntimeSourceCatalogSyncShape;
   sourceInput: Extract<ExecutorAddSourceInput, { kind: "google_discovery" }>;
   storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   resolveSecretMaterial: ResolveSecretMaterial;
   getLocalServerBaseUrl?: () => string | undefined;
   baseUrl?: string | null;
@@ -2491,6 +2491,7 @@ const addExecutorGoogleDiscoverySource = (input: {
         source: persistedDraft,
         oauthClient: input.sourceInput.oauthClient,
         storeSecretMaterial: input.storeSecretMaterial,
+        deleteSecretMaterial: input.deleteSecretMaterial,
       });
     }
 
@@ -2820,6 +2821,7 @@ type RuntimeSourceAuthDependencies = {
   sourceCatalogSync: RuntimeSourceCatalogSyncShape;
   resolveSecretMaterial: ResolveSecretMaterial;
   storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   getLocalServerBaseUrl?: () => string | undefined;
   localWorkspaceState?: RuntimeLocalWorkspaceState;
 };
@@ -2880,6 +2882,7 @@ const createRuntimeSourceConnectionService = (
               sourceCatalogSync: input.sourceCatalogSync,
               sourceInput,
               storeSecretMaterial: input.storeSecretMaterial,
+              deleteSecretMaterial: input.deleteSecretMaterial,
               resolveSecretMaterial: input.resolveSecretMaterial,
               getLocalServerBaseUrl: input.getLocalServerBaseUrl,
               baseUrl: options?.baseUrl,
@@ -2891,6 +2894,7 @@ const createRuntimeSourceConnectionService = (
               sourceCatalogSync: input.sourceCatalogSync,
               sourceInput,
               storeSecretMaterial: input.storeSecretMaterial,
+              deleteSecretMaterial: input.deleteSecretMaterial,
               resolveSecretMaterial: input.resolveSecretMaterial,
               getLocalServerBaseUrl: input.getLocalServerBaseUrl,
               baseUrl: options?.baseUrl,
@@ -3014,10 +3018,7 @@ const createRuntimeSourceConnectionService = (
           const secretRef = sourceOauthClientSecretRef(oauthClient.value);
           const removed = yield* input.rows.workspaceOauthClients.removeById(oauthClientId);
           if (removed && secretRef) {
-            const deleteSecretMaterial = createDefaultSecretMaterialDeleter({
-              rows: input.rows,
-            });
-            yield* deleteSecretMaterial(secretRef).pipe(
+            yield* input.deleteSecretMaterial(secretRef).pipe(
               Effect.either,
               Effect.ignore,
             );
@@ -3034,6 +3035,7 @@ const createRuntimeSourceConnectionService = (
           sourceStore: input.sourceStore,
           workspaceId,
           grantId,
+          deleteSecretMaterial: input.deleteSecretMaterial,
         }),
       ),
   };
@@ -3329,6 +3331,7 @@ const createRuntimeSourceOAuthSessionService = (
         refreshToken: trimOrNull(exchanged.refresh_token),
         existingGrant,
         storeSecretMaterial: input.storeSecretMaterial,
+        deleteSecretMaterial: input.deleteSecretMaterial,
       });
 
       const targets = yield* Effect.forEach(
@@ -3526,6 +3529,8 @@ const createRuntimeSourceOAuthSessionService = (
             rows: input.rows,
             artifact: authArtifact.value,
             tokenResponse: exchanged,
+            storeSecretMaterial: input.storeSecretMaterial,
+            deleteSecretMaterial: input.deleteSecretMaterial,
           });
         }
 
@@ -3698,6 +3703,7 @@ export const RuntimeSourceAuthServiceLive = (input: {
       const sourceCatalogSync = yield* RuntimeSourceCatalogSyncService;
       const resolveSecretMaterial = yield* SecretMaterialResolverService;
       const storeSecretMaterial = yield* SecretMaterialStorerService;
+      const deleteSecretMaterial = yield* SecretMaterialDeleterService;
       const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
 
       return createRuntimeSourceAuthService({
@@ -3707,6 +3713,7 @@ export const RuntimeSourceAuthServiceLive = (input: {
         sourceCatalogSync,
         resolveSecretMaterial,
         storeSecretMaterial,
+        deleteSecretMaterial,
         getLocalServerBaseUrl: input.getLocalServerBaseUrl,
         localWorkspaceState: runtimeLocalWorkspace ?? undefined,
       });

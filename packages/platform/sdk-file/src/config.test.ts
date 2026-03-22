@@ -58,7 +58,7 @@ describe("local-config", () => {
         "https://api.github.com",
       );
       expect(loaded.config?.runtime).toBe("ses");
-      expect(context.homeStateDirectory).toContain("executor");
+      expect(context.homeStateDirectory.toLowerCase()).toContain("executor");
     }).pipe(Effect.provide(NodeFileSystem.layer)),
   );
 

@@ -19,11 +19,11 @@ import * as Option from "effect/Option";
 import type { ControlPlaneStoreShape } from "../store";
 import { resolveAuthArtifactMaterial, type ResolvedSourceAuthMaterial } from "./auth-artifacts";
 import {
-  createDefaultSecretMaterialDeleter,
-  createDefaultSecretMaterialStorer,
+  type DeleteSecretMaterial,
   type ResolveSecretMaterial,
   type SecretMaterialResolveContext,
-} from "../local/secret-material-providers";
+  type StoreSecretMaterial,
+} from "../workspace/secret-material-providers";
 import { refreshOAuth2AccessToken } from "./oauth2-pkce";
 import type { OAuth2TokenResponse } from "./oauth2-pkce";
 import { createPersistedMcpAuthProvider } from "./mcp-auth-provider";
@@ -43,13 +43,12 @@ const cleanupAuthLeaseSecretRefs = (
     previous: Pick<AuthLease, "placementsTemplateJson"> | null;
     next: Pick<AuthLease, "placementsTemplateJson"> | null;
   },
+  deleteSecretMaterial: DeleteSecretMaterial,
 ) =>
   Effect.gen(function* () {
     if (input.previous === null) {
       return;
     }
-
-    const deleteSecretMaterial = createDefaultSecretMaterialDeleter({ rows });
     const nextRefKeys = new Set(
       (input.next === null ? [] : authLeaseSecretRefs(input.next)).map(secretRefKey),
     );
@@ -85,6 +84,8 @@ const refreshRefreshableOauth2AuthorizedUserArtifact = (input: {
   artifact: AuthArtifact;
   lease: AuthLease | null;
   resolveSecretMaterial: ResolveSecretMaterial;
+  storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   context?: SecretMaterialResolveContext;
 }): Effect.Effect<AuthLease, Error, never> =>
   Effect.gen(function* () {
@@ -116,10 +117,7 @@ const refreshRefreshableOauth2AuthorizedUserArtifact = (input: {
       refreshToken,
     });
 
-    const storeSecretMaterial = createDefaultSecretMaterialStorer({
-      rows: input.rows,
-    });
-    const accessTokenRef = yield* storeSecretMaterial({
+    const accessTokenRef = yield* input.storeSecretMaterial({
       purpose: "oauth_access_token",
       value: tokenResponse.access_token,
       name: `${decoded.config.clientId} Access Token`,
@@ -166,7 +164,7 @@ const refreshRefreshableOauth2AuthorizedUserArtifact = (input: {
     yield* cleanupAuthLeaseSecretRefs(input.rows, {
       previous: input.lease,
       next: nextLease,
-    });
+    }, input.deleteSecretMaterial);
 
     return nextLease;
   });
@@ -185,10 +183,10 @@ const workspaceOauthClientSecretRef = (input: {
 const cleanupProviderGrantRefreshToken = (rows: ControlPlaneStoreShape, input: {
   previous: SecretRef;
   next: SecretRef;
-}) =>
+}, deleteSecretMaterial: DeleteSecretMaterial) =>
   secretRefKey(input.previous) === secretRefKey(input.next)
     ? Effect.void
-    : createDefaultSecretMaterialDeleter({ rows })(input.previous).pipe(
+    : deleteSecretMaterial(input.previous).pipe(
         Effect.either,
         Effect.ignore,
       );
@@ -198,6 +196,8 @@ const refreshProviderGrantRefArtifact = (input: {
   artifact: AuthArtifact;
   lease: AuthLease | null;
   resolveSecretMaterial: ResolveSecretMaterial;
+  storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   context?: SecretMaterialResolveContext;
 }): Effect.Effect<AuthLease, Error, never> =>
   Effect.gen(function* () {
@@ -239,17 +239,14 @@ const refreshProviderGrantRefArtifact = (input: {
       scopes: config.requiredScopes.length > 0 ? config.requiredScopes : null,
     });
 
-    const storeSecretMaterial = createDefaultSecretMaterialStorer({
-      rows: input.rows,
-    });
-    const accessTokenRef = yield* storeSecretMaterial({
+    const accessTokenRef = yield* input.storeSecretMaterial({
       purpose: "oauth_access_token",
       value: tokenResponse.access_token,
       name: `${grant.providerKey} Access Token`,
     });
 
     const rotatedRefreshTokenRef = tokenResponse.refresh_token
-      ? yield* storeSecretMaterial({
+      ? yield* input.storeSecretMaterial({
           purpose: "oauth_refresh_token",
           value: tokenResponse.refresh_token,
           name: `${grant.providerKey} Refresh Token`,
@@ -267,7 +264,7 @@ const refreshProviderGrantRefArtifact = (input: {
     yield* cleanupProviderGrantRefreshToken(input.rows, {
       previous: grant.refreshToken,
       next: rotatedRefreshTokenRef,
-    });
+    }, input.deleteSecretMaterial);
 
     const expiresInMs =
       typeof tokenResponse.expires_in === "number" && Number.isFinite(tokenResponse.expires_in)
@@ -310,14 +307,14 @@ const refreshProviderGrantRefArtifact = (input: {
     yield* cleanupAuthLeaseSecretRefs(input.rows, {
       previous: input.lease,
       next: nextLease,
-    });
+    }, input.deleteSecretMaterial);
 
     return nextLease;
   });
 
 export const removeAuthLeaseAndSecrets = (rows: ControlPlaneStoreShape, input: {
   authArtifactId: AuthArtifact["id"];
-}): Effect.Effect<void, Error, never> =>
+}, deleteSecretMaterial: DeleteSecretMaterial): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
     const existingLease = yield* rows.authLeases.getByAuthArtifactId(input.authArtifactId);
     if (Option.isNone(existingLease)) {
@@ -328,13 +325,15 @@ export const removeAuthLeaseAndSecrets = (rows: ControlPlaneStoreShape, input: {
     yield* cleanupAuthLeaseSecretRefs(rows, {
       previous: existingLease.value,
       next: null,
-    });
+    }, deleteSecretMaterial);
   });
 
 export const upsertOauth2AuthorizedUserLeaseFromTokenResponse = (input: {
   rows: ControlPlaneStoreShape;
   artifact: AuthArtifact;
   tokenResponse: OAuth2TokenResponse;
+  storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
 }): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
     const decoded = decodeBuiltInAuthArtifactConfig(input.artifact);
@@ -347,10 +346,7 @@ export const upsertOauth2AuthorizedUserLeaseFromTokenResponse = (input: {
 
     const existingLeaseOption = yield* input.rows.authLeases.getByAuthArtifactId(input.artifact.id);
     const existingLease = Option.isSome(existingLeaseOption) ? existingLeaseOption.value : null;
-    const storeSecretMaterial = createDefaultSecretMaterialStorer({
-      rows: input.rows,
-    });
-    const accessTokenRef = yield* storeSecretMaterial({
+    const accessTokenRef = yield* input.storeSecretMaterial({
       purpose: "oauth_access_token",
       value: input.tokenResponse.access_token,
       name: `${decoded.config.clientId} Access Token`,
@@ -397,13 +393,15 @@ export const upsertOauth2AuthorizedUserLeaseFromTokenResponse = (input: {
     yield* cleanupAuthLeaseSecretRefs(input.rows, {
       previous: existingLease,
       next: nextLease,
-    });
+    }, input.deleteSecretMaterial);
   });
 
 export const resolveAuthArtifactMaterialWithLeases = (input: {
   rows: ControlPlaneStoreShape;
   artifact: AuthArtifact | null;
   resolveSecretMaterial: ResolveSecretMaterial;
+  storeSecretMaterial: StoreSecretMaterial;
+  deleteSecretMaterial: DeleteSecretMaterial;
   context?: SecretMaterialResolveContext;
 }): Effect.Effect<ResolvedSourceAuthMaterial, Error, never> =>
   Effect.gen(function* () {
@@ -432,6 +430,8 @@ export const resolveAuthArtifactMaterialWithLeases = (input: {
             artifact: input.artifact,
             lease: existingLease,
             resolveSecretMaterial: input.resolveSecretMaterial,
+            storeSecretMaterial: input.storeSecretMaterial,
+            deleteSecretMaterial: input.deleteSecretMaterial,
             context: input.context,
           });
 
@@ -451,6 +451,8 @@ export const resolveAuthArtifactMaterialWithLeases = (input: {
             artifact: input.artifact,
             lease: existingLease,
             resolveSecretMaterial: input.resolveSecretMaterial,
+            storeSecretMaterial: input.storeSecretMaterial,
+            deleteSecretMaterial: input.deleteSecretMaterial,
             context: input.context,
           });
 
@@ -476,6 +478,8 @@ export const resolveAuthArtifactMaterialWithLeases = (input: {
           artifact: input.artifact,
           config: mcpOAuthConfig,
           resolveSecretMaterial: input.resolveSecretMaterial,
+          storeSecretMaterial: input.storeSecretMaterial,
+          deleteSecretMaterial: input.deleteSecretMaterial,
           context: input.context,
         }),
       };

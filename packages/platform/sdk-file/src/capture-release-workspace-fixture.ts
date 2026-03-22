@@ -6,7 +6,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 
-import type { LocalExecutorConfig } from "#schema";
+import type { LocalExecutorConfig } from "@executor/platform-sdk/schema";
 
 import {
   readOptionalLocalExecutorConfig,
@@ -37,7 +37,7 @@ type CaptureReleaseWorkspaceFixtureArgs = {
 };
 
 const usage = `Usage:
-  bun run ./src/runtime/local/capture-release-workspace-fixture.ts \\
+  bun run ./src/capture-release-workspace-fixture.ts \\
     --workspace-root /path/to/workspace \\
     --source-id google-calendar \\
     --release-version v1.2.4-beta.1 \\

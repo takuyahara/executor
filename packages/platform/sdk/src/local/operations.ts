@@ -14,12 +14,7 @@ import * as Option from "effect/Option";
 import { submitExecutionInteractionResponse } from "../runtime/execution/service";
 import { LiveExecutionManagerService } from "../runtime/execution/live";
 import { operationErrors } from "../runtime/policy/operation-errors";
-import { resolveLocalWorkspaceContext } from "../runtime/local/config";
-import {
-  InstallationStore,
-  LocalInstallationStore,
-} from "../runtime/local/storage";
-import { getRuntimeLocalWorkspaceOption } from "../runtime/local/runtime-context";
+import { InstallationStore } from "../runtime/workspace/storage";
 import { RuntimeSourceAuthServiceTag } from "../runtime/sources/source-auth-service";
 import {
   createSourceCredentialSelectionBearerContent,
@@ -190,24 +185,15 @@ const loadSourceCredentialInteraction = (input: {
 
 export const getLocalInstallation = () =>
   Effect.gen(function* () {
-    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
-    const context =
-      runtimeLocalWorkspace?.context ??
-      (yield* resolveLocalWorkspaceContext().pipe(
-        Effect.mapError((error) =>
-          localOps.installation.unknownStorage(
-            error,
-            "Failed resolving local workspace context",
-          ),
+    const installationStore = yield* InstallationStore;
+    return yield* installationStore.load().pipe(
+      Effect.mapError((error) =>
+        localOps.installation.unknownStorage(
+          error,
+          "Failed loading local installation",
         ),
-      ));
-
-    const installationStore =
-      runtimeLocalWorkspace !== null
-        ? yield* InstallationStore
-        : LocalInstallationStore;
-
-    return yield* installationStore.load(context);
+      ),
+    );
   });
 
 export const getSourceCredentialInteraction = (input: {

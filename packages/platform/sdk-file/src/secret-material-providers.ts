@@ -7,22 +7,34 @@ import { NodeFileSystem } from "@effect/platform-node";
 import {
   type LocalConfigSecretProvider,
   type LocalExecutorConfig,
-  type SecretMaterial,
   type SecretMaterialPurpose,
-  SecretMaterialIdSchema,
   type SecretRef,
-} from "#schema";
-import * as Context from "effect/Context";
+  type SecretMaterial,
+  SecretMaterialIdSchema,
+} from "@executor/platform-sdk/schema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
+import {
+  LocalInstanceConfigService,
+  SecretMaterialDeleterService,
+  SecretMaterialResolverService,
+  SecretMaterialStorerService,
+  SecretMaterialUpdaterService,
+  type ResolveSecretMaterial,
+  type ResolveInstanceConfig,
+  type SecretMaterialResolveContext,
+  type StoreSecretMaterial,
+  type DeleteSecretMaterial,
+  type UpdateSecretMaterial,
+} from "../../sdk/src/runtime/workspace/secret-material-providers";
+import { fromConfigSecretProviderId } from "../../sdk/src/runtime/workspace/config-secrets";
+import { getRuntimeLocalWorkspaceOption } from "../../sdk/src/runtime/workspace/runtime-context";
+import { ControlPlaneStore } from "../../sdk/src/runtime/store";
+import type { ControlPlaneStoreShape } from "../../sdk/src/runtime/store";
+import { runtimeEffectError } from "../../sdk/src/runtime/effect-errors";
 import { resolveConfigRelativePath } from "./config";
-import { fromConfigSecretProviderId } from "./config-secrets";
-import { getRuntimeLocalWorkspaceOption } from "./runtime-context";
-import { ControlPlaneStore } from "../store";
-import type { ControlPlaneStoreShape } from "../store";
-import { runtimeEffectError } from "../effect-errors";
 
 export const ENV_SECRET_PROVIDER_ID = "env";
 export const PARAMS_SECRET_PROVIDER_ID = "params";
@@ -35,54 +47,6 @@ const toError = (cause: unknown): Error =>
 export type SecretStoreProviderId =
   | typeof KEYCHAIN_SECRET_PROVIDER_ID
   | typeof LOCAL_SECRET_PROVIDER_ID;
-
-export type SecretMaterialResolveContext = {
-  params?: Readonly<Record<string, string | undefined>>;
-};
-
-export type ResolveSecretMaterial = (input: {
-  ref: SecretRef;
-  context?: SecretMaterialResolveContext;
-}) => Effect.Effect<string, Error, never>;
-
-export type StoreSecretMaterial = (input: {
-  purpose: SecretMaterialPurpose;
-  value: string;
-  name?: string | null;
-}) => Effect.Effect<SecretRef, Error, never>;
-
-export type DeleteSecretMaterial = (
-  ref: SecretRef,
-) => Effect.Effect<boolean, Error, never>;
-
-export type UpdateSecretMaterial = (input: {
-  ref: SecretRef;
-  name?: string | null;
-  value?: string;
-}) => Effect.Effect<{
-  id: string;
-  providerId: string;
-  name: string | null;
-  purpose: string;
-  createdAt: number;
-  updatedAt: number;
-}, Error, never>;
-
-export class SecretMaterialResolverService extends Context.Tag(
-  "#runtime/SecretMaterialResolverService",
-)<SecretMaterialResolverService, ResolveSecretMaterial>() {}
-
-export class SecretMaterialStorerService extends Context.Tag(
-  "#runtime/SecretMaterialStorerService",
-)<SecretMaterialStorerService, StoreSecretMaterial>() {}
-
-export class SecretMaterialDeleterService extends Context.Tag(
-  "#runtime/SecretMaterialDeleterService",
-)<SecretMaterialDeleterService, DeleteSecretMaterial>() {}
-
-export class SecretMaterialUpdaterService extends Context.Tag(
-  "#runtime/SecretMaterialUpdaterService",
-)<SecretMaterialUpdaterService, UpdateSecretMaterial>() {}
 
 type SecretMaterialProviderRuntime = {
   rows: ControlPlaneStoreShape;
@@ -1085,17 +1049,16 @@ export const createDefaultSecretMaterialResolver = (input: {
 
 export const createDefaultSecretMaterialStorer = (input: {
   rows: ControlPlaneStoreShape;
-  storeProviderId?: SecretStoreProviderId;
   dangerouslyAllowEnvSecrets?: boolean;
   keychainServiceName?: string;
 }): StoreSecretMaterial => {
   const providers = createSecretMaterialProviderRegistry();
   const runtime = createSecretMaterialProviderRuntime(input);
 
-  return ({ purpose, value, name }) =>
+  return ({ purpose, value, name, providerId }) =>
     Effect.gen(function* () {
       const defaultStoreProviderId = yield* resolveDefaultSecretStoreProviderId({
-        storeProviderId: input.storeProviderId,
+        storeProviderId: parseSecretStoreProviderId(providerId) ?? undefined,
         env: runtime.env,
       });
       const provider = yield* getSecretMaterialProvider({
@@ -1182,7 +1145,7 @@ const resolveRuntimeSecretMaterialConfig = (input: {
         ?? runtimeLocalWorkspace?.loadedConfig.config
         ?? null,
       workspaceRoot: input.workspaceRoot
-        ?? runtimeLocalWorkspace?.context.workspaceRoot
+        ?? runtimeLocalWorkspace?.workspace.workspaceRoot
         ?? null,
     };
   });
@@ -1213,7 +1176,6 @@ export const SecretMaterialResolverLive = (input: {
       );
 
 export const SecretMaterialStorerLive = (input: {
-  storeProviderId?: SecretStoreProviderId;
   dangerouslyAllowEnvSecrets?: boolean;
   keychainServiceName?: string;
 } = {}) =>
@@ -1224,7 +1186,6 @@ export const SecretMaterialStorerLive = (input: {
 
       return createDefaultSecretMaterialStorer({
         rows,
-        storeProviderId: input.storeProviderId,
         dangerouslyAllowEnvSecrets: input.dangerouslyAllowEnvSecrets,
         keychainServiceName: input.keychainServiceName,
       });
@@ -1267,7 +1228,6 @@ export const SecretMaterialUpdaterLive = (input: {
 
 export const SecretMaterialLive = (input: {
   resolveSecretMaterial?: ResolveSecretMaterial;
-  storeProviderId?: SecretStoreProviderId;
   dangerouslyAllowEnvSecrets?: boolean;
   keychainServiceName?: string;
   localConfig?: LocalExecutorConfig | null;
@@ -1279,3 +1239,46 @@ export const SecretMaterialLive = (input: {
     SecretMaterialDeleterLive(input),
     SecretMaterialUpdaterLive(input),
   );
+
+export const createLocalInstanceConfigResolver = (): ResolveInstanceConfig => () => {
+  const explicitDefaultStoreProvider = parseSecretStoreProviderId(
+    process.env[SECRET_STORE_PROVIDER_ENV],
+  );
+  const providers = [
+    {
+      id: LOCAL_SECRET_PROVIDER_ID,
+      name: "Local store",
+      canStore: true,
+    },
+  ];
+
+  if (process.platform === "darwin" || process.platform === "linux") {
+    providers.push({
+      id: KEYCHAIN_SECRET_PROVIDER_ID,
+      name:
+        process.platform === "darwin" ? "macOS Keychain" : "Desktop Keyring",
+      canStore:
+        process.platform === "darwin" ||
+        explicitDefaultStoreProvider === KEYCHAIN_SECRET_PROVIDER_ID,
+    });
+  }
+
+  providers.push({
+    id: ENV_SECRET_PROVIDER_ID,
+    name: "Environment variable",
+    canStore: false,
+  });
+
+  return resolveDefaultSecretStoreProviderId({
+    storeProviderId: explicitDefaultStoreProvider ?? undefined,
+  }).pipe(
+    Effect.map((resolvedDefaultStoreProvider) => ({
+      platform: process.platform,
+      secretProviders: providers,
+      defaultSecretStoreProvider: resolvedDefaultStoreProvider,
+    })),
+  );
+};
+
+export const LocalInstanceConfigLive = () =>
+  Layer.succeed(LocalInstanceConfigService, createLocalInstanceConfigResolver());

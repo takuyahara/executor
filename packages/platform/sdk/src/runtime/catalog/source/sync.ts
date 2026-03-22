@@ -11,16 +11,16 @@ import * as Layer from "effect/Layer";
 import {
   RuntimeLocalWorkspaceService,
   type RuntimeLocalWorkspaceState,
-} from "../../local/runtime-context";
+} from "../../workspace/runtime-context";
 import {
   SourceArtifactStore,
   type SourceArtifactStoreShape,
   WorkspaceStateStore,
   type WorkspaceStateStoreShape,
-} from "../../local/storage";
+} from "../../workspace/storage";
 import {
   type LocalWorkspaceState,
-} from "../../local/workspace-state";
+} from "../../workspace-state";
 import {
   RuntimeSourceAuthMaterialService,
 } from "../../auth/source-auth-material";
@@ -30,10 +30,11 @@ import {
 import {
   catalogSyncResultFromMcpManifest,
 } from "@executor/source-mcp";
-import { SecretMaterialResolverService } from "../../local/secret-material-providers";
+import { SecretMaterialResolverService } from "../../workspace/secret-material-providers";
 import { snapshotFromSourceCatalogSyncResult } from "@executor/source-core";
 import {
-  refreshSourceTypeDeclarationInBackground,
+  SourceTypeDeclarationsRefresherService,
+  type SourceTypeDeclarationsRefresherShape,
 } from "./type-declarations";
 import { runtimeEffectError } from "../../effect-errors";
 
@@ -46,6 +47,7 @@ type RuntimeSourceCatalogSyncDeps = {
   runtimeLocalWorkspace: RuntimeLocalWorkspaceState;
   workspaceStateStore: WorkspaceStateStoreShape;
   sourceArtifactStore: SourceArtifactStoreShape;
+  sourceTypeDeclarationsRefresher: SourceTypeDeclarationsRefresherShape;
   resolveSecretMaterial: Effect.Effect.Success<typeof SecretMaterialResolverService>;
   sourceAuthMaterialService: Effect.Effect.Success<typeof RuntimeSourceAuthMaterialService>;
 };
@@ -54,6 +56,7 @@ type SourceCatalogSyncServices =
   | RuntimeLocalWorkspaceService
   | WorkspaceStateStore
   | SourceArtifactStore
+  | SourceTypeDeclarationsRefresherService
   | RuntimeSourceAuthMaterialService
   | SecretMaterialResolverService;
 
@@ -75,17 +78,16 @@ export class RuntimeSourceCatalogSyncService extends Context.Tag(
 const ensureRuntimeCatalogSyncWorkspace = (
   deps: RuntimeSourceCatalogSyncDeps,
   workspaceId: Source["workspaceId"],
-) => {
+) =>
+  Effect.gen(function* () {
   if (deps.runtimeLocalWorkspace.installation.workspaceId !== workspaceId) {
-    return Effect.fail(
+    return yield* Effect.fail(
       runtimeEffectError("catalog/source/sync", 
         `Runtime local workspace mismatch: expected ${workspaceId}, got ${deps.runtimeLocalWorkspace.installation.workspaceId}`,
       ),
     );
   }
-
-  return Effect.succeed(deps.runtimeLocalWorkspace.context);
-};
+  });
 
 const syncSourceCatalogWithDeps = (
   deps: RuntimeSourceCatalogSyncDeps,
@@ -95,13 +97,10 @@ const syncSourceCatalogWithDeps = (
   },
 ): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
-    const workspaceContext = yield* ensureRuntimeCatalogSyncWorkspace(
-      deps,
-      input.source.workspaceId,
-    );
+    yield* ensureRuntimeCatalogSyncWorkspace(deps, input.source.workspaceId);
 
     if (!shouldIndexSource(input.source)) {
-      const state = yield* deps.workspaceStateStore.load(workspaceContext);
+      const state = yield* deps.workspaceStateStore.load();
       const existingSourceState = state.sources[input.source.id];
       const nextState: LocalWorkspaceState = {
         ...state,
@@ -117,15 +116,11 @@ const syncSourceCatalogWithDeps = (
         },
       };
       yield* deps.workspaceStateStore.write({
-        context: workspaceContext,
         state: nextState,
       });
-      yield* Effect.sync(() => {
-        refreshSourceTypeDeclarationInBackground({
-          context: workspaceContext,
-          source: input.source,
-          snapshot: null,
-        });
+      yield* deps.sourceTypeDeclarationsRefresher.refreshSourceInBackground({
+        source: input.source,
+        snapshot: null,
       });
       return;
     }
@@ -143,7 +138,6 @@ const syncSourceCatalogWithDeps = (
     });
     const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
     yield* deps.sourceArtifactStore.write({
-      context: workspaceContext,
       sourceId: input.source.id,
       artifact: deps.sourceArtifactStore.build({
         source: input.source,
@@ -151,7 +145,7 @@ const syncSourceCatalogWithDeps = (
       }),
     });
 
-    const state = yield* deps.workspaceStateStore.load(workspaceContext);
+    const state = yield* deps.workspaceStateStore.load();
     const existingSourceState = state.sources[input.source.id];
     const nextState: LocalWorkspaceState = {
       ...state,
@@ -167,16 +161,12 @@ const syncSourceCatalogWithDeps = (
       },
     };
     yield* deps.workspaceStateStore.write({
-      context: workspaceContext,
       state: nextState,
     });
 
-    yield* Effect.sync(() => {
-      refreshSourceTypeDeclarationInBackground({
-        context: workspaceContext,
-        source: input.source,
-        snapshot,
-      });
+    yield* deps.sourceTypeDeclarationsRefresher.refreshSourceInBackground({
+      source: input.source,
+      snapshot,
     });
   }).pipe(
     Effect.withSpan("source.catalog.sync", {
@@ -197,10 +187,7 @@ const persistMcpCatalogSnapshotFromManifestWithDeps = (
   },
 ): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
-    const workspaceContext = yield* ensureRuntimeCatalogSyncWorkspace(
-      deps,
-      input.source.workspaceId,
-    );
+    yield* ensureRuntimeCatalogSyncWorkspace(deps, input.source.workspaceId);
     const syncResult = catalogSyncResultFromMcpManifest({
       source: input.source,
       endpoint: input.source.endpoint,
@@ -209,7 +196,6 @@ const persistMcpCatalogSnapshotFromManifestWithDeps = (
     const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
 
     yield* deps.sourceArtifactStore.write({
-      context: workspaceContext,
       sourceId: input.source.id,
       artifact: deps.sourceArtifactStore.build({
         source: input.source,
@@ -217,12 +203,9 @@ const persistMcpCatalogSnapshotFromManifestWithDeps = (
       }),
     });
 
-    yield* Effect.sync(() => {
-      refreshSourceTypeDeclarationInBackground({
-        context: workspaceContext,
-        source: input.source,
-        snapshot,
-      });
+    yield* deps.sourceTypeDeclarationsRefresher.refreshSourceInBackground({
+      source: input.source,
+      snapshot,
     });
   });
 
@@ -234,6 +217,8 @@ export const syncSourceCatalog = (input: {
     const runtimeLocalWorkspace = yield* RuntimeLocalWorkspaceService;
     const workspaceStateStore = yield* WorkspaceStateStore;
     const sourceArtifactStore = yield* SourceArtifactStore;
+    const sourceTypeDeclarationsRefresher =
+      yield* SourceTypeDeclarationsRefresherService;
     const resolveSecretMaterial = yield* SecretMaterialResolverService;
     const sourceAuthMaterialService = yield* RuntimeSourceAuthMaterialService;
 
@@ -242,6 +227,7 @@ export const syncSourceCatalog = (input: {
         runtimeLocalWorkspace,
         workspaceStateStore,
         sourceArtifactStore,
+        sourceTypeDeclarationsRefresher,
         resolveSecretMaterial,
         sourceAuthMaterialService,
       },
@@ -260,6 +246,8 @@ export const persistMcpCatalogSnapshotFromManifest = (input: {
     const runtimeLocalWorkspace = yield* RuntimeLocalWorkspaceService;
     const workspaceStateStore = yield* WorkspaceStateStore;
     const sourceArtifactStore = yield* SourceArtifactStore;
+    const sourceTypeDeclarationsRefresher =
+      yield* SourceTypeDeclarationsRefresherService;
     const resolveSecretMaterial = yield* SecretMaterialResolverService;
     const sourceAuthMaterialService = yield* RuntimeSourceAuthMaterialService;
 
@@ -268,6 +256,7 @@ export const persistMcpCatalogSnapshotFromManifest = (input: {
         runtimeLocalWorkspace,
         workspaceStateStore,
         sourceArtifactStore,
+        sourceTypeDeclarationsRefresher,
         resolveSecretMaterial,
         sourceAuthMaterialService,
       },
@@ -281,6 +270,8 @@ export const RuntimeSourceCatalogSyncLive = Layer.effect(
     const runtimeLocalWorkspace = yield* RuntimeLocalWorkspaceService;
     const workspaceStateStore = yield* WorkspaceStateStore;
     const sourceArtifactStore = yield* SourceArtifactStore;
+    const sourceTypeDeclarationsRefresher =
+      yield* SourceTypeDeclarationsRefresherService;
     const resolveSecretMaterial = yield* SecretMaterialResolverService;
     const sourceAuthMaterialService = yield* RuntimeSourceAuthMaterialService;
 
@@ -288,6 +279,7 @@ export const RuntimeSourceCatalogSyncLive = Layer.effect(
       runtimeLocalWorkspace,
       workspaceStateStore,
       sourceArtifactStore,
+      sourceTypeDeclarationsRefresher,
       resolveSecretMaterial,
       sourceAuthMaterialService,
     };

@@ -28,7 +28,7 @@ export type ReleaseWorkspaceFixture = ReleaseWorkspaceFixtureManifest & {
 };
 
 export const releaseWorkspaceFixturesRoot = fileURLToPath(
-  new URL("../__fixtures__", import.meta.url),
+  new URL("../../sdk/src/runtime/__fixtures__", import.meta.url),
 );
 
 const decodeReleaseWorkspaceFixtureManifest = Schema.decodeUnknownSync(

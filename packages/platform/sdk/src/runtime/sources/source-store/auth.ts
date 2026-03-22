@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 
 import { authArtifactSecretMaterialRefs } from "../../auth/auth-artifacts";
 import { removeAuthLeaseAndSecrets } from "../../auth/auth-leases";
-import { createDefaultSecretMaterialDeleter } from "../../local/secret-material-providers";
+import type { DeleteSecretMaterial } from "../../workspace/secret-material-providers";
 import type { ControlPlaneStoreShape } from "../../store";
 
 const secretRefKey = (ref: { providerId: string; handle: string }): string =>
@@ -23,13 +23,12 @@ export const cleanupAuthArtifactSecretRefs = (
     previous: AuthArtifact | null;
     next: AuthArtifact | null;
   },
+  deleteSecretMaterial: DeleteSecretMaterial,
 ) =>
   Effect.gen(function* () {
     if (input.previous === null) {
       return;
     }
-
-    const deleteSecretMaterial = createDefaultSecretMaterialDeleter({ rows });
     const nextRefKeys = new Set(
       (input.next === null ? [] : authArtifactSecretMaterialRefs(input.next)).map(
         secretRefKey,
@@ -97,6 +96,7 @@ export const removeAuthArtifactsForSource = (
     workspaceId: WorkspaceId;
     sourceId: Source["id"];
   },
+  deleteSecretMaterial: DeleteSecretMaterial,
 ) =>
   Effect.gen(function* () {
     const existingAuthArtifacts = yield* rows.authArtifacts.listByWorkspaceAndSourceId({
@@ -114,7 +114,7 @@ export const removeAuthArtifactsForSource = (
       (artifact) =>
         removeAuthLeaseAndSecrets(rows, {
           authArtifactId: artifact.id,
-        }),
+        }, deleteSecretMaterial),
       { discard: true },
     );
 
@@ -124,7 +124,7 @@ export const removeAuthArtifactsForSource = (
         cleanupAuthArtifactSecretRefs(rows, {
           previous: artifact,
           next: null,
-        }),
+        }, deleteSecretMaterial),
       { discard: true },
     );
 

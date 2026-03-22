@@ -31,28 +31,26 @@ import {
   provideControlPlaneRuntime,
   RuntimeExecutionResolverService,
 } from "./index";
-import { createLocalControlPlaneRuntime as createControlPlaneRuntime } from "../../../sdk-file/src/index";
 import { createSourceFromPayload } from "./sources/source-definitions";
 import { decodeSourceCredentialSelectionContent } from "./sources/source-credential-interactions";
 import { persistSource } from "./sources/source-store";
 import { withControlPlaneClient } from "./execution/test-http-client";
 import { runtimeEffectError } from "./effect-errors";
 import {
+  buildLocalSourceArtifact,
+  createLocalControlPlaneRuntime as createControlPlaneRuntime,
+  deriveLocalInstallation,
+  readLocalSourceArtifact,
   resolveLocalWorkspaceContext,
+  writeLocalControlPlaneState,
+  writeLocalSourceArtifact,
   writeProjectLocalExecutorConfig,
-} from "./local/config";
-import { writeLocalControlPlaneState } from "./local/control-plane-store";
-import { deriveLocalInstallation } from "./local/installation";
+  writeLocalWorkspaceState,
+} from "../../../sdk-file/src/index";
 import {
   decodeSourceCredentialInteraction,
   submitSourceCredentialInteraction,
-} from "./local/operations";
-import {
-  buildLocalSourceArtifact,
-  readLocalSourceArtifact,
-  writeLocalSourceArtifact,
-} from "./local/source-artifacts";
-import { writeLocalWorkspaceState } from "./local/workspace-state";
+} from "../local/operations";
 
 const makeRuntime = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

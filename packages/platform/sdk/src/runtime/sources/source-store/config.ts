@@ -6,12 +6,12 @@ import type {
 } from "#schema";
 import { SourceIdSchema } from "#schema";
 
-import type { LoadedLocalExecutorConfig } from "../../local/config";
-import { LocalUnsupportedSourceKindError } from "../../local/errors";
+import type { LoadedLocalExecutorConfig } from "../../workspace-config";
+import { LocalUnsupportedSourceKindError } from "../../workspace-errors";
 import {
   fromConfigSecretProviderId,
   toConfigSecretProviderId,
-} from "../../local/config-secrets";
+} from "../../workspace/config-secrets";
 import { getSourceAdapterForSource } from "../source-adapters";
 import { slugify } from "../slug";
 

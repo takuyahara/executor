@@ -22,14 +22,16 @@ import {
   controlPlaneOpenApiSpec,
 } from "@executor/platform-api";
 import {
-  buildLocalSourceArtifact,
   catalogSyncResultFromMcpManifest,
-  deriveLocalInstallation,
+  type ResolveExecutionEnvironment,
+} from "@executor/platform-sdk/runtime";
+import {
+  buildLocalSourceArtifact,
+  getOrProvisionLocalInstallation,
   resolveLocalWorkspaceContext,
   writeLocalSourceArtifact,
   writeProjectLocalExecutorConfig,
-  type ResolveExecutionEnvironment,
-} from "@executor/platform-sdk/runtime";
+} from "@executor/platform-sdk-file";
 import { SourceIdSchema } from "@executor/platform-sdk/schema";
 import { makeSesExecutor } from "@executor/runtime-ses";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -97,7 +99,7 @@ const writeConfiguredLocalMcpSource = (input: {
     const context = yield* resolveLocalWorkspaceContext({
       workspaceRoot: input.workspaceRoot,
     });
-    const installation = deriveLocalInstallation(context);
+    const installation = yield* getOrProvisionLocalInstallation({ context });
 
     yield* writeProjectLocalExecutorConfig({
       context,
