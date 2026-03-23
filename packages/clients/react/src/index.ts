@@ -9,9 +9,7 @@ import type {
   CreateSecretPayload,
   CreateSecretResult,
   CreateSourcePayload,
-  CreateWorkspaceOauthClientPayload,
   DeleteSecretResult,
-  DiscoverSourcePayload,
   InstanceConfig,
   LocalInstallation,
   SecretListItem,
@@ -21,11 +19,9 @@ import type {
 } from "@executor/platform-api";
 import type {
   Source,
-  SourceDiscoveryResult,
   SourceInspection,
   SourceInspectionDiscoverResult,
   SourceInspectionToolDetail,
-  ScopeOauthClient as WorkspaceOauthClient,
 } from "@executor/platform-sdk/schema";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -67,13 +63,6 @@ type SourceDiscoveryKeyParts = readonly [
   string,
   number | null,
 ];
-type WorkspaceOauthClientsKeyParts = readonly [
-  boolean,
-  Source["scopeId"],
-  string,
-  string,
-];
-
 type InvalidationTarget = {
   workspaceId?: Source["scopeId"];
   accountId?: string;
@@ -83,7 +72,6 @@ type InvalidationTarget = {
 type ActiveQueryCollections = {
   sourceLists: Set<string>;
   sources: Set<string>;
-  workspaceOauthClients: Set<string>;
   inspections: Set<string>;
   toolDetails: Set<string>;
   discoveries: Set<string>;
@@ -170,16 +158,6 @@ const encodeDiscoveryKey = (
   limit: number | null,
 ): string =>
   encodeAtomKey([enabled, workspaceId, accountId, sourceId, query, limit] satisfies SourceDiscoveryKeyParts);
-
-const encodeWorkspaceOauthClientsKey = (
-  enabled: boolean,
-  workspaceId: Source["scopeId"],
-  accountId: string,
-  providerKey: string,
-): string =>
-  encodeAtomKey(
-    [enabled, workspaceId, accountId, providerKey] satisfies WorkspaceOauthClientsKeyParts,
-  );
 
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
@@ -391,26 +369,6 @@ const sourceDiscoveryAtom = Atom.family((key: string) => {
   ).pipe(Atom.keepAlive);
 });
 
-const workspaceOauthClientsAtom = Atom.family((key: string) => {
-  const [enabled, workspaceId, accountId, providerKey] = decodeAtomKey<WorkspaceOauthClientsKeyParts>(key);
-
-  return Atom.make(
-    enabled
-      ? controlPlaneRequest({
-          accountId,
-          execute: (client) => client.sources.listWorkspaceOauthClients({
-            path: {
-              workspaceId,
-            },
-            urlParams: {
-              providerKey,
-            },
-          }),
-        })
-      : Effect.never,
-  ).pipe(Atom.keepAlive);
-});
-
 export type Loadable<T> =
   | { status: "loading" }
   | { status: "error"; error: Error }
@@ -539,7 +497,6 @@ const setCachedAtomValue = <A>(
 const createActiveQueryCollections = (): ActiveQueryCollections => ({
   sourceLists: new Set(),
   sources: new Set(),
-  workspaceOauthClients: new Set(),
   inspections: new Set(),
   toolDetails: new Set(),
   discoveries: new Set(),
@@ -579,13 +536,6 @@ const invalidateTrackedQueries = (
     const [enabled, workspaceId, accountId, sourceId] = decodeAtomKey<SourceKeyParts>(key);
     if (enabled && targetMatches(target, workspaceId, accountId, sourceId)) {
       registry.refresh(sourceAtom(key));
-    }
-  });
-
-  activeQueries.workspaceOauthClients.forEach((key) => {
-    const [enabled, workspaceId, accountId] = decodeAtomKey<WorkspaceOauthClientsKeyParts>(key);
-    if (enabled && targetMatches(target, workspaceId, accountId)) {
-      registry.refresh(workspaceOauthClientsAtom(key));
     }
   });
 
@@ -946,37 +896,6 @@ export const useSource = (sourceId: string): Loadable<Source> => {
   return workspace.enabled ? source : pendingLoadable(workspace.workspace);
 };
 
-export const useWorkspaceOauthClients = (
-  providerKey: string | null,
-): Loadable<ReadonlyArray<WorkspaceOauthClient>> => {
-  const workspace = useWorkspaceRequestContext();
-  const key = encodeWorkspaceOauthClientsKey(
-    workspace.enabled && providerKey !== null,
-    workspace.workspaceId,
-    workspace.accountId,
-    providerKey ?? "",
-  );
-  useTrackActiveKey(
-    "workspaceOauthClients",
-    key,
-    workspace.enabled && providerKey !== null,
-  );
-  const oauthClients = useLoadableAtom(workspaceOauthClientsAtom(key));
-
-  if (!workspace.enabled) {
-    return pendingLoadable(workspace.workspace);
-  }
-
-  if (providerKey === null) {
-    return {
-      status: "ready",
-      data: [],
-    };
-  }
-
-  return oauthClients;
-};
-
 export const useSourceInspection = (sourceId: string): Loadable<SourceInspection> => {
   const workspace = useWorkspaceRequestContext();
   const requestedSourceId = workspace.enabled
@@ -1214,116 +1133,20 @@ export const useRemoveSource = () =>
     },
   );
 
-export const useDiscoverSource = () =>
-  useSourceMutation<DiscoverSourcePayload, SourceDiscoveryResult>(
-    React.useCallback(
-      ({ accountId, payload }) =>
-        runControlPlane({
-          accountId,
-          execute: (client) => client.sources.discover({
-            payload,
-          }),
-        }),
-      [],
-    ),
-  );
-
-export const useCreateWorkspaceOauthClient = () =>
-  useSourceMutation<CreateWorkspaceOauthClientPayload, WorkspaceOauthClient>(
-    React.useCallback(
-      ({ workspaceId, accountId, payload }) =>
-        runControlPlane({
-          accountId,
-          execute: (client) => client.sources.createWorkspaceOauthClient({
-            path: {
-              workspaceId,
-            },
-            payload,
-          }),
-        }),
-      [],
-    ),
-    {
-      onSuccess: (context) => {
-        context.invalidateQueries({
-          workspaceId: context.workspaceId,
-          accountId: context.accountId,
-        });
-      },
-    },
-  );
-
-export const useRemoveWorkspaceOauthClient = () =>
-  useSourceMutation<WorkspaceOauthClient["id"], { removed: boolean }>(
-    React.useCallback(
-      ({ workspaceId, accountId, payload }) =>
-        runControlPlane({
-          accountId,
-          execute: (client) => client.sources.removeWorkspaceOauthClient({
-            path: {
-              workspaceId,
-              oauthClientId: payload,
-            },
-          }),
-        }),
-      [],
-    ),
-    {
-      onSuccess: (context) => {
-        context.invalidateQueries({
-          workspaceId: context.workspaceId,
-          accountId: context.accountId,
-        });
-      },
-    },
-  );
-
-export const useRemoveProviderAuthGrant = () =>
-  useSourceMutation<
-    Extract<Source["auth"], { kind: "provider_grant_ref" }>["grantId"],
-    { removed: boolean }
-  >(
-    React.useCallback(
-      ({ workspaceId, accountId, payload }) =>
-        runControlPlane({
-          accountId,
-          execute: (client) => client.sources.removeProviderAuthGrant({
-            path: {
-              workspaceId,
-              grantId: payload,
-            },
-          }),
-        }),
-      [],
-    ),
-    {
-      onSuccess: (context) => {
-        context.invalidateQueries({
-          workspaceId: context.workspaceId,
-          accountId: context.accountId,
-        });
-      },
-    },
-  );
-
 export type {
   CreateSecretPayload,
   CreateSecretResult,
   CreateSourcePayload,
-  CreateWorkspaceOauthClientPayload,
   DeleteSecretResult,
-  DiscoverSourcePayload,
   InstanceConfig,
   LocalInstallation,
 
   SecretListItem,
   Source,
-  SourceDiscoveryResult,
   SourceInspection,
   SourceInspectionDiscoverResult,
   SourceInspectionToolDetail,
   UpdateSecretPayload,
   UpdateSecretResult,
   UpdateSourcePayload,
-  WorkspaceOauthClient,
 };

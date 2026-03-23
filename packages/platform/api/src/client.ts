@@ -34,19 +34,6 @@ export type ExecutorApiClient = {
     remove: PromiseMethod<ExecutorApiEffectClient["policies"]["remove"]>;
   };
   sources: {
-    discover: PromiseMethod<ExecutorApiEffectClient["sources"]["discover"]>;
-    listWorkspaceOauthClients: PromiseMethod<
-      ExecutorApiEffectClient["sources"]["listWorkspaceOauthClients"]
-    >;
-    createWorkspaceOauthClient: PromiseMethod<
-      ExecutorApiEffectClient["sources"]["createWorkspaceOauthClient"]
-    >;
-    removeWorkspaceOauthClient: PromiseMethod<
-      ExecutorApiEffectClient["sources"]["removeWorkspaceOauthClient"]
-    >;
-    removeProviderAuthGrant: PromiseMethod<
-      ExecutorApiEffectClient["sources"]["removeProviderAuthGrant"]
-    >;
     list: PromiseMethod<ExecutorApiEffectClient["sources"]["list"]>;
     create: PromiseMethod<ExecutorApiEffectClient["sources"]["create"]>;
     get: PromiseMethod<ExecutorApiEffectClient["sources"]["get"]>;
@@ -59,16 +46,6 @@ export type ExecutorApiClient = {
     >;
     credentialPage: PromiseMethod<ExecutorApiEffectClient["sources"]["credentialPage"]>;
     credentialSubmit: PromiseMethod<ExecutorApiEffectClient["sources"]["credentialSubmit"]>;
-    credentialComplete: PromiseMethod<
-      ExecutorApiEffectClient["sources"]["credentialComplete"]
-    >;
-    providerOauthComplete: PromiseMethod<
-      ExecutorApiEffectClient["sources"]["providerOauthComplete"]
-    >;
-  };
-  oauth: {
-    startSourceAuth: PromiseMethod<ExecutorApiEffectClient["oauth"]["startSourceAuth"]>;
-    sourceAuthCallback: PromiseMethod<ExecutorApiEffectClient["oauth"]["sourceAuthCallback"]>;
   };
   executions: {
     create: PromiseMethod<ExecutorApiEffectClient["executions"]["create"]>;
@@ -125,23 +102,6 @@ export const createExecutorApiClient = async (input: {
       remove: wrapMethod(effectClientPromise, (client) => client.policies.remove),
     },
     sources: {
-      discover: wrapMethod(effectClientPromise, (client) => client.sources.discover),
-      listWorkspaceOauthClients: wrapMethod(
-        effectClientPromise,
-        (client) => client.sources.listWorkspaceOauthClients,
-      ),
-      createWorkspaceOauthClient: wrapMethod(
-        effectClientPromise,
-        (client) => client.sources.createWorkspaceOauthClient,
-      ),
-      removeWorkspaceOauthClient: wrapMethod(
-        effectClientPromise,
-        (client) => client.sources.removeWorkspaceOauthClient,
-      ),
-      removeProviderAuthGrant: wrapMethod(
-        effectClientPromise,
-        (client) => client.sources.removeProviderAuthGrant,
-      ),
       list: wrapMethod(effectClientPromise, (client) => client.sources.list),
       create: wrapMethod(effectClientPromise, (client) => client.sources.create),
       get: wrapMethod(effectClientPromise, (client) => client.sources.get),
@@ -163,24 +123,6 @@ export const createExecutorApiClient = async (input: {
       credentialSubmit: wrapMethod(
         effectClientPromise,
         (client) => client.sources.credentialSubmit,
-      ),
-      credentialComplete: wrapMethod(
-        effectClientPromise,
-        (client) => client.sources.credentialComplete,
-      ),
-      providerOauthComplete: wrapMethod(
-        effectClientPromise,
-        (client) => client.sources.providerOauthComplete,
-      ),
-    },
-    oauth: {
-      startSourceAuth: wrapMethod(
-        effectClientPromise,
-        (client) => client.oauth.startSourceAuth,
-      ),
-      sourceAuthCallback: wrapMethod(
-        effectClientPromise,
-        (client) => client.oauth.sourceAuthCallback,
       ),
     },
     executions: {

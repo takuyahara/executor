@@ -38,28 +38,10 @@ export {
 } from "./local/api";
 
 export {
-  OAuthApi,
-  StartSourceOAuthPayloadSchema,
-  StartSourceOAuthResultSchema,
-  CompleteSourceOAuthResultSchema,
-  SourceOAuthPopupFailureResultSchema,
-  SourceOAuthPopupResultSchema,
-  SourceOAuthPopupSuccessResultSchema,
-  type StartSourceOAuthPayload,
-  type StartSourceOAuthResult,
-  type CompleteSourceOAuthResult,
-  type SourceOAuthPopupResult,
-} from "./oauth/api";
-
-export {
-  CreateWorkspaceOauthClientPayloadSchema,
   CreateSourcePayloadSchema,
-  DiscoverSourcePayloadSchema,
   SourcesApi,
   UpdateSourcePayloadSchema,
-  type CreateWorkspaceOauthClientPayload,
   type CreateSourcePayload,
-  type DiscoverSourcePayload,
   type UpdateSourcePayload,
 } from "./sources/api";
 

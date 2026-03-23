@@ -4,7 +4,6 @@ import {
   type ScopeId as AccountId,
   LocalInstallationSchema,
   LocalScopePolicySchema,
-  SourceDiscoveryResultSchema,
   SourceIdSchema,
   SourceInspectionDiscoverPayloadSchema,
   SourceInspectionDiscoverResultSchema,
@@ -12,7 +11,6 @@ import {
   SourceInspectionToolDetailSchema,
   SourceSchema,
   type ScopeId as WorkspaceId,
-  ScopeOauthClientSchema,
 } from "@executor/platform-sdk/schema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -59,7 +57,6 @@ import {
   createLocalSecret,
   createPolicy,
   deleteLocalSecret,
-  discoverSource,
   discoverSourceInspectionTools,
   getPolicy,
   getSource,
@@ -81,9 +78,6 @@ import {
   UpdatePolicyPayloadSchema,
 } from "@executor/platform-sdk/contracts";
 import {
-  CreateScopeOauthClientPayloadSchema,
-  DiscoverSourcePayloadSchema,
-  type CreateScopeOauthClientPayload as CreateWorkspaceOauthClientPayload,
   UpdateSourcePayloadSchema,
 } from "@executor/platform-sdk/contracts";
 
@@ -129,9 +123,6 @@ const updateSourceInputSchema = Schema.standardSchemaV1(
     payload: UpdateSourcePayloadSchema,
   }),
 );
-const discoverSourceInputSchema = Schema.standardSchemaV1(
-  DiscoverSourcePayloadSchema,
-);
 const inspectToolInputSchema = Schema.standardSchemaV1(
   Schema.Struct({
     sourceId: SourceIdSchema,
@@ -161,27 +152,6 @@ const updatePolicyInputSchema = Schema.standardSchemaV1(
     payload: UpdatePolicyPayloadSchema,
   }),
 );
-const workspaceOauthClientListInputSchema = Schema.standardSchemaV1(
-  Schema.Struct({
-    providerKey: Schema.String,
-  }),
-);
-const workspaceOauthClientListOutputSchema = Schema.standardSchemaV1(
-  Schema.Array(ScopeOauthClientSchema),
-);
-const createWorkspaceOauthClientInputSchema = Schema.standardSchemaV1(
-  CreateScopeOauthClientPayloadSchema,
-);
-const removeWorkspaceOauthClientInputSchema = Schema.standardSchemaV1(
-  Schema.Struct({
-    oauthClientId: Schema.String,
-  }),
-);
-const removeProviderGrantInputSchema = Schema.standardSchemaV1(
-  Schema.Struct({
-    grantId: Schema.String,
-  }),
-);
 const sourceOutputSchema = Schema.standardSchemaV1(SourceSchema);
 const sourceInspectionOutputSchema = Schema.standardSchemaV1(
   SourceInspectionSchema,
@@ -191,9 +161,6 @@ const sourceInspectionToolOutputSchema = Schema.standardSchemaV1(
 );
 const sourceInspectionDiscoverOutputSchema = Schema.standardSchemaV1(
   SourceInspectionDiscoverResultSchema,
-);
-const sourceDiscoveryOutputSchema = Schema.standardSchemaV1(
-  SourceDiscoveryResultSchema,
 );
 const localScopePolicyOutputSchema = Schema.standardSchemaV1(
   LocalScopePolicySchema,
@@ -384,22 +351,6 @@ export const createWorkspaceExecutorAdminToolMap = (
       },
       metadata,
     }),
-    "executor.sources.discover": toTool({
-      tool: {
-        description:
-          "Probe a URL and infer whether it looks like MCP, OpenAPI, GraphQL, or another supported source.",
-        inputSchema: discoverSourceInputSchema,
-        outputSchema: sourceDiscoveryOutputSchema,
-        execute: (payload: { url: string; probeAuth?: unknown }) =>
-          Effect.runPromise(
-            discoverSource({
-              url: payload.url,
-              probeAuth: payload.probeAuth as never,
-            }),
-          ),
-      },
-      metadata,
-    }),
     "executor.sources.list": toTool({
       tool: {
         description: "List sources connected in the current workspace.",
@@ -534,82 +485,6 @@ export const createWorkspaceExecutorAdminToolMap = (
               payload: payload as never,
             }),
             runtimeLayer,
-            runtimeLocalScope: input.runtimeLocalScope,
-          }),
-      },
-      metadata,
-    }),
-    "executor.sources.oauthClients.list": toTool({
-      tool: {
-        description: "List workspace OAuth clients for a provider key.",
-        inputSchema: workspaceOauthClientListInputSchema,
-        outputSchema: workspaceOauthClientListOutputSchema,
-        execute: ({ providerKey }: { providerKey: string }) =>
-          runScopeStorageEffect({
-            effect: input.sourceAuthService.listScopeOauthClients({
-              scopeId: input.scopeId,
-              providerKey,
-            }),
-            scopeStorageLayer,
-            runtimeLocalScope: input.runtimeLocalScope,
-          }),
-      },
-      metadata,
-    }),
-    "executor.sources.oauthClients.create": toTool({
-      tool: {
-        description:
-          "Create a workspace OAuth client used for shared provider auth flows.",
-        inputSchema: createWorkspaceOauthClientInputSchema,
-        outputSchema: Schema.standardSchemaV1(ScopeOauthClientSchema),
-        execute: (payload: CreateWorkspaceOauthClientPayload) =>
-          runScopeStorageEffect({
-            effect: input.sourceAuthService.createScopeOauthClient({
-              scopeId: input.scopeId,
-              providerKey: payload.providerKey,
-              label: payload.label,
-              oauthClient: payload.oauthClient,
-            }),
-            scopeStorageLayer,
-            runtimeLocalScope: input.runtimeLocalScope,
-          }),
-      },
-      metadata,
-    }),
-    "executor.sources.oauthClients.remove": toTool({
-      tool: {
-        description: "Remove a workspace OAuth client.",
-        inputSchema: removeWorkspaceOauthClientInputSchema,
-        outputSchema: removeResultSchema,
-        execute: ({ oauthClientId }: { oauthClientId: string }) =>
-          runScopeStorageEffect({
-            effect: input.sourceAuthService
-              .removeScopeOauthClient({
-                scopeId: input.scopeId,
-                oauthClientId: oauthClientId as never,
-              })
-              .pipe(Effect.map((removed) => ({ removed }))),
-            scopeStorageLayer,
-            runtimeLocalScope: input.runtimeLocalScope,
-          }),
-      },
-      metadata,
-    }),
-    "executor.sources.providerGrants.remove": toTool({
-      tool: {
-        description:
-          "Revoke a shared provider grant reference from the local workspace.",
-        inputSchema: removeProviderGrantInputSchema,
-        outputSchema: removeResultSchema,
-        execute: ({ grantId }: { grantId: string }) =>
-          runScopeStorageEffect({
-            effect: input.sourceAuthService
-              .removeProviderAuthGrant({
-                scopeId: input.scopeId,
-                grantId: grantId as never,
-              })
-              .pipe(Effect.map((removed) => ({ removed }))),
-            scopeStorageLayer,
             runtimeLocalScope: input.runtimeLocalScope,
           }),
       },
@@ -780,20 +655,6 @@ export const createExecutorAdminToolMap = (input: {
       },
       metadata,
     }),
-    "executor.sources.discover": toTool({
-      tool: {
-        description:
-          "Probe a URL and infer whether it looks like MCP, OpenAPI, GraphQL, or another supported source.",
-        inputSchema: discoverSourceInputSchema,
-        outputSchema: sourceDiscoveryOutputSchema,
-        execute: (payload: { url: string; probeAuth?: unknown }) =>
-          input.executor.sources.discover({
-            url: payload.url,
-            probeAuth: payload.probeAuth as never,
-          }),
-      },
-      metadata,
-    }),
     "executor.sources.list": toTool({
       tool: {
         description: "List sources connected in the current workspace.",
@@ -885,57 +746,6 @@ export const createExecutorAdminToolMap = (input: {
             sourceId: sourceId as never,
             payload: payload as never,
           }),
-      },
-      metadata,
-    }),
-    "executor.sources.oauthClients.list": toTool({
-      tool: {
-        description: "List stored workspace OAuth clients for one provider.",
-        inputSchema: workspaceOauthClientListInputSchema,
-        outputSchema: workspaceOauthClientListOutputSchema,
-        execute: ({ providerKey }: { providerKey: string }) =>
-          input.executor.sources.oauthClients.list(providerKey),
-      },
-      metadata,
-    }),
-    "executor.sources.oauthClients.create": toTool({
-      tool: {
-        description:
-          "Create a workspace OAuth client for a provider-backed source flow.",
-        inputSchema: createWorkspaceOauthClientInputSchema,
-        outputSchema: Schema.standardSchemaV1(ScopeOauthClientSchema),
-        execute: (payload: CreateWorkspaceOauthClientPayload) =>
-          input.executor.sources.oauthClients.create(payload),
-      },
-      metadata,
-    }),
-    "executor.sources.oauthClients.remove": toTool({
-      tool: {
-        description: "Remove a stored workspace OAuth client.",
-        inputSchema: removeWorkspaceOauthClientInputSchema,
-        outputSchema: removeResultSchema,
-        execute: async ({
-          oauthClientId,
-        }: {
-          oauthClientId: string;
-        }) => ({
-          removed: await input.executor.sources.oauthClients.remove(
-            oauthClientId as never,
-          ),
-        }),
-      },
-      metadata,
-    }),
-    "executor.sources.providerGrants.remove": toTool({
-      tool: {
-        description: "Remove one stored provider auth grant.",
-        inputSchema: removeProviderGrantInputSchema,
-        outputSchema: removeResultSchema,
-        execute: async ({ grantId }: { grantId: string }) => ({
-          removed: await input.executor.sources.providerGrants.remove(
-            grantId as never,
-          ),
-        }),
       },
       metadata,
     }),

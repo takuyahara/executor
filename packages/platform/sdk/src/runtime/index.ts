@@ -111,7 +111,6 @@ export * from "./sources/source-store";
 export * from "./executor-state-store";
 export * from "./execution/scope/environment";
 export * from "../sources/inspection";
-export * from "../sources/discovery";
 export * from "./execution/service";
 export type {
   CreateScopeInternalToolMap,

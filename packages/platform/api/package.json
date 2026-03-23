@@ -12,8 +12,6 @@
     "./local/api": "./src/local/api.ts",
     "./local/http": "./src/local/http.ts",
     "./local-context": "./src/local-context.ts",
-    "./oauth/api": "./src/oauth/api.ts",
-    "./oauth/http": "./src/oauth/http.ts",
     "./policies/api": "./src/policies/api.ts",
     "./policies/http": "./src/policies/http.ts",
     "./sources/api": "./src/sources/api.ts",

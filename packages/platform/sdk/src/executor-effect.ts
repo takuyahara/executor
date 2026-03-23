@@ -7,8 +7,6 @@ import type {
   ExecutionInteraction,
   LocalInstallation,
   LocalScopePolicy,
-  ProviderAuthGrant,
-  ScopeOauthClient,
   Source,
 } from "./schema";
 import { ExecutionIdSchema } from "./schema";
@@ -50,11 +48,9 @@ import {
   updatePolicy,
 } from "./policies/operations";
 import type {
-  CreateScopeOauthClientPayload,
   CreateSourcePayload,
   UpdateSourcePayload,
 } from "./sources/contracts";
-import { discoverSource } from "./sources/discovery";
 import {
   discoverSourceInspectionTools,
   getSourceInspection,
@@ -83,13 +79,9 @@ import {
   resumeExecution,
 } from "./runtime/execution/service";
 import type {
-  CompleteProviderOauthCallbackResult,
   CompleteSourceCredentialSetupResult,
-  CompleteSourceOAuthSessionResult,
   ExecutorAddSourceInput,
   ExecutorSourceAddResult,
-  StartSourceOAuthSessionInput,
-  StartSourceOAuthSessionResult,
 } from "./runtime/sources/source-auth-service";
 
 type DistributiveOmit<T, Keys extends PropertyKey> = T extends unknown
@@ -108,11 +100,6 @@ type MappedProvidedEffect<
 export type ExecutorSourceInput = DistributiveOmit<
   ExecutorAddSourceInput,
   "scopeId" | "actorScopeId" | "executionId" | "interactionId"
->;
-
-export type ExecutorSourceOAuthInput = DistributiveOmit<
-  StartSourceOAuthSessionInput,
-  "scopeId" | "actorScopeId"
 >;
 
 export type ExecutorEffect = {
@@ -187,10 +174,6 @@ export type ExecutorEffect = {
         baseUrl?: string | null;
       },
     ) => Effect.Effect<ExecutorSourceAddResult, Error, never>;
-    discover: (input: {
-      url: string;
-      probeAuth?: Parameters<typeof discoverSource>[0]["probeAuth"];
-    }) => ProvidedEffect<ReturnType<typeof discoverSource>>;
     list: () => ProvidedEffect<ReturnType<typeof listSources>>;
     create: (
       payload: CreateSourcePayload,
@@ -218,41 +201,6 @@ export type ExecutorEffect = {
         ReturnType<typeof discoverSourceInspectionTools>
       >;
     };
-    oauthClients: {
-      list: (
-        providerKey: string,
-      ) => Effect.Effect<ReadonlyArray<ScopeOauthClient>, Error, never>;
-      create: (
-        payload: CreateScopeOauthClientPayload,
-      ) => Effect.Effect<ScopeOauthClient, Error, never>;
-      remove: (
-        oauthClientId: ScopeOauthClient["id"],
-      ) => Effect.Effect<boolean, Error, never>;
-    };
-    providerGrants: {
-      remove: (
-        grantId: ProviderAuthGrant["id"],
-      ) => Effect.Effect<boolean, Error, never>;
-    };
-  };
-  oauth: {
-    startSourceAuth: (
-      input: ExecutorSourceOAuthInput,
-    ) => Effect.Effect<StartSourceOAuthSessionResult, Error, never>;
-    completeSourceAuth: (input: {
-      state: string;
-      code?: string | null;
-      error?: string | null;
-      errorDescription?: string | null;
-    }) => Effect.Effect<CompleteSourceOAuthSessionResult, Error, never>;
-    completeProviderCallback: (input: {
-      scopeId?: ScopeId;
-      actorScopeId?: ScopeId | null;
-      state: string;
-      code?: string | null;
-      error?: string | null;
-      errorDescription?: string | null;
-    }) => Effect.Effect<CompleteProviderOauthCallbackResult, Error, never>;
   };
   executions: {
     create: (
@@ -366,7 +314,6 @@ const fromRuntime = (runtime: ExecutorRuntime): ExecutorEffect => {
             options,
           );
         }),
-      discover: (input) => provide(discoverSource(input)),
       list: () => provide(listSources({ scopeId, actorScopeId })),
       create: (payload) => provide(createSource({ scopeId, actorScopeId, payload })),
       get: (sourceId) => provide(getSource({ scopeId, sourceId, actorScopeId })),
@@ -395,67 +342,6 @@ const fromRuntime = (runtime: ExecutorRuntime): ExecutorEffect => {
             }),
           ),
       },
-      oauthClients: {
-        list: (providerKey) =>
-          provideSourceAuth((service) =>
-            service.listScopeOauthClients({
-              scopeId,
-              providerKey,
-            }),
-          ),
-        create: (payload) =>
-          provideSourceAuth((service) =>
-            service.createScopeOauthClient({
-              scopeId,
-              providerKey: payload.providerKey,
-              label: payload.label,
-              oauthClient: payload.oauthClient,
-            }),
-          ),
-        remove: (oauthClientId) =>
-          provideSourceAuth((service) =>
-            service.removeScopeOauthClient({
-              scopeId,
-              oauthClientId,
-            }),
-          ),
-      },
-      providerGrants: {
-        remove: (grantId) =>
-          provideSourceAuth((service) =>
-            service.removeProviderAuthGrant({
-              scopeId,
-              grantId,
-            }),
-          ),
-      },
-    },
-    oauth: {
-      startSourceAuth: (input) =>
-        provideSourceAuth((service) =>
-          service.startSourceOAuthSession({
-            ...input,
-            scopeId,
-            actorScopeId,
-          }),
-        ),
-      completeSourceAuth: ({ state, code, error, errorDescription }) =>
-        provideSourceAuth((service) =>
-          service.completeSourceOAuthSession({
-            state,
-            code,
-            error,
-            errorDescription,
-          }),
-        ),
-      completeProviderCallback: (input) =>
-        provideSourceAuth((service) =>
-          service.completeProviderOauthCallback({
-            ...input,
-            scopeId: input.scopeId ?? scopeId,
-            actorScopeId: input.actorScopeId ?? actorScopeId,
-          }),
-        ),
     },
     executions: {
       create: (payload) =>

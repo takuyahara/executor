@@ -5,7 +5,6 @@ import {
   type CreateExecutorEffectOptions,
   type ExecutorEffect,
   type ExecutorSourceInput,
-  type ExecutorSourceOAuthInput,
 } from "./executor-effect";
 
 type Promiseify<T> = T extends Effect.Effect<infer A, any, any>
@@ -22,7 +21,6 @@ export type Executor = Omit<Promiseify<ExecutorEffect>, "runtime">;
 export type CreateExecutorOptions = CreateExecutorEffectOptions;
 export type {
   ExecutorSourceInput,
-  ExecutorSourceOAuthInput,
 };
 
 const toPromiseExecutor = (executor: ExecutorEffect): Executor => {
@@ -60,7 +58,6 @@ const toPromiseExecutor = (executor: ExecutorEffect): Executor => {
     },
     sources: {
       add: (input, options) => run(executor.sources.add(input, options)),
-      discover: (input) => run(executor.sources.discover(input)),
       list: () => run(executor.sources.list()),
       create: (payload) => run(executor.sources.create(payload)),
       get: (sourceId) => run(executor.sources.get(sourceId)),
@@ -72,24 +69,6 @@ const toPromiseExecutor = (executor: ExecutorEffect): Executor => {
         tool: (input) => run(executor.sources.inspection.tool(input)),
         discover: (input) => run(executor.sources.inspection.discover(input)),
       },
-      oauthClients: {
-        list: (providerKey) =>
-          run(executor.sources.oauthClients.list(providerKey)),
-        create: (payload) => run(executor.sources.oauthClients.create(payload)),
-        remove: (oauthClientId) =>
-          run(executor.sources.oauthClients.remove(oauthClientId)),
-      },
-      providerGrants: {
-        remove: (grantId) =>
-          run(executor.sources.providerGrants.remove(grantId)),
-      },
-    },
-    oauth: {
-      startSourceAuth: (input) => run(executor.oauth.startSourceAuth(input)),
-      completeSourceAuth: (input) =>
-        run(executor.oauth.completeSourceAuth(input)),
-      completeProviderCallback: (input) =>
-        run(executor.oauth.completeProviderCallback(input)),
     },
     executions: {
       create: (payload) => run(executor.executions.create(payload)),

@@ -3,14 +3,11 @@ import type {
   SecretRef,
 } from "@executor/source-core";
 import {
-  type ProviderAuthGrant,
   type ScopeId,
-  type ScopeOauthClient,
   type Source,
   type SourceAuthSession,
   SourceAuthSessionIdSchema,
   SourceSchema,
-  type SourceOauthClientInput,
 } from "#schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -92,44 +89,9 @@ export type ExecutorAddSourceInput = RegisteredExecutorAddSourceInput & {
   interactionId: SourceAuthSession["interactionId"];
 };
 
-export type CreateScopeOauthClientInput = {
-  scopeId: ScopeId;
-  providerKey: string;
-  label?: string | null;
-  oauthClient: SourceOauthClientInput;
-};
-
-export type SourceOAuthProviderInput = {
-  providerKey: string;
-  config?: Record<string, unknown> | null;
-};
-
-export type StartSourceOAuthSessionInput = {
-  scopeId: ScopeId;
-  actorScopeId?: ScopeId | null;
-  provider: SourceOAuthProviderInput;
-  baseUrl?: string | null;
-  displayName?: string | null;
-};
-
-export type StartSourceOAuthSessionResult = {
-  sessionId: SourceAuthSession["id"];
-  authorizationUrl: string;
-};
-
-export type CompleteSourceOAuthSessionResult = {
-  sessionId: SourceAuthSession["id"];
-  auth: Extract<Source["auth"], { kind: "oauth2" }>;
-};
-
 export type CompleteSourceCredentialSetupResult = {
   sessionId: SourceAuthSession["id"];
   source: Source;
-};
-
-export type CompleteProviderOauthCallbackResult = {
-  sessionId: SourceAuthSession["id"];
-  sources: ReadonlyArray<Source>;
 };
 
 type RuntimeSourceAuthServiceShape = {
@@ -150,38 +112,6 @@ type RuntimeSourceAuthServiceShape = {
       baseUrl?: string | null;
     },
   ) => Effect.Effect<ExecutorSourceAddResult, Error, ScopeStorageServices>;
-  listScopeOauthClients: (input: {
-    scopeId: ScopeId;
-    providerKey: string;
-  }) => Effect.Effect<readonly ScopeOauthClient[], Error, ScopeStorageServices>;
-  createScopeOauthClient: (
-    input: CreateScopeOauthClientInput,
-  ) => Effect.Effect<ScopeOauthClient, Error, ScopeStorageServices>;
-  removeScopeOauthClient: (input: {
-    scopeId: ScopeId;
-    oauthClientId: ScopeOauthClient["id"];
-  }) => Effect.Effect<boolean, Error, ScopeStorageServices>;
-  removeProviderAuthGrant: (input: {
-    scopeId: ScopeId;
-    grantId: ProviderAuthGrant["id"];
-  }) => Effect.Effect<boolean, Error, ScopeStorageServices>;
-  startSourceOAuthSession: (
-    input: StartSourceOAuthSessionInput,
-  ) => Effect.Effect<StartSourceOAuthSessionResult, Error, never>;
-  completeSourceOAuthSession: (input: {
-    state: string;
-    code?: string | null;
-    error?: string | null;
-    errorDescription?: string | null;
-  }) => Effect.Effect<CompleteSourceOAuthSessionResult, Error, ScopeStorageServices>;
-  completeProviderOauthCallback: (input: {
-    scopeId: ScopeId;
-    actorScopeId?: ScopeId | null;
-    state: string;
-    code?: string | null;
-    error?: string | null;
-    errorDescription?: string | null;
-  }) => Effect.Effect<CompleteProviderOauthCallbackResult, Error, ScopeStorageServices>;
   completeSourceCredentialSetup: (input: {
     scopeId: ScopeId;
     sourceId: Source["id"];
@@ -228,16 +158,6 @@ export const createRuntimeSourceAuthService = (
       }),
     addExecutorSource: () =>
       provideLocalWorkspace(disabledSourcePlugins("addExecutorSource")),
-    listScopeOauthClients: () => provideLocalWorkspace(Effect.succeed([])),
-    createScopeOauthClient: () =>
-      provideLocalWorkspace(disabledSourcePlugins("createScopeOauthClient")),
-    removeScopeOauthClient: () => provideLocalWorkspace(Effect.succeed(false)),
-    removeProviderAuthGrant: () => provideLocalWorkspace(Effect.succeed(false)),
-    startSourceOAuthSession: () => disabledSourcePlugins("startSourceOAuthSession"),
-    completeSourceOAuthSession: () =>
-      provideLocalWorkspace(disabledSourcePlugins("completeSourceOAuthSession")),
-    completeProviderOauthCallback: () =>
-      provideLocalWorkspace(disabledSourcePlugins("completeProviderOauthCallback")),
     completeSourceCredentialSetup: () =>
       provideLocalWorkspace(disabledSourcePlugins("completeSourceCredentialSetup")),
   };

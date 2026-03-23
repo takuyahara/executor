@@ -3,10 +3,8 @@ import {
   JsonObjectSchema,
   ProviderAuthGrantIdSchema,
   SourceAuthSchema,
-  SourceDiscoveryResultSchema,
   SourceImportAuthPolicySchema,
   SourceKindSchema,
-  SourceProbeAuthSchema,
   SourceSchema,
   SourceStatusSchema,
   SourceOauthClientInputSchema,
@@ -93,15 +91,7 @@ export type CreateScopeOauthClientPayload =
 export const oauthClientIdParam = ScopeOauthClientIdSchema;
 export const grantIdParam = ProviderAuthGrantIdSchema;
 
-export const DiscoverSourcePayloadSchema = Schema.Struct({
-  url: TrimmedNonEmptyStringSchema,
-  probeAuth: Schema.optional(SourceProbeAuthSchema),
-});
-
-export type DiscoverSourcePayload = typeof DiscoverSourcePayloadSchema.Type;
-
 export {
-  SourceDiscoveryResultSchema,
   ScopeIdSchema,
   ScopeOauthClientSchema,
 };

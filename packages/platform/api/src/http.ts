@@ -6,13 +6,11 @@ import { ExecutorApi } from "./api";
 import { createControlPlaneExecutorLayer } from "./executor-context";
 import { ExecutorExecutionsLive } from "./executions/http";
 import { ExecutorLocalLive } from "./local/http";
-import { ExecutorOAuthLive } from "./oauth/http";
 import { ExecutorPoliciesLive } from "./policies/http";
 import { ExecutorSourcesLive } from "./sources/http";
 
 export const ExecutorApiLive = HttpApiBuilder.api(ExecutorApi).pipe(
   Layer.provide(ExecutorLocalLive),
-  Layer.provide(ExecutorOAuthLive),
   Layer.provide(ExecutorSourcesLive),
   Layer.provide(ExecutorPoliciesLive),
   Layer.provide(ExecutorExecutionsLive),
