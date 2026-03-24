@@ -73,12 +73,9 @@ export const SourceSchema = Schema.Struct({
   scopeId: Schema.String,
   name: Schema.String,
   kind: SourceKindSchema,
-  endpoint: Schema.String,
   status: SourceStatusSchema,
   enabled: Schema.Boolean,
   namespace: Schema.NullOr(Schema.String),
-  sourceHash: Schema.NullOr(Schema.String),
-  lastError: Schema.NullOr(Schema.String),
   createdAt: Schema.Number,
   updatedAt: Schema.Number,
 });

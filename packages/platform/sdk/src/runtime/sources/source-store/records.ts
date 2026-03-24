@@ -47,14 +47,11 @@ export const buildLocalSourceRecord = (input: {
       scopeId: input.scopeId,
       name: trimOrNull(sourceConfig.name) ?? input.sourceId,
       kind: sourceConfig.kind,
-      endpoint: sourceConfig.connection.endpoint.trim(),
       status:
         existingState?.status ??
         (sourceConfig.enabled ?? true ? "connected" : "draft"),
       enabled: sourceConfig.enabled ?? true,
       namespace: trimOrNull(sourceConfig.namespace) ?? input.sourceId,
-      sourceHash: existingState?.sourceHash ?? null,
-      lastError: existingState?.lastError ?? null,
       createdAt: existingState?.createdAt ?? Date.now(),
       updatedAt: existingState?.updatedAt ?? Date.now(),
     };

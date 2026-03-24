@@ -50,8 +50,5 @@ export const configSourceFromLocalSource = (input: {
       ? { namespace: input.source.namespace ?? undefined }
       : {}),
     ...(input.source.enabled === false ? { enabled: false } : {}),
-    connection: {
-      endpoint: input.source.endpoint,
-    },
   } as LocalConfigSource;
 };

@@ -110,8 +110,8 @@ export const persistSourceWithDeps = (
         ...localScope.scopeState.sources,
         [nextSource.id]: {
           status: nextSource.status,
-          lastError: nextSource.lastError,
-          sourceHash: nextSource.sourceHash,
+          lastError: existingSourceState?.lastError ?? null,
+          sourceHash: existingSourceState?.sourceHash ?? null,
           createdAt: existingSourceState?.createdAt ?? nextSource.createdAt,
           updatedAt: nextSource.updatedAt,
         },

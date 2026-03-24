@@ -17,7 +17,7 @@ export const InternalSourceSdkPlugin = {
       catalogKind: "internal",
       catalogIdentity: ({ source }) => ({
         kind: "internal",
-        endpoint: source.endpoint,
+        sourceId: source.id,
       }),
       getIrModel: ({ source }) =>
         Effect.succeed(

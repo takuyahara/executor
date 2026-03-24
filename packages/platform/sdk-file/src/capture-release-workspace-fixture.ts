@@ -187,12 +187,7 @@ const copyRecursive = (
 
 const sanitizeSourceConfig = (
   sourceConfig: NonNullable<LocalExecutorConfig["sources"]>[string],
-): NonNullable<LocalExecutorConfig["sources"]>[string] => {
-  return {
-    ...sourceConfig,
-    connection: sourceConfig.connection,
-  };
-};
+): NonNullable<LocalExecutorConfig["sources"]>[string] => sourceConfig;
 
 const main = Effect.gen(function* () {
   const args = yield* Effect.try({

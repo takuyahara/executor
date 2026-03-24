@@ -58,7 +58,7 @@ export function HomePage() {
                             {source.name}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {source.endpoint}
+                            {source.kind}
                           </div>
                         </div>
                         <Badge

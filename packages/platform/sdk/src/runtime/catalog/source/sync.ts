@@ -89,7 +89,8 @@ const syncSourceCatalogWithDeps = (
 
     if (!shouldIndexSource(input.source)) {
       const state = yield* deps.scopeStateStore.load();
-      const existingSourceState = state.sources[input.source.id];
+      const existingSourceState =
+        state.sources[input.source.id] as LocalScopeState["sources"][string] | undefined;
       const nextState: LocalScopeState = {
         ...state,
         sources: {
@@ -97,7 +98,7 @@ const syncSourceCatalogWithDeps = (
           [input.source.id]: {
             status: (input.source.enabled ? input.source.status : "draft") as SourceStatus,
             lastError: null,
-            sourceHash: input.source.sourceHash,
+            sourceHash: existingSourceState?.sourceHash ?? null,
             createdAt: existingSourceState?.createdAt ?? input.source.createdAt,
             updatedAt: Date.now(),
           },
@@ -127,7 +128,8 @@ const syncSourceCatalogWithDeps = (
     });
 
     const state = yield* deps.scopeStateStore.load();
-    const existingSourceState = state.sources[input.source.id];
+    const existingSourceState =
+      state.sources[input.source.id] as LocalScopeState["sources"][string] | undefined;
     const nextState: LocalScopeState = {
       ...state,
       sources: {
@@ -155,7 +157,6 @@ const syncSourceCatalogWithDeps = (
         "executor.source.id": input.source.id,
         "executor.source.kind": input.source.kind,
         "executor.source.namespace": input.source.namespace,
-        "executor.source.endpoint": input.source.endpoint,
       },
     }),
   );
