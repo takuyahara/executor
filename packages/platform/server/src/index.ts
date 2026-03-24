@@ -8,6 +8,7 @@ import { dirname, extname, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { FileSystem, HttpApiBuilder, HttpServer } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
+import { internalSdkPlugin } from "@executor/plugin-internal-sdk";
 import { googleDiscoveryHttpPlugin } from "@executor/plugin-google-discovery-http";
 import { googleDiscoverySdkPlugin } from "@executor/plugin-google-discovery-sdk";
 import { graphqlHttpPlugin } from "@executor/plugin-graphql-http";
@@ -22,7 +23,6 @@ import {
   createExecutorApiLayer,
 } from "@executor/platform-api/http";
 import { createExecutorMcpRequestHandler } from "@executor/executor-mcp";
-import { createWorkspaceExecutorAdminToolMap } from "@executor/platform-internal";
 import {
   createExecutorEffect,
   type ExecutorEffect as Executor,
@@ -155,6 +155,7 @@ const createExecutorRuntime = (
       localDataDir,
     }),
     plugins: [
+      internalSdkPlugin(),
       graphqlSdkPlugin({
         storage: createFileGraphqlSourceStorage({
           rootDir: resolve(localDataDir, "plugins", "graphql", "sources"),
@@ -183,7 +184,6 @@ const createExecutorRuntime = (
       }),
     ] as const,
     executionResolver: options.executionResolver,
-    createInternalToolMap: createWorkspaceExecutorAdminToolMap,
     resolveSecretMaterial: options.resolveSecretMaterial,
     getLocalServerBaseUrl,
   }).pipe(

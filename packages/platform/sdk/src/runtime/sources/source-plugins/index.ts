@@ -3,26 +3,17 @@ import {
   type ExecutorSdkPlugin,
 } from "../../../plugins";
 
-import {
-  InternalSourceSdkPlugin,
-} from "./internal";
-
-let configuredExternalSourcePlugins: readonly ExecutorSdkPlugin[] = [];
-let registry = registerExecutorSdkPlugins([
-  InternalSourceSdkPlugin,
-]);
+let configuredSourcePlugins: readonly ExecutorSdkPlugin[] = [];
+let registry = registerExecutorSdkPlugins(configuredSourcePlugins);
 
 const refreshRegistry = () => {
-  registry = registerExecutorSdkPlugins([
-    ...configuredExternalSourcePlugins,
-    InternalSourceSdkPlugin,
-  ]);
+  registry = registerExecutorSdkPlugins(configuredSourcePlugins);
 };
 
 export const configureExecutorSourcePlugins = (
   plugins: readonly ExecutorSdkPlugin[],
 ): void => {
-  configuredExternalSourcePlugins = plugins;
+  configuredSourcePlugins = plugins;
   refreshRegistry();
 };
 
@@ -39,4 +30,4 @@ export const isInternalSourcePluginKind = (kind: string) =>
   registry.isInternalSourcePluginKind(kind);
 
 export const hasRegisteredExternalSourcePlugins = () =>
-  configuredExternalSourcePlugins.length > 0;
+  configuredSourcePlugins.length > 0;

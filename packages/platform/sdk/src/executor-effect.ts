@@ -58,7 +58,6 @@ import {
 import type { ExecutorBackend } from "./backend";
 import {
   provideExecutorRuntime,
-  type CreateScopeInternalToolMap,
   type ExecutorRuntime,
   type ExecutorRuntimeOptions,
   type ResolveExecutionEnvironment,
@@ -271,7 +270,6 @@ export const createExecutorEffect = <
   return Effect.map(
     options.backend.createRuntime({
       executionResolver: options.executionResolver,
-      createInternalToolMap: options.createInternalToolMap,
       resolveSecretMaterial: options.resolveSecretMaterial,
       getLocalServerBaseUrl: options.getLocalServerBaseUrl,
     }),

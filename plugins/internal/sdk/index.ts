@@ -4,11 +4,9 @@ import {
   createCatalogImportMetadata,
   createSourceCatalogSyncResult,
 } from "@executor/source-core";
-import type { ExecutorSdkPlugin } from "../../../plugins";
+import type { ExecutorSdkPlugin } from "@executor/platform-sdk/plugins";
 
-import { runtimeEffectError } from "../../effect-errors";
-
-export const InternalSourceSdkPlugin = {
+export const internalSdkPlugin = (): ExecutorSdkPlugin<"internal"> => ({
   key: "internal",
   sources: [
     {
@@ -38,11 +36,8 @@ export const InternalSourceSdkPlugin = {
         ),
       invoke: () =>
         Effect.fail(
-          runtimeEffectError(
-            "sources/source-plugins/internal",
-            "Internal sources do not support persisted plugin invocation",
-          ),
+          new Error("Internal sources do not support persisted plugin invocation"),
         ),
     },
   ],
-} satisfies ExecutorSdkPlugin<"internal">;
+});

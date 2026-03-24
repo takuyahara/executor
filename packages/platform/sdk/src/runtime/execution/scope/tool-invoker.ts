@@ -31,12 +31,6 @@ import {
   type ScopeStateStoreShape,
 } from "../../scope/storage";
 import type {
-  DeleteSecretMaterial,
-  ResolveInstanceConfig,
-  StoreSecretMaterial,
-  UpdateSecretMaterial,
-} from "../../scope/secret-material-providers";
-import type {
   ExecutorStateStoreShape,
 } from "../../executor-state-store";
 import {
@@ -66,29 +60,6 @@ import {
   runtimeEffectError,
 } from "../../effect-errors";
 
-export type ScopeInternalToolContext = {
-  scopeId: Source["scopeId"];
-  actorScopeId: ScopeId;
-  executorStateStore: ExecutorStateStoreShape;
-  sourceStore: RuntimeSourceStore;
-  sourceCatalogSyncService: Effect.Effect.Success<
-    typeof RuntimeSourceCatalogSyncService
-  >;
-  installationStore: InstallationStoreShape;
-  instanceConfigResolver: ResolveInstanceConfig;
-  storeSecretMaterial: StoreSecretMaterial;
-  deleteSecretMaterial: DeleteSecretMaterial;
-  updateSecretMaterial: UpdateSecretMaterial;
-  scopeConfigStore: ScopeConfigStoreShape;
-  scopeStateStore: ScopeStateStoreShape;
-  sourceArtifactStore: SourceArtifactStoreShape;
-  runtimeLocalScope: RuntimeLocalScopeState | null;
-};
-
-export type CreateScopeInternalToolMap = (
-  input: ScopeInternalToolContext,
-) => ToolMap;
-
 export const createScopeToolInvoker = (input: {
   scopeId: Source["scopeId"];
   actorScopeId: ScopeId;
@@ -101,16 +72,11 @@ export const createScopeToolInvoker = (input: {
     typeof RuntimeSourceCatalogStoreService
   >;
   installationStore: InstallationStoreShape;
-  instanceConfigResolver: ResolveInstanceConfig;
-  storeSecretMaterial: StoreSecretMaterial;
-  deleteSecretMaterial: DeleteSecretMaterial;
-  updateSecretMaterial: UpdateSecretMaterial;
   scopeConfigStore: ScopeConfigStoreShape;
   scopeStateStore: ScopeStateStoreShape;
   sourceArtifactStore: SourceArtifactStoreShape;
   runtimeLocalScope: RuntimeLocalScopeState | null;
   localToolRuntime: LocalToolRuntime;
-  createInternalToolMap?: CreateScopeInternalToolMap;
   onElicitation?: Parameters<
     typeof makeToolInvokerFromTools
   >[0]["onElicitation"];
@@ -138,23 +104,6 @@ export const createScopeToolInvoker = (input: {
     sourceArtifactStore: input.sourceArtifactStore,
     runtimeLocalScope: input.runtimeLocalScope,
   });
-  const internalTools =
-    input.createInternalToolMap?.({
-      scopeId: input.scopeId,
-      actorScopeId: input.actorScopeId,
-      executorStateStore: input.executorStateStore,
-      sourceStore: input.sourceStore,
-      sourceCatalogSyncService: input.sourceCatalogSyncService,
-      installationStore: input.installationStore,
-      instanceConfigResolver: input.instanceConfigResolver,
-      storeSecretMaterial: input.storeSecretMaterial,
-      deleteSecretMaterial: input.deleteSecretMaterial,
-      updateSecretMaterial: input.updateSecretMaterial,
-      scopeConfigStore: input.scopeConfigStore,
-      scopeStateStore: input.scopeStateStore,
-      sourceArtifactStore: input.sourceArtifactStore,
-      runtimeLocalScope: input.runtimeLocalScope,
-    }) ?? {};
   const sourceCatalog = createScopeSourceCatalog({
     scopeId: input.scopeId,
     actorScopeId: input.actorScopeId,
@@ -177,7 +126,6 @@ export const createScopeToolInvoker = (input: {
   const authoredTools = mergeToolMaps([
     systemTools,
     executorTools,
-    internalTools,
     input.localToolRuntime.tools,
   ]);
   const authoredCatalog = createToolCatalogFromTools({

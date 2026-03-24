@@ -313,7 +313,6 @@ export const createLocalExecutorRuntime = (
 ): Effect.Effect<ExecutorRuntime, Error> =>
   createLocalExecutorBackend(options).createRuntime({
     executionResolver: options.executionResolver,
-    createInternalToolMap: options.createInternalToolMap,
     resolveSecretMaterial: options.resolveSecretMaterial,
     getLocalServerBaseUrl: options.getLocalServerBaseUrl,
   });
@@ -336,7 +335,6 @@ export const createLocalExecutorEffect = <
     backend: createLocalExecutorBackend(options),
     plugins: options.plugins,
     executionResolver: options.executionResolver,
-    createInternalToolMap: options.createInternalToolMap,
     resolveSecretMaterial: options.resolveSecretMaterial,
     getLocalServerBaseUrl: options.getLocalServerBaseUrl,
   } satisfies CreateExecutorEffectOptions & { plugins?: TPlugins });
@@ -350,7 +348,6 @@ export const createLocalExecutor = <
     backend: createLocalExecutorBackend(options),
     plugins: options.plugins,
     executionResolver: options.executionResolver,
-    createInternalToolMap: options.createInternalToolMap,
     resolveSecretMaterial: options.resolveSecretMaterial,
     getLocalServerBaseUrl: options.getLocalServerBaseUrl,
   });

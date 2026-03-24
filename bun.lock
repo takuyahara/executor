@@ -29,11 +29,11 @@
         "@executor/codemode-core": "workspace:*",
         "@executor/executor-mcp": "workspace:*",
         "@executor/platform-api": "workspace:*",
-        "@executor/platform-internal": "workspace:*",
         "@executor/platform-sdk": "workspace:*",
         "@executor/platform-sdk-file": "workspace:*",
         "@executor/plugin-google-discovery-sdk": "workspace:*",
         "@executor/plugin-graphql-sdk": "workspace:*",
+        "@executor/plugin-internal-sdk": "workspace:*",
         "@executor/plugin-mcp-sdk": "workspace:*",
         "@executor/plugin-openapi-sdk": "workspace:*",
         "@executor/server": "workspace:*",
@@ -308,20 +308,6 @@
         "vitest": "catalog:",
       },
     },
-    "packages/platform/internal": {
-      "name": "@executor/platform-internal",
-      "version": "0.0.0",
-      "dependencies": {
-        "@executor/codemode-core": "workspace:*",
-        "@executor/platform-sdk": "workspace:*",
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@types/node": "catalog:",
-        "bun-types": "catalog:",
-        "typescript": "^5.9.3",
-      },
-    },
     "packages/platform/sdk": {
       "name": "@executor/platform-sdk",
       "version": "0.0.0",
@@ -379,7 +365,6 @@
         "@effect/platform-node": "catalog:",
         "@executor/executor-mcp": "workspace:*",
         "@executor/platform-api": "workspace:*",
-        "@executor/platform-internal": "workspace:*",
         "@executor/platform-sdk": "workspace:*",
         "@executor/platform-sdk-file": "workspace:*",
         "@executor/plugin-google-discovery-http": "workspace:*",
@@ -388,6 +373,7 @@
         "@executor/plugin-graphql-http": "workspace:*",
         "@executor/plugin-graphql-sdk": "workspace:*",
         "@executor/plugin-graphql-shared": "workspace:*",
+        "@executor/plugin-internal-sdk": "workspace:*",
         "@executor/plugin-mcp-http": "workspace:*",
         "@executor/plugin-mcp-sdk": "workspace:*",
         "@executor/plugin-mcp-shared": "workspace:*",
@@ -530,6 +516,19 @@
     },
     "plugins/graphql/shared": {
       "name": "@executor/plugin-graphql-shared",
+      "version": "0.0.0",
+      "dependencies": {
+        "@executor/platform-sdk": "workspace:*",
+        "@executor/source-core": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "bun-types": "catalog:",
+      },
+    },
+    "plugins/internal/sdk": {
+      "name": "@executor/plugin-internal-sdk",
       "version": "0.0.0",
       "dependencies": {
         "@executor/platform-sdk": "workspace:*",
@@ -886,8 +885,6 @@
 
     "@executor/platform-api": ["@executor/platform-api@workspace:packages/platform/api"],
 
-    "@executor/platform-internal": ["@executor/platform-internal@workspace:packages/platform/internal"],
-
     "@executor/platform-sdk": ["@executor/platform-sdk@workspace:packages/platform/sdk"],
 
     "@executor/platform-sdk-file": ["@executor/platform-sdk-file@workspace:packages/platform/sdk-file"],
@@ -907,6 +904,8 @@
     "@executor/plugin-graphql-sdk": ["@executor/plugin-graphql-sdk@workspace:plugins/graphql/sdk"],
 
     "@executor/plugin-graphql-shared": ["@executor/plugin-graphql-shared@workspace:plugins/graphql/shared"],
+
+    "@executor/plugin-internal-sdk": ["@executor/plugin-internal-sdk@workspace:plugins/internal/sdk"],
 
     "@executor/plugin-mcp-http": ["@executor/plugin-mcp-http@workspace:plugins/mcp/http"],
 

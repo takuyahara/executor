@@ -32,10 +32,6 @@ import {
   RuntimeExecutionResolverLive,
 } from "./execution/scope/environment";
 import type {
-  CreateScopeInternalToolMap,
-  ScopeInternalToolContext,
-} from "./execution/scope/tool-invoker";
-import type {
   LoadedLocalExecutorConfig,
 } from "./scope-config";
 import type {
@@ -104,10 +100,6 @@ export * from "./executor-state-store";
 export * from "./execution/scope/environment";
 export * from "../sources/inspection";
 export * from "./execution/service";
-export type {
-  CreateScopeInternalToolMap,
-  ScopeInternalToolContext,
-} from "./execution/scope/tool-invoker";
 export {
   LocalInstanceConfigService,
   SecretMaterialDeleterService,
@@ -133,7 +125,6 @@ export {
 
 export type ExecutorRuntimeOptions = {
   executionResolver?: ResolveExecutionEnvironment;
-  createInternalToolMap?: CreateScopeInternalToolMap;
   resolveSecretMaterial?: ResolveSecretMaterial;
   getLocalServerBaseUrl?: () => string | undefined;
 };
@@ -362,7 +353,6 @@ export const createExecutorRuntimeLayer = (
 
   const executionResolverLayer = RuntimeExecutionResolverLive({
     executionResolver: input.executionResolver,
-    createInternalToolMap: input.createInternalToolMap,
   }).pipe(
     Layer.provide(
       Layer.mergeAll(

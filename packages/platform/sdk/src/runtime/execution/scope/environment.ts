@@ -27,12 +27,6 @@ import {
   getRuntimeLocalScopeOption,
 } from "../../scope/runtime-context";
 import {
-  LocalInstanceConfigService,
-  SecretMaterialDeleterService,
-  SecretMaterialStorerService,
-  SecretMaterialUpdaterService,
-} from "../../scope/secret-material-providers";
-import {
   LocalToolRuntimeLoaderService,
   type LocalToolRuntimeLoaderShape,
   type LocalToolRuntime,
@@ -53,9 +47,6 @@ import {
 import {
   RuntimeSourceStoreService,
 } from "../../sources/source-store";
-import type {
-  CreateScopeInternalToolMap,
-} from "./tool-invoker";
 export {
   createCodeExecutorForRuntime,
   resolveConfiguredExecutionRuntime,
@@ -80,14 +71,9 @@ export const createScopeExecutionEnvironmentResolver =
     >;
     localToolRuntimeLoader: LocalToolRuntimeLoaderShape;
     installationStore: InstallationStoreShape;
-    instanceConfigResolver: Effect.Effect.Success<typeof LocalInstanceConfigService>;
-    storeSecretMaterial: Effect.Effect.Success<typeof SecretMaterialStorerService>;
-    deleteSecretMaterial: Effect.Effect.Success<typeof SecretMaterialDeleterService>;
-    updateSecretMaterial: Effect.Effect.Success<typeof SecretMaterialUpdaterService>;
     scopeConfigStore: ScopeConfigStoreShape;
     scopeStateStore: ScopeStateStoreShape;
     sourceArtifactStore: SourceArtifactStoreShape;
-    createInternalToolMap?: CreateScopeInternalToolMap;
   }): ResolveExecutionEnvironment =>
   ({ scopeId, actorScopeId, onElicitation }) =>
     Effect.gen(function* () {
@@ -108,16 +94,11 @@ export const createScopeExecutionEnvironmentResolver =
         sourceCatalogSyncService: input.sourceCatalogSyncService,
         sourceCatalogStore: input.sourceCatalogStore,
         installationStore: input.installationStore,
-        instanceConfigResolver: input.instanceConfigResolver,
-        storeSecretMaterial: input.storeSecretMaterial,
-        deleteSecretMaterial: input.deleteSecretMaterial,
-        updateSecretMaterial: input.updateSecretMaterial,
         scopeConfigStore: input.scopeConfigStore,
         scopeStateStore: input.scopeStateStore,
         sourceArtifactStore: input.sourceArtifactStore,
         runtimeLocalScope,
         localToolRuntime,
-        createInternalToolMap: input.createInternalToolMap,
         onElicitation,
       });
 
@@ -142,7 +123,6 @@ export class RuntimeExecutionResolverService extends Context.Tag(
 export const RuntimeExecutionResolverLive = (
   input: {
     executionResolver?: ResolveExecutionEnvironment;
-    createInternalToolMap?: CreateScopeInternalToolMap;
   } = {},
 ) =>
   input.executionResolver
@@ -157,10 +137,6 @@ export const RuntimeExecutionResolverLive = (
           const sourceCatalogStore = yield* RuntimeSourceCatalogStoreService;
           const localToolRuntimeLoader = yield* LocalToolRuntimeLoaderService;
           const installationStore = yield* InstallationStore;
-          const instanceConfigResolver = yield* LocalInstanceConfigService;
-          const storeSecretMaterial = yield* SecretMaterialStorerService;
-          const deleteSecretMaterial = yield* SecretMaterialDeleterService;
-          const updateSecretMaterial = yield* SecretMaterialUpdaterService;
           const scopeConfigStore = yield* ScopeConfigStore;
           const scopeStateStore = yield* ScopeStateStore;
           const sourceArtifactStore = yield* SourceArtifactStore;
@@ -172,14 +148,9 @@ export const RuntimeExecutionResolverLive = (
             sourceCatalogStore,
             localToolRuntimeLoader,
             installationStore,
-            instanceConfigResolver,
-            storeSecretMaterial,
-            deleteSecretMaterial,
-            updateSecretMaterial,
             scopeConfigStore,
             scopeStateStore,
             sourceArtifactStore,
-            createInternalToolMap: input.createInternalToolMap,
           });
         }),
       );

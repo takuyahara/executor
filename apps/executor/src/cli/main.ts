@@ -21,12 +21,14 @@ import {
   graphqlSdkPlugin,
 } from "@executor/plugin-graphql-sdk";
 import {
+  internalSdkPlugin,
+} from "@executor/plugin-internal-sdk";
+import {
   mcpSdkPlugin,
 } from "@executor/plugin-mcp-sdk";
 import {
   openApiSdkPlugin,
 } from "@executor/plugin-openapi-sdk";
-import { createWorkspaceExecutorAdminToolMap } from "@executor/platform-internal";
 import {
   getExecutorSourcesAddHelpLines,
   RuntimeExecutionResolverService,
@@ -303,6 +305,7 @@ const loadRunWorkflowText = (): Effect.Effect<string, Error, never> =>
         localDataDir: DEFAULT_LOCAL_DATA_DIR,
       }),
       plugins: [
+        internalSdkPlugin(),
         graphqlSdkPlugin({
           storage: createFileGraphqlSourceStorage({
             rootDir: `${DEFAULT_LOCAL_DATA_DIR}/plugins/graphql/sources`,
@@ -330,7 +333,6 @@ const loadRunWorkflowText = (): Effect.Effect<string, Error, never> =>
           }),
         }),
       ] as const,
-      createInternalToolMap: createWorkspaceExecutorAdminToolMap,
     }).pipe(Effect.mapError(toError)),
     (executor) =>
       Effect.gen(function* () {
