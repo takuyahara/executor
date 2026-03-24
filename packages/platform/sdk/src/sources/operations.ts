@@ -62,7 +62,6 @@ const syncArtifactsForSource = (input: {
               source: {
                 ...input.source,
                 status: "error",
-                lastError: error.message,
               },
               now: Date.now(),
             }).pipe(

@@ -675,12 +675,9 @@ const sourceRecordFromCatalogArtifact = (input: {
   catalogRevisionId: input.artifact.revision.id,
   name: input.source.name,
   kind: input.source.kind,
-  endpoint: input.source.endpoint,
   status: input.source.status,
   enabled: input.source.enabled,
   namespace: input.source.namespace,
-  sourceHash: input.source.sourceHash,
-  lastError: input.source.lastError,
   createdAt: input.source.createdAt,
   updatedAt: input.source.updatedAt,
 });

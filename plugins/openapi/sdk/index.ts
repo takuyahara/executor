@@ -76,7 +76,7 @@ const createOpenApiSourceRuntime = (
   catalogKind: "imported",
   catalogIdentity: ({ source }) => ({
     kind: "openapi",
-    endpoint: source.endpoint,
+    sourceId: source.id,
   }),
   getIrModel: ({ source }) =>
     Effect.gen(function* () {
@@ -96,10 +96,9 @@ const createOpenApiSourceRuntime = (
           }),
           importerVersion: "ir.v1.openapi",
           sourceConfigHash:
-            stored === null ? source.sourceHash ?? "openapi" : stableSourceHash(stored),
+            stored === null ? "openapi" : stableSourceHash(stored),
         },
-        sourceHash:
-          stored === null ? source.sourceHash ?? null : stableSourceHash(stored),
+        sourceHash: stored === null ? null : stableSourceHash(stored),
       });
     }),
   invoke: () =>
@@ -125,12 +124,9 @@ export const openApiSdkPlugin = (
           source: {
             name: input.name.trim(),
             kind: "openapi",
-            endpoint: stored.baseUrl ?? stored.specUrl,
             status: "connected",
             enabled: true,
             namespace: null,
-            sourceHash: stableSourceHash(stored),
-            lastError: null,
           },
         });
 

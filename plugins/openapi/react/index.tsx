@@ -400,8 +400,6 @@ function OpenApiEditSourcePage(props: {
         {JSON.stringify({
           id: props.source.id,
           kind: props.source.kind,
-          endpoint: props.source.endpoint,
-          sourceHash: props.source.sourceHash,
         }, null, 2)}
       </pre>
     </Section>
@@ -423,9 +421,7 @@ function OpenApiSourceDetailPage(props: {
             id: props.source.id,
             name: props.source.name,
             kind: props.source.kind,
-            endpoint: props.source.endpoint,
             status: props.source.status,
-            sourceHash: props.source.sourceHash,
           }, null, 2)}
         </pre>
       </Section>

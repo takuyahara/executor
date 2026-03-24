@@ -34,7 +34,6 @@ const sourceConfigFromSource = (source: Source): SourceCatalogSourceConfig =>
     source,
   }) ?? {
     kind: source.kind,
-    endpoint: source.endpoint,
     namespace: source.namespace,
   };
 
@@ -60,7 +59,6 @@ export const sourceConfigSignature = (source: Source): string =>
     sourceId: source.id,
     kind: source.kind,
     name: source.name,
-    endpoint: source.endpoint,
     namespace: source.namespace,
     enabled: source.enabled,
     updatedAt: source.updatedAt,
@@ -91,12 +89,9 @@ export const normalizeSourceForCreate = (input: {
     scopeId: input.scopeId,
     name: input.source.name.trim(),
     kind: input.source.kind,
-    endpoint: input.source.endpoint.trim(),
     status: input.source.status,
     enabled: input.source.enabled,
     namespace: trimOrNull(input.source.namespace),
-    sourceHash: trimOrNull(input.source.sourceHash),
-    lastError: trimOrNull(input.source.lastError),
     createdAt: input.now,
     updatedAt: input.now,
   });
@@ -108,10 +103,7 @@ export const normalizeSourceForSave = (input: {
   validateSourceByKind({
     ...input.source,
     name: input.source.name.trim(),
-    endpoint: input.source.endpoint.trim(),
     namespace: trimOrNull(input.source.namespace),
-    sourceHash: trimOrNull(input.source.sourceHash),
-    lastError: trimOrNull(input.source.lastError),
     updatedAt: input.now,
   });
 

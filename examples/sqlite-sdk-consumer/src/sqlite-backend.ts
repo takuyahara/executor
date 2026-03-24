@@ -127,11 +127,9 @@ const createSourceArtifact = (input: SourceArtifactBuildInput): SourceArtifact =
   const snapshot = snapshotFromSourceCatalogSyncResult(input.syncResult);
   const sourceConfigJson = JSON.stringify({
     kind: input.source.kind,
-    endpoint: input.source.endpoint,
     namespace: input.source.namespace,
     name: input.source.name,
     enabled: input.source.enabled,
-    sourceHash: input.source.sourceHash,
   });
   const importMetadataJson = JSON.stringify(snapshot.import);
   const catalogId = SourceCatalogIdSchema.make(`src_catalog_${makeHash(sourceConfigJson)}`);
