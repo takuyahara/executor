@@ -11,11 +11,8 @@ import {
   createSourceCatalogSyncResult,
 } from "@executor/source-core";
 import type { Source } from "@executor/platform-sdk/schema";
-import type {
-  ExecutorSdkPlugin,
-  ExecutorSdkPluginHost,
-  ExecutorSourceConnector,
-  SourcePluginRuntime,
+import {
+  defineExecutorSourcePlugin,
 } from "@executor/platform-sdk/plugins";
 import {
   SecretMaterialResolverService,
@@ -304,40 +301,41 @@ const sourceConfigFromStored = (
   auth: stored.auth,
 });
 
-const createGraphqlSourceSdk = (
-  options: {
-    storage: GraphqlSourceStorage;
-  },
-  host: ExecutorSdkPluginHost,
-) => ({
-  getSourceConfig: (sourceId: Source["id"]) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(sourceId);
-      if (source.kind !== "graphql") {
-        return yield* Effect.fail(
-          new Error(`Source ${sourceId} is not a GraphQL source.`),
-        );
-      }
+const graphqlConnectInputFromAddInput = (
+  input: GraphqlExecutorAddInput,
+): GraphqlConnectInput => ({
+  name: input.name,
+  endpoint: input.endpoint,
+  defaultHeaders: input.defaultHeaders,
+  auth: input.auth,
+});
 
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-      if (stored === null) {
-        return yield* Effect.fail(
-          new Error(`GraphQL source storage missing for ${source.id}`),
-        );
-      }
-
-      return sourceConfigFromStored(
-        source,
-        normalizeStoredSourceData(stored),
-      );
-    }),
-  createSource: (input: GraphqlConnectInput) =>
-    Effect.gen(function* () {
-      const stored = storedSourceDataFromInput(input);
-      const createdSource = yield* host.sources.create({
+export const graphqlSdkPlugin = (options: {
+  storage: GraphqlSourceStorage;
+}) => defineExecutorSourcePlugin<
+  "graphql",
+  GraphqlExecutorAddInput,
+  GraphqlConnectInput,
+  GraphqlSourceConfigPayload,
+  GraphqlStoredSourceData,
+  GraphqlUpdateSourceInput,
+  GraphqlSdk
+>({
+  key: "graphql",
+  source: {
+    kind: "graphql",
+    displayName: "GraphQL",
+    add: {
+      inputSchema: GraphqlExecutorAddInputSchema,
+      inputSignatureWidth: 300,
+      helpText: [
+        "Point `endpoint` at the GraphQL HTTP endpoint and choose `auth.kind`.",
+      ],
+      toConnectInput: graphqlConnectInputFromAddInput,
+    },
+    storage: options.storage,
+    source: {
+      create: (input) => ({
         source: {
           name: input.name.trim(),
           kind: "graphql",
@@ -348,259 +346,181 @@ const createGraphqlSourceSdk = (
             title: input.name,
           }),
         },
-      });
-
-      yield* options.storage.put({
-        scopeId: createdSource.scopeId,
-        sourceId: createdSource.id,
-        value: stored,
-      });
-
-      return yield* host.sources.refreshCatalog(createdSource.id);
-    }),
-  updateSource: (input: GraphqlUpdateSourceInput) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(input.sourceId as Source["id"]);
-      if (source.kind !== "graphql") {
-        return yield* Effect.fail(
-          new Error(`Source ${input.sourceId} is not a GraphQL source.`),
-        );
-      }
-
-      const stored = storedSourceDataFromInput(input.config);
-      const savedSource = yield* host.sources.save({
-        ...source,
-        name: input.config.name.trim(),
-        namespace: deriveGraphqlNamespace({
-          endpoint: input.config.endpoint,
-          title: input.config.name,
-        }),
-      });
-
-      yield* options.storage.put({
-        scopeId: savedSource.scopeId,
-        sourceId: savedSource.id,
-        value: stored,
-      });
-
-      return yield* host.sources.refreshCatalog(savedSource.id);
-    }),
-  removeSource: (sourceId: Source["id"]) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(sourceId);
-      if (source.kind !== "graphql") {
-        return yield* Effect.fail(
-          new Error(`Source ${sourceId} is not a GraphQL source.`),
-        );
-      }
-
-      if (options.storage.remove) {
-        yield* options.storage.remove({
-          scopeId: source.scopeId,
-          sourceId: source.id,
-        });
-      }
-
-      return yield* host.sources.remove(source.id);
-    }),
-});
-
-const graphqlSourceConnector = (
-  options: {
-    storage: GraphqlSourceStorage;
-  },
-): ExecutorSourceConnector<GraphqlExecutorAddInput> => ({
-  kind: "graphql",
-  displayName: "GraphQL",
-  inputSchema: GraphqlExecutorAddInputSchema,
-  inputSignatureWidth: 300,
-  helpText: [
-    "Point `endpoint` at the GraphQL HTTP endpoint and choose `auth.kind`.",
-  ],
-  createSource: ({ args, host }) =>
-    createGraphqlSourceSdk(options, host).createSource(args),
-});
-
-const createGraphqlSourceRuntime = (
-  options: {
-    storage: GraphqlSourceStorage;
-  },
-): SourcePluginRuntime => ({
-  kind: "graphql",
-  displayName: "GraphQL",
-  catalogKind: "imported",
-  catalogIdentity: ({ source }) => ({
-    kind: "graphql",
-    sourceId: source.id,
-  }),
-  getIrModel: ({ source }) =>
-    Effect.gen(function* () {
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-
-      if (stored === null) {
-        return createSourceCatalogSyncResult({
-          fragment: {
-            version: "ir.v1.fragment",
-          },
-          importMetadata: {
-            ...createCatalogImportMetadata({
-              source,
-              pluginKey: "graphql",
-            }),
-            importerVersion: "ir.v1.graphql",
-            sourceConfigHash: "missing",
-          },
-          sourceHash: null,
-        });
-      }
-
-      const normalizedStored = normalizeStoredSourceData(stored);
-      const headers = yield* resolveGraphqlHeaders(normalizedStored);
-      const graphqlDocument = yield* fetchGraphqlIntrospectionDocumentWithHeaders({
-        endpoint: normalizedStored.endpoint,
-        headers,
-      });
-      const manifest = yield* extractGraphqlManifest(source.name, graphqlDocument);
-      const definitions = yield* Effect.sync(() =>
-        compileGraphqlToolDefinitions(manifest),
-      );
-      const operations = definitions.map((definition) =>
-        graphqlCatalogOperationFromDefinition({
-          definition,
-          manifest,
-        }),
-      );
-      const now = Date.now();
-
-      return createSourceCatalogSyncResult({
-        fragment: createGraphqlCatalogFragment({
-          source,
-          documents: [
-            {
-              documentKind: "graphql_introspection",
-              documentKey: normalizedStored.endpoint,
-              contentText: graphqlDocument,
-              fetchedAt: now,
-            },
-          ],
-          operations,
-        }),
-        importMetadata: {
-          ...createCatalogImportMetadata({
-            source,
-            pluginKey: "graphql",
+        stored: storedSourceDataFromInput(input),
+      }),
+      update: ({ source, config }) => ({
+        source: {
+          ...source,
+          name: config.name.trim(),
+          namespace: deriveGraphqlNamespace({
+            endpoint: config.endpoint,
+            title: config.name,
           }),
-          importerVersion: "ir.v1.graphql",
         },
-        sourceHash: manifest.sourceHash,
-      });
-    }),
-  invoke: (input) =>
-    Effect.gen(function* () {
-      const stored = yield* options.storage.get({
-        scopeId: input.source.scopeId,
-        sourceId: input.source.id,
-      });
-      if (stored === null) {
-        return yield* Effect.fail(
-          new Error(`GraphQL source storage missing for ${input.source.id}`),
-        );
-      }
+        stored: storedSourceDataFromInput(config),
+      }),
+      toConfig: ({ source, stored }) =>
+        sourceConfigFromStored(source, normalizeStoredSourceData(stored)),
+    },
+    catalog: {
+      kind: "imported",
+      identity: ({ source }) => ({
+        kind: "graphql",
+        sourceId: source.id,
+      }),
+      sync: ({ source, stored }) =>
+        Effect.gen(function* () {
+          if (stored === null) {
+            return createSourceCatalogSyncResult({
+              fragment: {
+                version: "ir.v1.fragment",
+              },
+              importMetadata: {
+                ...createCatalogImportMetadata({
+                  source,
+                  pluginKey: "graphql",
+                }),
+                importerVersion: "ir.v1.graphql",
+                sourceConfigHash: "missing",
+              },
+              sourceHash: null,
+            });
+          }
 
-      const normalizedStored = normalizeStoredSourceData(stored);
-      const providerData = decodeProviderData(
-        input.executable.binding,
-      ) as GraphqlToolProviderData;
-      const args = asRecord(input.args);
-      const headers = {
-        "content-type": "application/json",
-        ...(yield* resolveGraphqlHeaders(normalizedStored)),
-        ...asStringRecord(args.headers),
-      };
-      const endpoint = applyHttpQueryPlacementsToUrl({
-        url: normalizedStored.endpoint,
-      }).toString();
-
-      const isRawRequest =
-        providerData.toolKind === "request"
-        || typeof providerData.operationDocument !== "string"
-        || providerData.operationDocument.trim().length === 0;
-      const query = isRawRequest
-        ? (() => {
-            const value = asString(args.query);
-            if (value === null) {
-              throw new Error("GraphQL request tools require args.query");
-            }
-            return value;
-          })()
-        : providerData.operationDocument!;
-      const variables = isRawRequest
-        ? args.variables !== undefined
-          ? asRecord(args.variables)
-          : undefined
-        : withoutUndefinedEntries(
-            Object.fromEntries(
-              Object.entries(args).filter(([key]) => key !== "headers"),
-            ),
+          const normalizedStored = normalizeStoredSourceData(stored);
+          const headers = yield* resolveGraphqlHeaders(normalizedStored);
+          const graphqlDocument = yield* fetchGraphqlIntrospectionDocumentWithHeaders({
+            endpoint: normalizedStored.endpoint,
+            headers,
+          });
+          const manifest = yield* extractGraphqlManifest(source.name, graphqlDocument);
+          const definitions = yield* Effect.sync(() =>
+            compileGraphqlToolDefinitions(manifest),
           );
-      const operationName = isRawRequest
-        ? (asString(args.operationName) ?? undefined)
-        : (providerData.operationName ?? undefined);
-
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch(endpoint, {
-            method: "POST",
-            headers: applyCookiePlacementsToHeaders({
-              headers,
-              cookies: {},
+          const operations = definitions.map((definition) =>
+            graphqlCatalogOperationFromDefinition({
+              definition,
+              manifest,
             }),
-            body: JSON.stringify(
-              applyJsonBodyPlacements({
-                body: {
-                  query,
-                  ...(variables ? { variables } : {}),
-                  ...(operationName ? { operationName } : {}),
+          );
+          const now = Date.now();
+
+          return createSourceCatalogSyncResult({
+            fragment: createGraphqlCatalogFragment({
+              source,
+              documents: [
+                {
+                  documentKind: "graphql_introspection",
+                  documentKey: normalizedStored.endpoint,
+                  contentText: graphqlDocument,
+                  fetchedAt: now,
                 },
-                bodyValues: {},
-                label: `GraphQL invocation ${normalizedStored.endpoint}`,
+              ],
+              operations,
+            }),
+            importMetadata: {
+              ...createCatalogImportMetadata({
+                source,
+                pluginKey: "graphql",
               }),
-            ),
-          }),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      const body = yield* Effect.tryPromise({
-        try: () => parseGraphqlResponseBody(response),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      const bodyRecord = asRecord(body);
-      const hasErrors = Array.isArray(bodyRecord.errors) && bodyRecord.errors.length > 0;
+              importerVersion: "ir.v1.graphql",
+            },
+            sourceHash: manifest.sourceHash,
+          });
+        }),
+      invoke: (input) =>
+        Effect.gen(function* () {
+          if (input.stored === null) {
+            return yield* Effect.fail(
+              new Error(`GraphQL source storage missing for ${input.source.id}`),
+            );
+          }
 
-      return {
-        data: response.ok ? (bodyRecord.data ?? body) : null,
-        error:
-          response.ok && !hasErrors
-            ? null
-            : bodyRecord.errors ?? body,
-        headers: responseHeadersRecord(response),
-        status: response.status,
-      };
-    }),
-});
+          const normalizedStored = normalizeStoredSourceData(input.stored);
+          const providerData = decodeProviderData(
+            input.executable.binding,
+          ) as GraphqlToolProviderData;
+          const args = asRecord(input.args);
+          const headers = {
+            "content-type": "application/json",
+            ...(yield* resolveGraphqlHeaders(normalizedStored)),
+            ...asStringRecord(args.headers),
+          };
+          const endpoint = applyHttpQueryPlacementsToUrl({
+            url: normalizedStored.endpoint,
+          }).toString();
 
-export const graphqlSdkPlugin = (options: {
-  storage: GraphqlSourceStorage;
-}): ExecutorSdkPlugin<"graphql", GraphqlSdk> => ({
-  key: "graphql",
-  sources: [createGraphqlSourceRuntime(options)],
-  sourceConnectors: [graphqlSourceConnector(options)],
-  extendExecutor: ({ host, executor }) => {
-    const sourceSdk = createGraphqlSourceSdk(options, host);
+          const isRawRequest =
+            providerData.toolKind === "request"
+            || typeof providerData.operationDocument !== "string"
+            || providerData.operationDocument.trim().length === 0;
+          const query = isRawRequest
+            ? (() => {
+                const value = asString(args.query);
+                if (value === null) {
+                  throw new Error("GraphQL request tools require args.query");
+                }
+                return value;
+              })()
+            : providerData.operationDocument!;
+          const variables = isRawRequest
+            ? args.variables !== undefined
+              ? asRecord(args.variables)
+              : undefined
+            : withoutUndefinedEntries(
+                Object.fromEntries(
+                  Object.entries(args).filter(([key]) => key !== "headers"),
+                ),
+              );
+          const operationName = isRawRequest
+            ? (asString(args.operationName) ?? undefined)
+            : (providerData.operationName ?? undefined);
+
+          const response = yield* Effect.tryPromise({
+            try: () =>
+              fetch(endpoint, {
+                method: "POST",
+                headers: applyCookiePlacementsToHeaders({
+                  headers,
+                  cookies: {},
+                }),
+                body: JSON.stringify(
+                  applyJsonBodyPlacements({
+                    body: {
+                      query,
+                      ...(variables ? { variables } : {}),
+                      ...(operationName ? { operationName } : {}),
+                    },
+                    bodyValues: {},
+                    label: `GraphQL invocation ${normalizedStored.endpoint}`,
+                  }),
+                ),
+              }),
+            catch: (cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+          });
+          const body = yield* Effect.tryPromise({
+            try: () => parseGraphqlResponseBody(response),
+            catch: (cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+          });
+          const bodyRecord = asRecord(body);
+          const hasErrors =
+            Array.isArray(bodyRecord.errors) && bodyRecord.errors.length > 0;
+
+          return {
+            data: response.ok ? (bodyRecord.data ?? body) : null,
+            error:
+              response.ok && !hasErrors
+                ? null
+                : bodyRecord.errors ?? body,
+            headers: responseHeadersRecord(response),
+            status: response.status,
+          };
+        }),
+    },
+  },
+  extendExecutor: ({ source, executor }) => {
     const provideRuntime = <A>(
       effect: Effect.Effect<A, Error, any>,
     ): Effect.Effect<A, Error, never> =>
@@ -608,13 +528,13 @@ export const graphqlSdkPlugin = (options: {
 
     return {
       getSourceConfig: (sourceId) =>
-        provideRuntime(sourceSdk.getSourceConfig(sourceId)),
+        provideRuntime(source.getSourceConfig(sourceId)),
       createSource: (input) =>
-        provideRuntime(sourceSdk.createSource(input)),
+        provideRuntime(source.createSource(input)),
       updateSource: (input) =>
-        provideRuntime(sourceSdk.updateSource(input)),
+        provideRuntime(source.updateSource(input)),
       removeSource: (sourceId) =>
-        provideRuntime(sourceSdk.removeSource(sourceId)),
+        provideRuntime(source.removeSource(sourceId)),
     };
   },
 });

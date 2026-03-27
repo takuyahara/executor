@@ -1,54 +1,64 @@
-import * as React from "react";
-
+import {
+  useExecutorPlugin,
+  useExecutorPluginNavigation,
+  useExecutorPluginRouteParams,
+  useExecutorPluginSearch,
+} from "./plugin-route-context";
+import {
+  createSourcePluginPaths,
+  normalizeSourcePluginPath,
+} from "./paths";
 import type {
-  SourcePluginRouteContextValue,
+  SourcePluginNavigation,
   SourcePluginRouteParams,
   SourcePluginRouteSearch,
 } from "./types";
 
-const SourcePluginRouteContext =
-  React.createContext<SourcePluginRouteContextValue | null>(null);
-
-export function SourcePluginRouteProvider(props: {
-  value: SourcePluginRouteContextValue;
-  children: React.ReactNode;
-}) {
-  return (
-    <SourcePluginRouteContext.Provider value={props.value}>
-      {props.children}
-    </SourcePluginRouteContext.Provider>
-  );
-}
-
-const useSourcePluginRouteContext = (): SourcePluginRouteContextValue => {
-  const value = React.useContext(SourcePluginRouteContext);
-  if (value === null) {
-    throw new Error("Source plugin route context is unavailable.");
-  }
-  return value;
-};
-
-export const useSourcePluginRoute = (): SourcePluginRouteContextValue =>
-  useSourcePluginRouteContext();
-
-export const useSourcePluginDefinition = () =>
-  useSourcePluginRouteContext().definition;
+export const useSourcePluginRoute = () => ({
+  plugin: useExecutorPlugin(),
+  params: useExecutorPluginRouteParams(),
+  search: useExecutorPluginSearch(),
+  navigation: useSourcePluginNavigation(),
+});
 
 export const useSourcePlugin = () =>
-  useSourcePluginRouteContext().plugin;
+  useExecutorPlugin();
 
-export const useSourcePluginNavigation = () =>
-  useSourcePluginRouteContext().navigation;
+export const useSourcePluginNavigation = (): SourcePluginNavigation => {
+  const plugin = useExecutorPlugin();
+  const navigation = useExecutorPluginNavigation();
+  const paths = createSourcePluginPaths(plugin.key);
+
+  return {
+    paths,
+    home: () => navigation.home(),
+    add: () => navigation.route("add"),
+    detail: (sourceId, search) =>
+      navigation.route(`sources/${sourceId}`, search),
+    edit: (sourceId, search) =>
+      navigation.route(`sources/${sourceId}/edit`, search),
+    child: ({ sourceId, path, search }) => {
+      const normalizedPath = normalizeSourcePluginPath(path);
+      return navigation.route(
+        normalizedPath.length === 0
+          ? `sources/${sourceId}`
+          : `sources/${sourceId}/${normalizedPath}`,
+        search,
+      );
+    },
+    updateSearch: (search) => navigation.updateSearch(search),
+  };
+};
 
 export const useSourcePluginSearch = <
   TSearch extends SourcePluginRouteSearch = SourcePluginRouteSearch,
 >(): TSearch =>
-  useSourcePluginRouteContext().search as TSearch;
+  useExecutorPluginSearch<TSearch>();
 
 export const useSourcePluginRouteParams = <
   TParams extends SourcePluginRouteParams = SourcePluginRouteParams,
 >(): TParams =>
-  useSourcePluginRouteContext().params as TParams;
+  useExecutorPluginRouteParams<TParams>();
 
 export const useSourcePluginPaths = () =>
-  useSourcePluginRouteContext().navigation.paths;
+  createSourcePluginPaths(useExecutorPlugin().key);

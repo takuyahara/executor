@@ -13,6 +13,7 @@ import {
   useExecutorMutation,
   usePrefetchToolDetail,
   useSecrets,
+  useSource,
   useSourceDiscovery,
   useSourceInspection,
   useSourceToolDetail,
@@ -35,10 +36,10 @@ import {
   MethodBadge,
   cn,
   defineExecutorFrontendPlugin,
-  defineFrontendSourceType,
   parseSourceToolExplorerSearch,
   type SourceToolExplorerSearch,
   useSourcePluginNavigation,
+  useSourcePluginRouteParams,
   useSourcePluginSearch,
 } from "@executor/react/plugins";
 import {
@@ -1658,16 +1659,74 @@ function highlightMatch(text: string, search: string) {
   );
 }
 
-const openApiSourceType = defineFrontendSourceType({
-  key: "openapi",
-  kind: "openapi",
-  displayName: "OpenAPI",
-  renderAddPage: OpenApiAddSourcePage,
-  renderEditPage: OpenApiEditSourcePage,
-  renderDetailPage: OpenApiSourceDetailPage,
-});
+function OpenApiSourceRoute(props: {
+  children: (source: Source) => ReactNode;
+}) {
+  const params = useSourcePluginRouteParams<{ sourceId?: string }>();
+  const sourceId = typeof params.sourceId === "string" ? params.sourceId : null;
+  const source = useSource(sourceId ?? "");
+
+  if (sourceId === null || source.status === "error") {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        This OpenAPI source is unavailable.
+      </div>
+    );
+  }
+
+  if (source.status === "loading") {
+    return (
+      <div className="px-6 py-8 text-sm text-muted-foreground">
+        Loading source...
+      </div>
+    );
+  }
+
+  if (source.data.kind !== "openapi") {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        Expected an `openapi` source, but received `{source.data.kind}`.
+      </div>
+    );
+  }
+
+  return props.children(source.data);
+}
+
+function OpenApiDetailRoute() {
+  return (
+    <OpenApiSourceRoute>
+      {(source) => <OpenApiSourceDetailPage source={source} />}
+    </OpenApiSourceRoute>
+  );
+}
+
+function OpenApiEditRoute() {
+  return (
+    <OpenApiSourceRoute>
+      {(source) => <OpenApiEditSourcePage source={source} />}
+    </OpenApiSourceRoute>
+  );
+}
 
 export const OpenApiReactPlugin = defineExecutorFrontendPlugin({
   key: "openapi",
-  sourceTypes: [openApiSourceType],
+  displayName: "OpenAPI",
+  routes: [
+    {
+      key: "add",
+      path: "add",
+      component: OpenApiAddSourcePage,
+    },
+    {
+      key: "detail",
+      path: "sources/$sourceId",
+      component: OpenApiDetailRoute,
+    },
+    {
+      key: "edit",
+      path: "sources/$sourceId/edit",
+      component: OpenApiEditRoute,
+    },
+  ],
 });

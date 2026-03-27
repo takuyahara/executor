@@ -1,4 +1,4 @@
-import { startTransition, useMemo, useState } from "react";
+import { startTransition, useMemo, useState, type ReactNode } from "react";
 import type { Source } from "@executor/react";
 import {
   Result,
@@ -7,6 +7,7 @@ import {
   useAtomValue,
   useExecutorMutation,
   useLocalInstallation,
+  useSource,
 } from "@executor/react";
 import {
   IconCheck,
@@ -15,10 +16,10 @@ import {
   IconSpinner,
   SourceToolExplorer,
   defineExecutorFrontendPlugin,
-  defineFrontendSourceType,
   parseSourceToolExplorerSearch,
   type SourceToolExplorerSearch,
   useSourcePluginNavigation,
+  useSourcePluginRouteParams,
   useSourcePluginSearch,
 } from "@executor/react/plugins";
 
@@ -1230,17 +1231,75 @@ function McpDetailPage(props: {
   );
 }
 
-const mcpSourceType = defineFrontendSourceType({
-  key: "mcp",
-  kind: "mcp",
-  displayName: "MCP",
-  description: "Connect remote or local MCP servers.",
-  renderAddPage: McpAddPage,
-  renderEditPage: McpEditPage,
-  renderDetailPage: McpDetailPage,
-});
+function McpSourceRoute(props: {
+  children: (source: Source) => ReactNode;
+}) {
+  const params = useSourcePluginRouteParams<{ sourceId?: string }>();
+  const sourceId = typeof params.sourceId === "string" ? params.sourceId : null;
+  const source = useSource(sourceId ?? "");
+
+  if (sourceId === null || source.status === "error") {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        This MCP source is unavailable.
+      </div>
+    );
+  }
+
+  if (source.status === "loading") {
+    return (
+      <div className="px-6 py-8 text-sm text-muted-foreground">
+        Loading source...
+      </div>
+    );
+  }
+
+  if (source.data.kind !== "mcp") {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        Expected an `mcp` source, but received `{source.data.kind}`.
+      </div>
+    );
+  }
+
+  return props.children(source.data);
+}
+
+function McpEditRoute() {
+  return (
+    <McpSourceRoute>
+      {(source) => <McpEditPage source={source} />}
+    </McpSourceRoute>
+  );
+}
+
+function McpDetailRoute() {
+  return (
+    <McpSourceRoute>
+      {(source) => <McpDetailPage source={source} />}
+    </McpSourceRoute>
+  );
+}
 
 export const McpReactPlugin = defineExecutorFrontendPlugin({
   key: "mcp",
-  sourceTypes: [mcpSourceType],
+  displayName: "MCP",
+  description: "Connect remote or local MCP servers.",
+  routes: [
+    {
+      key: "add",
+      path: "add",
+      component: McpAddPage,
+    },
+    {
+      key: "detail",
+      path: "sources/$sourceId",
+      component: McpDetailRoute,
+    },
+    {
+      key: "edit",
+      path: "sources/$sourceId/edit",
+      component: McpEditRoute,
+    },
+  ],
 });

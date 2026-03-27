@@ -30,6 +30,9 @@ import type {
   Source,
 } from "../../../packages/platform/sdk/src/schema/models/source";
 import {
+  registerExecutorSdkPlugins,
+} from "../../../packages/platform/sdk/src/plugins";
+import {
   ScopeIdSchema,
   SourceIdSchema,
 } from "../../../packages/platform/sdk/src/schema/ids";
@@ -187,12 +190,14 @@ describe("openapi refresh", () => {
               }),
           },
         });
-        const runtime = plugin.sources?.[0];
+        const runtime = registerExecutorSdkPlugins([plugin]).getSourceContribution(
+          "openapi",
+        );
 
         expect(runtime).toBeDefined();
 
         const result = await Effect.runPromise(
-          runtime!.getIrModel({
+          runtime!.syncCatalog({
             source: testSource,
           }) as Effect.Effect<any, Error, never>,
         );

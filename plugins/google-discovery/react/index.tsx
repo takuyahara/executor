@@ -1,4 +1,4 @@
-import { startTransition, useMemo, useState } from "react";
+import { startTransition, useMemo, useState, type ReactNode } from "react";
 import type { Source } from "@executor/react";
 import {
   defineExecutorPluginHttpApiClient,
@@ -9,15 +9,16 @@ import {
   useExecutorMutation,
   useLocalInstallation,
   useSecrets,
+  useSource,
 } from "@executor/react";
 import {
   IconPencil,
   SourceToolExplorer,
   defineExecutorFrontendPlugin,
-  defineFrontendSourceType,
   parseSourceToolExplorerSearch,
   type SourceToolExplorerSearch,
   useSourcePluginNavigation,
+  useSourcePluginRouteParams,
   useSourcePluginSearch,
 } from "@executor/react/plugins";
 
@@ -72,7 +73,7 @@ const getGoogleDiscoveryServiceKey = (
   return namespace.slice("google.".length).replaceAll(".", "");
 };
 
-const getGoogleDiscoveryIconUrl = (
+export const getGoogleDiscoveryIconUrl = (
   source: Pick<Source, "namespace">,
 ): string | null => {
   const serviceKey = getGoogleDiscoveryServiceKey(source);
@@ -1441,18 +1442,75 @@ function GoogleDiscoveryDetailPage(props: {
   );
 }
 
-const googleDiscoverySourceType = defineFrontendSourceType({
-  key: GOOGLE_DISCOVERY_PLUGIN_KEY,
-  kind: GOOGLE_DISCOVERY_SOURCE_KIND,
-  displayName: "Google Discovery",
-  description: "Connect Google Workspace and Cloud APIs via discovery documents.",
-  getIconUrl: getGoogleDiscoveryIconUrl,
-  renderAddPage: GoogleDiscoveryAddPage,
-  renderEditPage: GoogleDiscoveryEditPage,
-  renderDetailPage: GoogleDiscoveryDetailPage,
-});
+function GoogleDiscoverySourceRoute(props: {
+  children: (source: Source) => ReactNode;
+}) {
+  const params = useSourcePluginRouteParams<{ sourceId?: string }>();
+  const sourceId = typeof params.sourceId === "string" ? params.sourceId : null;
+  const source = useSource(sourceId ?? "");
+
+  if (sourceId === null || source.status === "error") {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        This Google Discovery source is unavailable.
+      </div>
+    );
+  }
+
+  if (source.status === "loading") {
+    return (
+      <div className="px-6 py-8 text-sm text-muted-foreground">
+        Loading source...
+      </div>
+    );
+  }
+
+  if (source.data.kind !== GOOGLE_DISCOVERY_SOURCE_KIND) {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        Expected a `{GOOGLE_DISCOVERY_SOURCE_KIND}` source, but received `{source.data.kind}`.
+      </div>
+    );
+  }
+
+  return props.children(source.data);
+}
+
+function GoogleDiscoveryEditRoute() {
+  return (
+    <GoogleDiscoverySourceRoute>
+      {(source) => <GoogleDiscoveryEditPage source={source} />}
+    </GoogleDiscoverySourceRoute>
+  );
+}
+
+function GoogleDiscoveryDetailRoute() {
+  return (
+    <GoogleDiscoverySourceRoute>
+      {(source) => <GoogleDiscoveryDetailPage source={source} />}
+    </GoogleDiscoverySourceRoute>
+  );
+}
 
 export const GoogleDiscoveryReactPlugin = defineExecutorFrontendPlugin({
   key: GOOGLE_DISCOVERY_PLUGIN_KEY,
-  sourceTypes: [googleDiscoverySourceType],
+  displayName: "Google Discovery",
+  description: "Connect Google Workspace and Cloud APIs via discovery documents.",
+  routes: [
+    {
+      key: "add",
+      path: "add",
+      component: GoogleDiscoveryAddPage,
+    },
+    {
+      key: "detail",
+      path: "sources/$sourceId",
+      component: GoogleDiscoveryDetailRoute,
+    },
+    {
+      key: "edit",
+      path: "sources/$sourceId/edit",
+      component: GoogleDiscoveryEditRoute,
+    },
+  ],
 });

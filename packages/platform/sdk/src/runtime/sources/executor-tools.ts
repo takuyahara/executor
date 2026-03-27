@@ -43,25 +43,21 @@ import {
   RuntimeSourceStoreService,
 } from "./source-store";
 import {
-  registeredSourceConnectors,
+  registeredSourceContributions,
 } from "./source-plugins";
-import type {
-  ExecutorSdkPluginHost,
-  ExecutorSourceConnector,
-} from "../../plugins";
 
 const createExecutorSourcesAddSchema = (): Schema.Schema<any, any, never> => {
-  const connectors = registeredSourceConnectors();
-  if (connectors.length === 0) {
+  const sources = registeredSourceContributions();
+  if (sources.length === 0) {
     return Schema.Unknown;
   }
 
-  if (connectors.length === 1) {
-    return connectors[0]!.inputSchema;
+  if (sources.length === 1) {
+    return sources[0]!.inputSchema;
   }
 
   return Schema.Union(
-    ...(connectors.map((connector) => connector.inputSchema) as [
+    ...(sources.map((source) => source.inputSchema) as [
       Schema.Schema<any, any, never>,
       Schema.Schema<any, any, never>,
       ...Array<Schema.Schema<any, any, never>>,
@@ -85,26 +81,26 @@ export const EXECUTOR_SOURCES_ADD_OUTPUT_SCHEMA = deriveSchemaJson(
 ) ?? {};
 
 export const getExecutorSourcesAddHelpLines = (): readonly string[] => {
-  const connectors = registeredSourceConnectors();
-  if (connectors.length === 0) {
+  const sources = registeredSourceContributions();
+  if (sources.length === 0) {
     return ["No source plugins are registered in this build."] as const;
   }
 
   return [
     "Source add input shapes:",
-    ...connectors.flatMap((connector) => [
-      `- ${connector.displayName}: ${deriveSchemaTypeSignature(
-        connector.inputSchema,
-        connector.inputSignatureWidth ?? 260,
+    ...sources.flatMap((source) => [
+      `- ${source.displayName}: ${deriveSchemaTypeSignature(
+        source.inputSchema,
+        source.inputSignatureWidth ?? 260,
       )}`,
-      ...(connector.helpText ?? []).map((line) => `  ${line}`),
+      ...(source.helpText ?? []).map((line) => `  ${line}`),
     ]),
   ];
 };
 
 export const buildExecutorSourcesAddDescription = (): string => {
-  const connectors = registeredSourceConnectors();
-  if (connectors.length === 0) {
+  const sources = registeredSourceContributions();
+  if (sources.length === 0) {
     return "No source plugins are registered in this build.";
   }
 
@@ -117,32 +113,39 @@ export const buildExecutorSourcesAddDescription = (): string => {
 const createSourceConnectorHost = (input: {
   scopeId: ScopeId;
   actorScopeId: ScopeId;
-}): ExecutorSdkPluginHost => ({
+}) => ({
   sources: {
-    create: ({ source }) =>
+    create: ({
+      source,
+    }: {
+      source: Omit<
+        Source,
+        "id" | "scopeId" | "createdAt" | "updatedAt"
+      >;
+    }) =>
       createManagedSourceRecord({
         scopeId: input.scopeId,
         actorScopeId: input.actorScopeId,
         source,
       }),
-    get: (sourceId) =>
+    get: (sourceId: Source["id"]) =>
       getSource({
         scopeId: input.scopeId,
         sourceId,
         actorScopeId: input.actorScopeId,
       }),
-    save: (source) =>
+    save: (source: Source) =>
       saveManagedSourceRecord({
         actorScopeId: input.actorScopeId,
         source,
       }),
-    refreshCatalog: (sourceId) =>
+    refreshCatalog: (sourceId: Source["id"]) =>
       refreshManagedSourceCatalog({
         scopeId: input.scopeId,
         sourceId,
         actorScopeId: input.actorScopeId,
       }),
-    remove: (sourceId) =>
+    remove: (sourceId: Source["id"]) =>
       removeSource({
         scopeId: input.scopeId,
         sourceId,
@@ -188,20 +191,20 @@ const runExecutorSourceEffect = async <A>(
   );
 };
 
-const resolveSourceConnector = (
-  connectors: readonly ExecutorSourceConnector[],
+const resolveSourceContribution = (
+  sources: ReturnType<typeof registeredSourceContributions>,
   args: unknown,
 ):
   | {
-      connector: ExecutorSourceConnector;
+      source: ReturnType<typeof registeredSourceContributions>[number];
       parsedArgs: unknown;
     }
   | null => {
-  for (const connector of connectors) {
-    const parsed = Schema.decodeUnknownOption(connector.inputSchema)(args);
+  for (const source of sources) {
+    const parsed = Schema.decodeUnknownOption(source.inputSchema)(args);
     if (Option.isSome(parsed)) {
       return {
-        connector,
+        source,
         parsedArgs: parsed.value,
       };
     }
@@ -227,8 +230,8 @@ export const createExecutorToolMap = (input: {
   sourceArtifactStore: SourceArtifactStoreShape;
   runtimeLocalScope: RuntimeLocalScopeState | null;
 }): ToolMap => {
-  const connectors = registeredSourceConnectors();
-  if (connectors.length === 0) {
+  const sources = registeredSourceContributions();
+  if (sources.length === 0) {
     return {};
   }
 
@@ -244,7 +247,7 @@ export const createExecutorToolMap = (input: {
         inputSchema: Schema.standardSchemaV1(createExecutorSourcesAddSchema()),
         outputSchema: Schema.standardSchemaV1(SourceSchema),
         execute: async (args: unknown): Promise<Source> => {
-          const matched = resolveSourceConnector(connectors, args);
+          const matched = resolveSourceContribution(sources, args);
           if (matched === null) {
             throw new Error(
               "executor.sources.add input did not match a registered source plugin.",
@@ -252,7 +255,7 @@ export const createExecutorToolMap = (input: {
           }
 
           const createdSource = await runExecutorSourceEffect(
-            matched.connector.createSource({
+            matched.source.createSource({
               args: matched.parsedArgs,
               host,
             }),

@@ -7,11 +7,8 @@ import {
   createSourceCatalogSyncResult,
 } from "@executor/source-core";
 import type { Source } from "@executor/platform-sdk/schema";
-import type {
-  ExecutorSdkPlugin,
-  ExecutorSdkPluginHost,
-  ExecutorSourceConnector,
-  SourcePluginRuntime,
+import {
+  defineExecutorSourcePlugin,
 } from "@executor/platform-sdk/plugins";
 import {
   SecretMaterialResolverService,
@@ -298,139 +295,13 @@ const responseHeadersRecord = (response: Response): Record<string, string> => {
   return headers;
 };
 
-const createOpenApiSourceSdk = (
-  options: OpenApiSdkPluginOptions,
-  host: ExecutorSdkPluginHost,
-) => ({
-  getSourceConfig: (sourceId: Source["id"]) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(sourceId);
-      if (source.kind !== "openapi") {
-        return yield* Effect.fail(
-          new Error(`Source ${sourceId} is not an OpenAPI source.`),
-        );
-      }
-
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-      if (stored === null) {
-        return yield* Effect.fail(
-          new Error(`OpenAPI source storage missing for ${source.id}`),
-        );
-      }
-
-      return configFromStoredSourceData(
-        source,
-        normalizeStoredSourceData(stored),
-      );
-    }),
-  createSource: (input: OpenApiConnectInput) =>
-    Effect.gen(function* () {
-      const stored = createStoredSourceData(input);
-      const createdSource = yield* host.sources.create({
-        source: {
-          name: input.name.trim(),
-          kind: "openapi",
-          status: "connected",
-          enabled: true,
-          namespace: deriveOpenApiNamespace({
-            specUrl: input.specUrl,
-            title: input.name,
-          }),
-        },
-      });
-
-      yield* options.storage.put({
-        scopeId: createdSource.scopeId,
-        sourceId: createdSource.id,
-        value: stored,
-      });
-
-      return yield* host.sources.refreshCatalog(createdSource.id);
-    }),
-  updateSource: (input: OpenApiUpdateSourceInput) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(input.sourceId as Source["id"]);
-      if (source.kind !== "openapi") {
-        return yield* Effect.fail(
-          new Error(`Source ${input.sourceId} is not an OpenAPI source.`),
-        );
-      }
-
-      const nextStored = createStoredSourceData(input.config);
-      const savedSource = yield* host.sources.save({
-        ...source,
-        name: input.config.name.trim(),
-        namespace: deriveOpenApiNamespace({
-          specUrl: input.config.specUrl,
-          title: input.config.name,
-        }),
-      });
-
-      yield* options.storage.put({
-        scopeId: savedSource.scopeId,
-        sourceId: savedSource.id,
-        value: nextStored,
-      });
-
-      return yield* host.sources.refreshCatalog(savedSource.id);
-    }),
-  refreshSource: (sourceId: Source["id"]) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(sourceId);
-      if (source.kind !== "openapi") {
-        return yield* Effect.fail(
-          new Error(`Source ${sourceId} is not an OpenAPI source.`),
-        );
-      }
-
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-      if (stored === null) {
-        return yield* Effect.fail(
-          new Error(`OpenAPI source storage missing for ${source.id}`),
-        );
-      }
-
-      return yield* host.sources.refreshCatalog(source.id);
-    }),
-  removeSource: (sourceId: Source["id"]) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(sourceId);
-      if (source.kind !== "openapi") {
-        return yield* Effect.fail(
-          new Error(`Source ${sourceId} is not an OpenAPI source.`),
-        );
-      }
-
-      if (options.storage.remove) {
-        yield* options.storage.remove({
-          scopeId: source.scopeId,
-          sourceId: source.id,
-        });
-      }
-
-      return yield* host.sources.remove(source.id);
-    }),
-});
-
-const openApiSourceConnector = (
-  options: OpenApiSdkPluginOptions,
-): ExecutorSourceConnector<OpenApiExecutorAddInput> => ({
-  kind: "openapi",
-  displayName: "OpenAPI",
-  inputSchema: OpenApiExecutorAddInputSchema,
-  inputSignatureWidth: 280,
-  helpText: [
-    "Provide the OpenAPI document URL and optional base URL override.",
-    "Use `auth.kind = \"bearer\"` with a stored secret ref when required.",
-  ],
-  createSource: ({ args, host }) =>
-    createOpenApiSourceSdk(options, host).createSource(args),
+const openApiConnectInputFromAddInput = (
+  input: OpenApiExecutorAddInput,
+): OpenApiConnectInput => ({
+  name: input.name,
+  specUrl: input.specUrl,
+  baseUrl: input.baseUrl,
+  auth: input.auth,
 });
 
 const decodeResponseBody = async (response: Response): Promise<unknown> => {
@@ -567,269 +438,303 @@ const fetchOpenApiDocument = (
     };
   });
 
-const createOpenApiSourceRuntime = (
-  options: OpenApiSdkPluginOptions,
-): SourcePluginRuntime => ({
-  kind: "openapi",
-  displayName: "OpenAPI",
-  catalogKind: "imported",
-  catalogIdentity: ({ source }) => ({
-    kind: "openapi",
-    sourceId: source.id,
-  }),
-  getIrModel: ({ source }) =>
-    Effect.gen(function* () {
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-      if (stored === null) {
-        return createSourceCatalogSyncResult({
-          fragment: {
-            version: "ir.v1.fragment",
-          },
-          importMetadata: {
-            ...createCatalogImportMetadata({
-              source,
-              pluginKey: "openapi",
-            }),
-            importerVersion: "ir.v1.openapi",
-            sourceConfigHash: "missing",
-          },
-          sourceHash: null,
-        });
-      }
-
-      const normalizedStored = normalizeStoredSourceData(stored);
-      const bearerToken = yield* resolveBearerToken(normalizedStored);
-      const fetched = yield* fetchOpenApiDocument({
-        stored: normalizedStored,
-        bearerToken,
-      });
-      const manifest = yield* extractOpenApiManifest(source.name, fetched.text, {
-        documentUrl: normalizedStored.specUrl,
-        loadDocument: async (url) => {
-          const response = await fetch(url, {
-            headers: openApiDocumentHeaders({
-              stored: normalizedStored,
-              bearerToken,
-            }),
-          });
-          if (!response.ok) {
-            throw new Error(
-              `Failed fetching OpenAPI document ${url} (${response.status} ${response.statusText})`,
-            );
-          }
-          return response.text();
-        },
-      });
-      const definitions = compileOpenApiToolDefinitions(manifest);
-      const now = Date.now();
-
-      yield* options.storage.put({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-        value: {
-          ...normalizedStored,
-          etag: fetched.etag,
-          lastSyncAt: now,
-        },
-      });
-
-      return createSourceCatalogSyncResult({
-        fragment: createOpenApiCatalogFragment({
-          source,
-          documents: [
-            {
-              documentKind: "openapi",
-              documentKey: normalizedStored.specUrl,
-              contentText: fetched.text,
-              fetchedAt: now,
-            },
-          ],
-          operations: definitions.map(openApiCatalogOperationFromDefinition),
-        }),
-        importMetadata: {
-          ...createCatalogImportMetadata({
-            source,
-            pluginKey: "openapi",
-          }),
-          importerVersion: "ir.v1.openapi",
-          sourceConfigHash: stableSourceHash(normalizedStored),
-        },
-        sourceHash: manifest.sourceHash,
-      });
-    }),
-  invoke: (input) =>
-    Effect.gen(function* () {
-      const stored = yield* options.storage.get({
-        scopeId: input.source.scopeId,
-        sourceId: input.source.id,
-      });
-      if (stored === null) {
-        return yield* Effect.fail(
-          new Error(`OpenAPI source storage missing for ${input.source.id}`),
-        );
-      }
-
-      const normalizedStored = normalizeStoredSourceData(stored);
-      const providerData = decodeProviderData(
-        input.executable.binding,
-      ) as OpenApiToolProviderData;
-      const args = asRecord(input.args);
-      const resolvedPath = replacePathTemplate(
-        providerData.invocation.pathTemplate,
-        args,
-        providerData.invocation,
-      );
-      const headers: Record<string, string> = {
-        ...(normalizedStored.defaultHeaders ?? {}),
-      };
-      const queryEntries: Array<{
-        name: string;
-        value: string;
-        allowReserved?: boolean;
-      }> = [];
-      const cookieParts: string[] = [];
-
-      for (const parameter of providerData.invocation.parameters) {
-        if (parameter.location === "path") {
-          continue;
-        }
-
-        const value = readParameterValue(args, parameter);
-        if (value === undefined || value === null) {
-          if (parameter.required) {
-            throw new Error(
-              `Missing required ${parameter.location} parameter ${parameter.name}`,
-            );
-          }
-          continue;
-        }
-
-        const serialized = serializeOpenApiParameterValue(parameter, value);
-        if (serialized.kind === "query") {
-          queryEntries.push(...serialized.entries);
-          continue;
-        }
-        if (serialized.kind === "header") {
-          headers[parameter.name] = serialized.value;
-          continue;
-        }
-        if (serialized.kind === "cookie") {
-          cookieParts.push(
-            ...serialized.pairs.map(
-              (pair) => `${pair.name}=${encodeURIComponent(pair.value)}`,
-            ),
-          );
-        }
-      }
-
-      let body: string | Uint8Array | undefined;
-      if (providerData.invocation.requestBody) {
-        const bodyValue = args.body ?? args.input;
-        if (bodyValue !== undefined) {
-          const serializedBody = serializeOpenApiRequestBody({
-            requestBody: providerData.invocation.requestBody,
-            body: bodyValue,
-          });
-          headers["content-type"] = serializedBody.contentType;
-          body = serializedBody.body;
-        }
-      }
-
-      const bearerToken = yield* resolveBearerToken(normalizedStored);
-      if (
-        bearerToken &&
-        bearerToken.length > 0 &&
-        normalizedStored.auth.kind === "bearer"
-      ) {
-        headers[resolveBearerHeaderName(normalizedStored.auth)] =
-          `${resolveBearerPrefix(normalizedStored.auth)}${bearerToken}`;
-      }
-
-      const requestUrl = resolveRequestUrl(
-        resolveOpenApiBaseUrl({
-          stored: normalizedStored,
-          providerData,
-        }),
-        resolvedPath,
-      );
-      const finalUrl = withSerializedQueryEntries(requestUrl, queryEntries);
-
-      const requestHeaders = new Headers(headers);
-      if (cookieParts.length > 0) {
-        const existingCookie = requestHeaders.get("cookie");
-        requestHeaders.set(
-          "cookie",
-          existingCookie
-            ? `${existingCookie}; ${cookieParts.join("; ")}`
-            : cookieParts.join("; "),
-        );
-      }
-
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetch(finalUrl.toString(), {
-            method: providerData.method.toUpperCase(),
-            headers: requestHeaders,
-            ...(body !== undefined
-              ? {
-                  body:
-                    typeof body === "string"
-                      ? body
-                      : new Uint8Array(body).buffer,
-                }
-              : {}),
-          }),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      const responseBody = yield* Effect.tryPromise({
-        try: () => decodeResponseBody(response),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-
-      return {
-        data: response.ok ? responseBody : null,
-        error: response.ok ? null : responseBody,
-        headers: responseHeadersRecord(response),
-        status: response.status,
-      };
-    }),
-});
-
 export const openApiSdkPlugin = (
   options: OpenApiSdkPluginOptions,
-): ExecutorSdkPlugin<"openapi", OpenApiSdk> => ({
+) => defineExecutorSourcePlugin<
+  "openapi",
+  OpenApiExecutorAddInput,
+  OpenApiConnectInput,
+  OpenApiSourceConfigPayload,
+  OpenApiStoredSourceData,
+  OpenApiUpdateSourceInput,
+  OpenApiSdk
+>({
   key: "openapi",
-  sources: [createOpenApiSourceRuntime(options)],
-  sourceConnectors: [openApiSourceConnector(options)],
-  extendExecutor: ({ host, executor }) => {
-    const sourceSdk = createOpenApiSourceSdk(options, host);
+  source: {
+    kind: "openapi",
+    displayName: "OpenAPI",
+    add: {
+      inputSchema: OpenApiExecutorAddInputSchema,
+      inputSignatureWidth: 280,
+      helpText: [
+        "Provide the OpenAPI document URL and optional base URL override.",
+        "Use `auth.kind = \"bearer\"` with a stored secret ref when required.",
+      ],
+      toConnectInput: openApiConnectInputFromAddInput,
+    },
+    storage: options.storage,
+    source: {
+      create: (input) => ({
+        source: {
+          name: input.name.trim(),
+          kind: "openapi",
+          status: "connected",
+          enabled: true,
+          namespace: deriveOpenApiNamespace({
+            specUrl: input.specUrl,
+            title: input.name,
+          }),
+        },
+        stored: createStoredSourceData(input),
+      }),
+      update: ({ source, config }) => ({
+        source: {
+          ...source,
+          name: config.name.trim(),
+          namespace: deriveOpenApiNamespace({
+            specUrl: config.specUrl,
+            title: config.name,
+          }),
+        },
+        stored: createStoredSourceData(config),
+      }),
+      toConfig: ({ source, stored }) =>
+        configFromStoredSourceData(source, normalizeStoredSourceData(stored)),
+    },
+    catalog: {
+      kind: "imported",
+      identity: ({ source }) => ({
+        kind: "openapi",
+        sourceId: source.id,
+      }),
+      sync: ({ source, stored }) =>
+        Effect.gen(function* () {
+          if (stored === null) {
+            return createSourceCatalogSyncResult({
+              fragment: {
+                version: "ir.v1.fragment",
+              },
+              importMetadata: {
+                ...createCatalogImportMetadata({
+                  source,
+                  pluginKey: "openapi",
+                }),
+                importerVersion: "ir.v1.openapi",
+                sourceConfigHash: "missing",
+              },
+              sourceHash: null,
+            });
+          }
+
+          const normalizedStored = normalizeStoredSourceData(stored);
+          const bearerToken = yield* resolveBearerToken(normalizedStored);
+          const fetched = yield* fetchOpenApiDocument({
+            stored: normalizedStored,
+            bearerToken,
+          });
+          const manifest = yield* extractOpenApiManifest(source.name, fetched.text, {
+            documentUrl: normalizedStored.specUrl,
+            loadDocument: async (url) => {
+              const response = await fetch(url, {
+                headers: openApiDocumentHeaders({
+                  stored: normalizedStored,
+                  bearerToken,
+                }),
+              });
+              if (!response.ok) {
+                throw new Error(
+                  `Failed fetching OpenAPI document ${url} (${response.status} ${response.statusText})`,
+                );
+              }
+              return response.text();
+            },
+          });
+          const definitions = compileOpenApiToolDefinitions(manifest);
+          const now = Date.now();
+
+          yield* options.storage.put({
+            scopeId: source.scopeId,
+            sourceId: source.id,
+            value: {
+              ...normalizedStored,
+              etag: fetched.etag,
+              lastSyncAt: now,
+            },
+          });
+
+          return createSourceCatalogSyncResult({
+            fragment: createOpenApiCatalogFragment({
+              source,
+              documents: [
+                {
+                  documentKind: "openapi",
+                  documentKey: normalizedStored.specUrl,
+                  contentText: fetched.text,
+                  fetchedAt: now,
+                },
+              ],
+              operations: definitions.map(openApiCatalogOperationFromDefinition),
+            }),
+            importMetadata: {
+              ...createCatalogImportMetadata({
+                source,
+                pluginKey: "openapi",
+              }),
+              importerVersion: "ir.v1.openapi",
+              sourceConfigHash: stableSourceHash(normalizedStored),
+            },
+            sourceHash: manifest.sourceHash,
+          });
+        }),
+      invoke: (input) =>
+        Effect.gen(function* () {
+          if (input.stored === null) {
+            return yield* Effect.fail(
+              new Error(`OpenAPI source storage missing for ${input.source.id}`),
+            );
+          }
+
+          const normalizedStored = normalizeStoredSourceData(input.stored);
+          const providerData = decodeProviderData(
+            input.executable.binding,
+          ) as OpenApiToolProviderData;
+          const args = asRecord(input.args);
+          const resolvedPath = replacePathTemplate(
+            providerData.invocation.pathTemplate,
+            args,
+            providerData.invocation,
+          );
+          const headers: Record<string, string> = {
+            ...(normalizedStored.defaultHeaders ?? {}),
+          };
+          const queryEntries: Array<{
+            name: string;
+            value: string;
+            allowReserved?: boolean;
+          }> = [];
+          const cookieParts: string[] = [];
+
+          for (const parameter of providerData.invocation.parameters) {
+            if (parameter.location === "path") {
+              continue;
+            }
+
+            const value = readParameterValue(args, parameter);
+            if (value === undefined || value === null) {
+              if (parameter.required) {
+                throw new Error(
+                  `Missing required ${parameter.location} parameter ${parameter.name}`,
+                );
+              }
+              continue;
+            }
+
+            const serialized = serializeOpenApiParameterValue(parameter, value);
+            if (serialized.kind === "query") {
+              queryEntries.push(...serialized.entries);
+              continue;
+            }
+            if (serialized.kind === "header") {
+              headers[parameter.name] = serialized.value;
+              continue;
+            }
+            if (serialized.kind === "cookie") {
+              cookieParts.push(
+                ...serialized.pairs.map(
+                  (pair) => `${pair.name}=${encodeURIComponent(pair.value)}`,
+                ),
+              );
+            }
+          }
+
+          let body: string | Uint8Array | undefined;
+          if (providerData.invocation.requestBody) {
+            const bodyValue = args.body ?? args.input;
+            if (bodyValue !== undefined) {
+              const serializedBody = serializeOpenApiRequestBody({
+                requestBody: providerData.invocation.requestBody,
+                body: bodyValue,
+              });
+              headers["content-type"] = serializedBody.contentType;
+              body = serializedBody.body;
+            }
+          }
+
+          const bearerToken = yield* resolveBearerToken(normalizedStored);
+          if (
+            bearerToken &&
+            bearerToken.length > 0 &&
+            normalizedStored.auth.kind === "bearer"
+          ) {
+            headers[resolveBearerHeaderName(normalizedStored.auth)] =
+              `${resolveBearerPrefix(normalizedStored.auth)}${bearerToken}`;
+          }
+
+          const requestUrl = resolveRequestUrl(
+            resolveOpenApiBaseUrl({
+              stored: normalizedStored,
+              providerData,
+            }),
+            resolvedPath,
+          );
+          const finalUrl = withSerializedQueryEntries(requestUrl, queryEntries);
+
+          const requestHeaders = new Headers(headers);
+          if (cookieParts.length > 0) {
+            const existingCookie = requestHeaders.get("cookie");
+            requestHeaders.set(
+              "cookie",
+              existingCookie
+                ? `${existingCookie}; ${cookieParts.join("; ")}`
+                : cookieParts.join("; "),
+            );
+          }
+
+          const response = yield* Effect.tryPromise({
+            try: () =>
+              fetch(finalUrl.toString(), {
+                method: providerData.method.toUpperCase(),
+                headers: requestHeaders,
+                ...(body !== undefined
+                  ? {
+                      body:
+                        typeof body === "string"
+                          ? body
+                          : new Uint8Array(body).buffer,
+                    }
+                  : {}),
+              }),
+            catch: (cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+          });
+          const responseBody = yield* Effect.tryPromise({
+            try: () => decodeResponseBody(response),
+            catch: (cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+          });
+
+          return {
+            data: response.ok ? responseBody : null,
+            error: response.ok ? null : responseBody,
+            headers: responseHeadersRecord(response),
+            status: response.status,
+          };
+        }),
+    },
+  },
+  extendExecutor: ({ source, executor }) => {
     const provideRuntime = <A>(
       effect: Effect.Effect<A, Error, any>,
     ): Effect.Effect<A, Error, never> =>
       effect.pipe(Effect.provide(executor.runtime.managedRuntime));
 
     return {
-    previewDocument: (input) =>
-      Effect.tryPromise({
-        try: () => previewOpenApiDocument(input),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      }),
+      previewDocument: (input) =>
+        Effect.tryPromise({
+          try: () => previewOpenApiDocument(input),
+          catch: (cause) =>
+            cause instanceof Error ? cause : new Error(String(cause)),
+        }),
       getSourceConfig: (sourceId) =>
-        provideRuntime(sourceSdk.getSourceConfig(sourceId)),
+        provideRuntime(source.getSourceConfig(sourceId)),
       createSource: (input) =>
-        provideRuntime(sourceSdk.createSource(input)),
+        provideRuntime(source.createSource(input)),
       updateSource: (input) =>
-        provideRuntime(sourceSdk.updateSource(input)),
+        provideRuntime(source.updateSource(input)),
       refreshSource: (sourceId) =>
-        provideRuntime(sourceSdk.refreshSource(sourceId)),
+        provideRuntime(source.refreshSource(sourceId)),
       removeSource: (sourceId) =>
-        provideRuntime(sourceSdk.removeSource(sourceId)),
+        provideRuntime(source.removeSource(sourceId)),
     };
   },
 });

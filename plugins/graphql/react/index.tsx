@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   Loadable,
   Source,
@@ -16,6 +16,7 @@ import {
   useLocalInstallation,
   usePrefetchToolDetail,
   useSecrets,
+  useSource,
   useSourceDiscovery,
   useSourceInspection,
   useSourceToolDetail,
@@ -37,7 +38,6 @@ import {
   MethodBadge,
   cn,
   defineExecutorFrontendPlugin,
-  defineFrontendSourceType,
   parseSourceToolExplorerSearch,
   useSourcePluginRouteParams,
   type SourceToolExplorerSearch,
@@ -1605,24 +1605,88 @@ function GraphqlToolDetailPage(props: {
   );
 }
 
-const graphqlSourceType = defineFrontendSourceType({
-  key: "graphql",
-  kind: "graphql",
-  displayName: "GraphQL",
-  description: "Introspect a GraphQL endpoint into typed query and mutation tools.",
-  renderAddPage: GraphqlAddPage,
-  renderEditPage: GraphqlEditPage,
-  renderDetailPage: GraphqlDetailPage,
-  detailRoutes: [
-    {
-      key: "tool-detail",
-      path: "tool/$toolPath",
-      component: GraphqlToolDetailPage,
-    },
-  ],
-});
+function GraphqlSourceRoute(props: {
+  children: (source: Source) => ReactNode;
+}) {
+  const params = useSourcePluginRouteParams<{ sourceId?: string }>();
+  const sourceId = typeof params.sourceId === "string" ? params.sourceId : null;
+  const source = useSource(sourceId ?? "");
+
+  if (sourceId === null || source.status === "error") {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        This GraphQL source is unavailable.
+      </div>
+    );
+  }
+
+  if (source.status === "loading") {
+    return (
+      <div className="px-6 py-8 text-sm text-muted-foreground">
+        Loading source...
+      </div>
+    );
+  }
+
+  if (source.data.kind !== "graphql") {
+    return (
+      <div className="px-6 py-8 text-sm text-destructive">
+        Expected a `graphql` source, but received `{source.data.kind}`.
+      </div>
+    );
+  }
+
+  return props.children(source.data);
+}
+
+function GraphqlDetailRoute() {
+  return (
+    <GraphqlSourceRoute>
+      {(source) => <GraphqlDetailPage source={source} />}
+    </GraphqlSourceRoute>
+  );
+}
+
+function GraphqlEditRoute() {
+  return (
+    <GraphqlSourceRoute>
+      {(source) => <GraphqlEditPage source={source} />}
+    </GraphqlSourceRoute>
+  );
+}
+
+function GraphqlToolDetailRoute() {
+  return (
+    <GraphqlSourceRoute>
+      {(source) => <GraphqlToolDetailPage source={source} />}
+    </GraphqlSourceRoute>
+  );
+}
 
 export const GraphqlReactPlugin = defineExecutorFrontendPlugin({
   key: "graphql",
-  sourceTypes: [graphqlSourceType],
+  displayName: "GraphQL",
+  description: "Introspect a GraphQL endpoint into typed query and mutation tools.",
+  routes: [
+    {
+      key: "add",
+      path: "add",
+      component: GraphqlAddPage,
+    },
+    {
+      key: "detail",
+      path: "sources/$sourceId",
+      component: GraphqlDetailRoute,
+    },
+    {
+      key: "edit",
+      path: "sources/$sourceId/edit",
+      component: GraphqlEditRoute,
+    },
+    {
+      key: "tool-detail",
+      path: "sources/$sourceId/tool/$toolPath",
+      component: GraphqlToolDetailRoute,
+    },
+  ],
 });

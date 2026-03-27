@@ -3,7 +3,7 @@ import {
   type ExecutorSdkPlugin,
 } from "../../../plugins";
 
-let configuredSourcePlugins: readonly ExecutorSdkPlugin[] = [];
+let configuredSourcePlugins: readonly ExecutorSdkPlugin<any, any>[] = [];
 let registry = registerExecutorSdkPlugins(configuredSourcePlugins);
 
 const refreshRegistry = () => {
@@ -11,19 +11,19 @@ const refreshRegistry = () => {
 };
 
 export const configureExecutorSourcePlugins = (
-  plugins: readonly ExecutorSdkPlugin[],
+  plugins: readonly ExecutorSdkPlugin<any, any>[],
 ): void => {
   configuredSourcePlugins = plugins;
   refreshRegistry();
 };
 
-export const registeredSourcePlugins = () => registry.sourcePlugins;
-export const registeredSourceConnectors = () => registry.sourceConnectors;
+export const registeredSourceContributions = () => registry.sources;
 
-export const getSourcePlugin = (kind: string) => registry.getSourcePlugin(kind);
-export const getSourcePluginForSource = (
-  source: Parameters<typeof registry.getSourcePluginForSource>[0],
-) => registry.getSourcePluginForSource(source);
+export const getSourceContribution = (kind: string) =>
+  registry.getSourceContribution(kind);
+export const getSourceContributionForSource = (
+  source: Parameters<typeof registry.getSourceContributionForSource>[0],
+) => registry.getSourceContributionForSource(source);
 
 export const hasRegisteredExternalSourcePlugins = () =>
   configuredSourcePlugins.length > 0;

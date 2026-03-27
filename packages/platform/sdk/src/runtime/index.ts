@@ -115,10 +115,10 @@ export type {
   UpdateSecretMaterial,
 } from "./scope/secret-material-providers";
 export {
-  registeredSourcePlugins,
+  registeredSourceContributions,
   hasRegisteredExternalSourcePlugins,
-  getSourcePlugin,
-  getSourcePluginForSource,
+  getSourceContribution,
+  getSourceContributionForSource,
 } from "./sources/source-plugins";
 
 export type ExecutorRuntimeOptions = {
@@ -378,6 +378,7 @@ export const createExecutorRuntimeLayer = (
 };
 
 export type ExecutorRuntime = {
+  scope: ExecutorScopeContext;
   storage: RuntimeStorageServices;
   localInstallation: LocalInstallation;
   managedRuntime: ManagedRuntime.ManagedRuntime<any, never>;
@@ -466,6 +467,7 @@ export const createExecutorRuntimeFromServices = (input: {
     );
 
     return {
+      scope: runtimeWorkspace,
       storage: input.services.storage,
       localInstallation,
       managedRuntime,

@@ -5,10 +5,7 @@ export type {
   FrontendPluginRouteDefinition,
   FrontendPluginRouteParams,
   FrontendPluginRouteSearch,
-  FrontendSourceDetailRouteDefinition,
-  FrontendSourceTypeDefinition,
   SourcePluginNavigation,
-  SourcePluginRouteContextValue,
   SourcePluginRouteParams,
   SourcePluginRouteSearch,
 } from "./types";
@@ -36,10 +33,8 @@ export {
 export {
   defineExecutorFrontendPlugin,
   defineFrontendPluginRoute,
-  defineFrontendSourceType,
   registerExecutorFrontendPlugins,
   type RegisteredFrontendPluginRoute,
-  type RegisteredFrontendSourceType,
 } from "./registry";
 
 export {
@@ -54,9 +49,7 @@ export {
 } from "./plugin-route-context";
 
 export {
-  SourcePluginRouteProvider,
   useSourcePlugin,
-  useSourcePluginDefinition,
   useSourcePluginNavigation,
   useSourcePluginPaths,
   useSourcePluginRoute,

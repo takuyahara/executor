@@ -11,7 +11,7 @@ import type {
   LoadedSourceCatalogToolIndexEntry,
 } from "../catalog/source/runtime";
 import {
-  getSourcePlugin,
+  getSourceContribution,
 } from "../sources/source-plugins";
 import {
   runtimeEffectError,
@@ -56,7 +56,7 @@ export const invokeIrTool = (input: {
   onElicitation?: OnElicitation;
   context?: Record<string, unknown>;
 }) => {
-  const definition = getSourcePlugin(input.tool.executable.pluginKey);
+  const definition = getSourceContribution(input.tool.executable.pluginKey);
   if (definition.kind !== input.tool.source.kind) {
     return Effect.fail(
       runtimeEffectError("execution/ir-execution", 

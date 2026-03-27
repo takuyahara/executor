@@ -16,7 +16,7 @@ import {
 } from "#schema";
 import * as Effect from "effect/Effect";
 
-import { getSourcePluginForSource } from "./source-plugins";
+import { getSourceContributionForSource } from "./source-plugins";
 
 const trimOrNull = (value: string | null | undefined): string | null => {
   if (value === null || value === undefined) {
@@ -30,7 +30,7 @@ const trimOrNull = (value: string | null | undefined): string | null => {
 type SourceCatalogSourceConfig = Record<string, unknown>;
 
 const sourceConfigFromSource = (source: Source): SourceCatalogSourceConfig =>
-  getSourcePluginForSource(source).catalogIdentity?.({
+  getSourceContributionForSource(source).catalogIdentity?.({
     source,
   }) ?? {
     kind: source.kind,
@@ -38,10 +38,10 @@ const sourceConfigFromSource = (source: Source): SourceCatalogSourceConfig =>
   };
 
 const sourceCatalogKindFromSource = (source: Source): SourceCatalogKind =>
-  getSourcePluginForSource(source).catalogKind;
+  getSourceContributionForSource(source).catalogKind;
 
 const sourceCatalogPluginKeyFromSource = (source: Source): SourceCatalogPluginKey =>
-  getSourcePluginForSource(source).kind;
+  getSourceContributionForSource(source).kind;
 
 const stableHash = (value: string): string =>
   sha256Hex(value).slice(0, 24);

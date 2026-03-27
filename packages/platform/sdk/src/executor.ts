@@ -70,6 +70,7 @@ const toPromiseExecutor = <
   };
 
   const base = {
+    scope: executor.scope,
     installation: executor.installation,
     scopeId: executor.scopeId,
     actorScopeId: executor.actorScopeId,
@@ -134,6 +135,7 @@ const toPromiseExecutor = <
   const coreKeys = new Set([
     "runtime",
     "installation",
+    "scope",
     "scopeId",
     "actorScopeId",
     "resolutionScopeIds",

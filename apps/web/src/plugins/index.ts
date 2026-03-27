@@ -1,6 +1,9 @@
-import type { Source } from "@executor/react";
+import type {
+  Source,
+} from "@executor/react";
 import {
   GoogleDiscoveryReactPlugin,
+  getGoogleDiscoveryIconUrl,
 } from "@executor/plugin-google-discovery-react";
 import {
   GraphqlReactPlugin,
@@ -12,6 +15,7 @@ import {
   OpenApiReactPlugin,
 } from "@executor/plugin-openapi-react";
 import {
+  createExecutorPluginPaths,
   createSourcePluginPaths,
   registerExecutorFrontendPlugins,
   type ExecutorFrontendPlugin,
@@ -26,12 +30,30 @@ const frontendPlugins = [
 
 const frontendPluginRegistry = registerExecutorFrontendPlugins(frontendPlugins);
 
+const hasRouteKey = (
+  plugin: ExecutorFrontendPlugin,
+  routeKey: string,
+): boolean =>
+  (plugin.routes ?? []).some((route) => route.key === routeKey);
+
+const isSourceFrontendPlugin = (
+  plugin: ExecutorFrontendPlugin,
+): boolean =>
+  hasRouteKey(plugin, "add")
+  && hasRouteKey(plugin, "detail");
+
 export const registeredFrontendPlugins = frontendPluginRegistry.plugins;
 export const registeredFrontendPluginRoutes = frontendPluginRegistry.routes;
-export const registeredSourceFrontendTypeEntries =
-  frontendPluginRegistry.sourceTypes;
-export const registeredSourceFrontendTypes =
-  registeredSourceFrontendTypeEntries.map((entry) => entry.definition);
+export const registeredFrontendPluginNavRoutes =
+  registeredFrontendPluginRoutes
+    .filter(({ route }) => route.nav !== undefined)
+    .map(({ plugin, route }) => ({
+      plugin,
+      route,
+      to: createExecutorPluginPaths(plugin.key).route(route.path ?? ""),
+    }));
+export const registeredSourceFrontendPlugins =
+  registeredFrontendPlugins.filter(isSourceFrontendPlugin);
 
 export const getFrontendPlugin = (key: string) =>
   frontendPluginRegistry.getPlugin(key);
@@ -41,25 +63,17 @@ export const getFrontendPluginRoute = (
   routeKey: string,
 ) => frontendPluginRegistry.getRoute(pluginKey, routeKey);
 
-export const getSourceFrontendTypeEntry = (kind: string) =>
-  frontendPluginRegistry.getSourceType(kind);
-
-export const getSourceFrontendTypeEntryByKey = (key: string) =>
-  frontendPluginRegistry.getSourceTypeByKey(key);
-
-export const getSourceFrontendType = (kind: string) =>
-  getSourceFrontendTypeEntry(kind)?.definition ?? null;
-
-export const getSourceFrontendTypeByKey = (key: string) =>
-  getSourceFrontendTypeEntryByKey(key)?.definition ?? null;
-
-export const getDefaultSourceFrontendType = () =>
-  frontendPluginRegistry.getDefaultSourceType()?.definition ?? null;
+export const getSourceFrontendPlugin = (kind: string) => {
+  const plugin = getFrontendPlugin(kind);
+  return plugin && isSourceFrontendPlugin(plugin) ? plugin : null;
+};
 
 export const getSourceFrontendPaths = (kind: string) => {
-  const definition = getSourceFrontendType(kind);
-  return definition ? createSourcePluginPaths(definition.key) : null;
+  const plugin = getSourceFrontendPlugin(kind);
+  return plugin ? createSourcePluginPaths(plugin.key) : null;
 };
 
 export const getSourceFrontendIconUrl = (source: Source) =>
-  getSourceFrontendTypeEntry(source.kind)?.definition.getIconUrl?.(source) ?? null;
+  source.kind === "google-discovery"
+    ? getGoogleDiscoveryIconUrl(source)
+    : null;

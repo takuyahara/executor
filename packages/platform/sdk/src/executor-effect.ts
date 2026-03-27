@@ -72,6 +72,7 @@ import type {
   ExecutorSdkPluginHost,
   ExecutorSdkPlugin,
   ExecutorSdkPluginExtensions,
+  PluginCleanup,
 } from "./plugins";
 import {
   configureExecutorSourcePlugins,
@@ -89,6 +90,7 @@ type MappedProvidedEffect<
 
 export type ExecutorEffect = {
   runtime: ExecutorRuntime;
+  scope: ExecutorRuntime["scope"];
   installation: LocalInstallation;
   scopeId: ScopeId;
   actorScopeId: ScopeId;
@@ -183,6 +185,7 @@ const fromRuntime = (runtime: ExecutorRuntime): ExecutorEffect => {
 
   return {
     runtime,
+    scope: runtime.scope,
     installation,
     scopeId,
     actorScopeId,
@@ -267,105 +270,157 @@ export const createExecutorEffect = <
 ): Effect.Effect<ExecutorEffect & ExecutorSdkPluginExtensions<TPlugins>, Error> => {
   configureExecutorSourcePlugins(options.plugins ?? []);
 
-  return Effect.map(
+  return Effect.flatMap(
     options.backend.createRuntime({
       executionResolver: options.executionResolver,
       resolveSecretMaterial: options.resolveSecretMaterial,
       getLocalServerBaseUrl: options.getLocalServerBaseUrl,
     }),
-    (runtime) => {
-      const executor = fromRuntime(runtime);
-      const providePluginHostEffect = <A>(
-        effect: Effect.Effect<A, unknown, any>,
-      ): Effect.Effect<A, Error, never> =>
-        provideExecutorRuntime(effect, runtime).pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
-          ),
-        );
-      const providePluginExtensionValue = (value: unknown): unknown => {
-        if (Effect.isEffect(value)) {
-          return providePluginHostEffect(value);
-        }
-
-        if (typeof value === "function") {
-          return (...args: Array<unknown>) =>
-            providePluginExtensionValue(value(...args));
-        }
-
-        if (Array.isArray(value)) {
-          return value.map(providePluginExtensionValue);
-        }
-
-        if (value !== null && typeof value === "object") {
-          return Object.fromEntries(
-            Object.entries(value).map(([key, nestedValue]) => [
-              key,
-              providePluginExtensionValue(nestedValue),
-            ]),
+    (runtime) =>
+      Effect.gen(function* () {
+        const executor = fromRuntime(runtime);
+        const providePluginHostEffect = <A>(
+          effect: Effect.Effect<A, unknown, any>,
+        ): Effect.Effect<A, Error, never> =>
+          provideExecutorRuntime(effect, runtime).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+            ),
           );
+        const providePluginExtensionValue = (value: unknown): unknown => {
+          if (Effect.isEffect(value)) {
+            return providePluginHostEffect(value);
+          }
+
+          if (typeof value === "function") {
+            return (...args: Array<unknown>) =>
+              providePluginExtensionValue(value(...args));
+          }
+
+          if (Array.isArray(value)) {
+            return value.map(providePluginExtensionValue);
+          }
+
+          if (value !== null && typeof value === "object") {
+            return Object.fromEntries(
+              Object.entries(value).map(([key, nestedValue]) => [
+                key,
+                providePluginExtensionValue(nestedValue),
+              ]),
+            );
+          }
+
+          return value;
+        };
+        const sourceHost = {
+          sources: {
+            create: ({
+              source,
+            }: {
+              source: Omit<
+                Source,
+                "id" | "scopeId" | "createdAt" | "updatedAt"
+              >;
+            }) =>
+              providePluginHostEffect(
+                createManagedSourceRecord({
+                  scopeId: executor.scopeId,
+                  actorScopeId: executor.actorScopeId,
+                  source,
+                }),
+              ),
+            get: (sourceId: Source["id"]) =>
+              providePluginHostEffect(
+                getSource({
+                  scopeId: executor.scopeId,
+                  sourceId,
+                  actorScopeId: executor.actorScopeId,
+                }),
+              ),
+            save: (source: Source) =>
+              providePluginHostEffect(
+                saveManagedSourceRecord({
+                  actorScopeId: executor.actorScopeId,
+                  source,
+                }),
+              ),
+            refreshCatalog: (sourceId: Source["id"]) =>
+              providePluginHostEffect(
+                refreshManagedSourceCatalog({
+                  scopeId: executor.scopeId,
+                  sourceId,
+                  actorScopeId: executor.actorScopeId,
+                }),
+              ),
+            remove: (sourceId: Source["id"]) =>
+              providePluginHostEffect(
+                removeSource({
+                  scopeId: executor.scopeId,
+                  sourceId,
+                }).pipe(Effect.map((result) => result.removed)),
+              ),
+          },
+        };
+        const host: ExecutorSdkPluginHost = sourceHost;
+        const extensions = Object.fromEntries(
+          (options.plugins ?? []).map((plugin) => [
+            plugin.key,
+            providePluginExtensionValue(
+              plugin.extendExecutor?.({
+                executor,
+                scope: executor.scope,
+                host,
+              }) ?? {},
+            ),
+          ]),
+        );
+
+        const startedExecutor = Object.assign(
+          executor,
+          extensions,
+        ) as ExecutorEffect & ExecutorSdkPluginExtensions<TPlugins>;
+
+        const cleanups: PluginCleanup[] = [];
+
+        for (const plugin of options.plugins ?? []) {
+          if (!plugin.start) {
+            continue;
+          }
+
+          const extension = (
+            startedExecutor as Record<string, unknown>
+          )[plugin.key] as Record<string, unknown> | undefined;
+          const cleanup = yield* providePluginHostEffect(
+            plugin.start({
+              executor: startedExecutor,
+              scope: startedExecutor.scope,
+              host,
+              extension: (extension ?? {}) as never,
+            }),
+          );
+
+          if (cleanup) {
+            cleanups.push(cleanup);
+          }
         }
 
-        return value;
-      };
-      const host: ExecutorSdkPluginHost = {
-        sources: {
-          create: ({ source }) =>
-            providePluginHostEffect(
-              createManagedSourceRecord({
-                scopeId: executor.scopeId,
-                actorScopeId: executor.actorScopeId,
-                source,
-              }),
-            ),
-          get: (sourceId) =>
-            providePluginHostEffect(
-              getSource({
-                scopeId: executor.scopeId,
-                sourceId,
-                actorScopeId: executor.actorScopeId,
-              }),
-            ),
-          save: (source) =>
-            providePluginHostEffect(
-              saveManagedSourceRecord({
-                actorScopeId: executor.actorScopeId,
-                source,
-              }),
-            ),
-          refreshCatalog: (sourceId) =>
-            providePluginHostEffect(
-              refreshManagedSourceCatalog({
-                scopeId: executor.scopeId,
-                sourceId,
-                actorScopeId: executor.actorScopeId,
-              }),
-            ),
-          remove: (sourceId) =>
-            providePluginHostEffect(
-              removeSource({
-                scopeId: executor.scopeId,
-                sourceId,
-              }).pipe(Effect.map((result) => result.removed)),
-            ),
-        },        
-      };
-      const extensions = Object.fromEntries(
-        (options.plugins ?? []).map((plugin) => [
-          plugin.key,
-          providePluginExtensionValue(
-            plugin.extendExecutor?.({
-              executor,
-              host,
-            }) ?? {},
-          ),
-        ]),
-      );
+        startedExecutor.close = async () => {
+          for (const cleanup of [...cleanups].reverse()) {
+            await cleanup.close();
+          }
 
-      return Object.assign(
-        executor,
-        extensions,
-      ) as ExecutorEffect & ExecutorSdkPluginExtensions<TPlugins>;
-    },
+          await runtime.close();
+        };
+
+        return startedExecutor;
+      }).pipe(
+        Effect.tapError(() =>
+          Effect.tryPromise({
+            try: () => runtime.close(),
+            catch: (cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+          }).pipe(Effect.catchAll(() => Effect.void)),
+        ),
+      ),
   );
 };

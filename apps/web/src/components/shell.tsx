@@ -6,7 +6,10 @@ import { cn } from "../lib/utils";
 import { IconPlus, IconCopy, IconCheck } from "./icons";
 import { LoadableBlock } from "./loadable";
 import { SourceFavicon } from "./source-favicon";
-import { getSourceFrontendPaths } from "../plugins";
+import {
+  getSourceFrontendPaths,
+  registeredFrontendPluginNavRoutes,
+} from "../plugins";
 
 // ── Status dot color ─────────────────────────────────────────────────────
 
@@ -224,6 +227,13 @@ export function AppShell() {
   const isHome = matchRoute({ to: "/" });
   const isSecrets = matchRoute({ to: "/secrets" });
   const { latestVersion, updateAvailable, channel } = useLatestVersion(VITE_APP_VERSION);
+  const mainPluginNavItems = registeredFrontendPluginNavRoutes.filter(
+    ({ route }) => (route.nav?.section ?? "main") === "main",
+  );
+  const sourcePluginNavItems = registeredFrontendPluginNavRoutes.filter(
+    ({ route }) => route.nav?.section === "sources",
+  );
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
@@ -244,6 +254,14 @@ export function AppShell() {
         <nav className="flex flex-1 flex-col p-2 overflow-y-auto">
           <NavItem to="/" label="Dashboard" active={!!isHome} />
           <NavItem to="/secrets" label="Secrets" active={!!isSecrets} />
+          {mainPluginNavItems.map(({ plugin, route, to }) => (
+            <NavItem
+              key={`${plugin.key}:${route.key}`}
+              to={to}
+              label={route.nav?.label ?? route.key}
+              active={location.pathname === to || location.pathname.startsWith(`${to}/`)}
+            />
+          ))}
 
           {/* Sources */}
           <div className="mt-5 mb-1 px-2.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
@@ -258,6 +276,21 @@ export function AppShell() {
               </Link>
             </div>
           </div>
+          {sourcePluginNavItems.length > 0 && (
+            <div className="mb-2 flex flex-col gap-px">
+              {sourcePluginNavItems.map(({ plugin, route, to }) => (
+                <NavItem
+                  key={`${plugin.key}:${route.key}`}
+                  to={to}
+                  label={route.nav?.label ?? route.key}
+                  active={
+                    location.pathname === to
+                    || location.pathname.startsWith(`${to}/`)
+                  }
+                />
+              ))}
+            </div>
+          )}
           <LoadableBlock loadable={sources} loading="Loading...">
             {(items) =>
               !Array.isArray(items) ? (

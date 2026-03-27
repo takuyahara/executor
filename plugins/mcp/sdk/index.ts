@@ -24,11 +24,8 @@ import {
   type SourceDiscoveryResult,
 } from "@executor/source-core";
 import type { Source } from "@executor/platform-sdk/schema";
-import type {
-  ExecutorSdkPlugin,
-  ExecutorSdkPluginHost,
-  ExecutorSourceConnector,
-  SourcePluginRuntime,
+import {
+  defineExecutorSourcePlugin,
 } from "@executor/platform-sdk/plugins";
 import {
   SecretMaterialDeleterService,
@@ -314,138 +311,19 @@ const sourceConfigFromStored = (
   auth: stored.auth,
 });
 
-const createMcpSourceSdk = (
-  options: McpSdkPluginOptions,
-  host: ExecutorSdkPluginHost,
-) => ({
-  getSourceConfig: (sourceId: Source["id"]) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(sourceId);
-      if (source.kind !== "mcp") {
-        return yield* Effect.fail(
-          new Error(`Source ${sourceId} is not an MCP source.`),
-        );
-      }
-
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-      if (stored === null) {
-        return yield* Effect.fail(
-          new Error(`MCP source storage missing for ${source.id}`),
-        );
-      }
-
-      return sourceConfigFromStored(source, stored);
-    }),
-  discoverSource: (input: McpDiscoverInput) =>
-    Effect.gen(function* () {
-      const normalizedUrl = normalizeSourceDiscoveryUrl(input.endpoint);
-      const discovered = yield* detectMcpSource({
-        normalizedUrl,
-        headers: probeHeadersFromAuth(input.probeAuth ?? null),
-      });
-      return discovered satisfies SourceDiscoveryResult | null;
-    }),
-  createSource: (input: McpConnectInput) =>
-    Effect.gen(function* () {
-      const stored = yield* normalizeStoredSourceData(input);
-      const createdSource = yield* host.sources.create({
-        source: {
-          name: input.name.trim(),
-          kind: "mcp",
-          status: "connected",
-          enabled: true,
-          namespace: deriveMcpNamespace({
-            name: input.name,
-            endpoint: stored.endpoint,
-            command: stored.command,
-          }),
-        },
-      });
-
-      yield* options.storage.put({
-        scopeId: createdSource.scopeId,
-        sourceId: createdSource.id,
-        value: stored,
-      });
-
-      return yield* host.sources.refreshCatalog(createdSource.id);
-    }),
-  updateSource: (input: McpUpdateSourceInput) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(input.sourceId as Source["id"]);
-      if (source.kind !== "mcp") {
-        return yield* Effect.fail(
-          new Error(`Source ${input.sourceId} is not an MCP source.`),
-        );
-      }
-
-      const stored = yield* normalizeStoredSourceData(input.config);
-      const savedSource = yield* host.sources.save({
-        ...source,
-        name: input.config.name.trim(),
-        namespace: deriveMcpNamespace({
-          name: input.config.name,
-          endpoint: stored.endpoint,
-          command: stored.command,
-        }),
-      });
-
-      yield* options.storage.put({
-        scopeId: savedSource.scopeId,
-        sourceId: savedSource.id,
-        value: stored,
-      });
-
-      return yield* host.sources.refreshCatalog(savedSource.id);
-    }),
-  removeSource: (sourceId: Source["id"]) =>
-    Effect.gen(function* () {
-      const source = yield* host.sources.get(sourceId);
-      if (source.kind !== "mcp") {
-        return yield* Effect.fail(
-          new Error(`Source ${sourceId} is not an MCP source.`),
-        );
-      }
-
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-      if (stored?.auth.kind === "oauth2") {
-        const deleteSecretMaterial = yield* SecretMaterialDeleterService;
-        yield* Effect.either(deleteSecretMaterial(stored.auth.accessTokenRef));
-        if (stored.auth.refreshTokenRef) {
-          yield* Effect.either(deleteSecretMaterial(stored.auth.refreshTokenRef));
-        }
-      }
-
-      if (options.storage.remove) {
-        yield* options.storage.remove({
-          scopeId: source.scopeId,
-          sourceId: source.id,
-        });
-      }
-
-      return yield* host.sources.remove(source.id);
-    }),
-});
-
-const mcpSourceConnector = (
-  options: McpSdkPluginOptions,
-): ExecutorSourceConnector<McpExecutorAddInput> => ({
-  kind: "mcp",
-  displayName: "MCP",
-  inputSchema: McpExecutorAddInputSchema,
-  inputSignatureWidth: 320,
-  helpText: [
-    "Remote MCP sources use `endpoint`; local stdio sources use `command` plus `transport: \"stdio\"`.",
-    "OAuth browser setup stays on the plugin-owned HTTP/UI surfaces.",
-  ],
-  createSource: ({ args, host }) =>
-    createMcpSourceSdk(options, host).createSource(args),
+const mcpConnectInputFromAddInput = (
+  input: McpExecutorAddInput,
+): McpConnectInput => ({
+  name: input.name,
+  endpoint: input.endpoint,
+  transport: input.transport,
+  queryParams: input.queryParams,
+  headers: input.headers,
+  command: input.command,
+  args: input.args,
+  env: input.env,
+  cwd: input.cwd,
+  auth: input.auth,
 });
 
 const mcpCatalogOperationFromManifestEntry = (input: {
@@ -705,237 +583,293 @@ const mcpDocumentKey = (stored: McpStoredSourceData): string =>
     ? `stdio://${stored.command}`
     : "mcp");
 
-const createMcpSourceRuntime = (
-  options: McpSdkPluginOptions,
-): SourcePluginRuntime => ({
-  kind: "mcp",
-  displayName: "MCP",
-  catalogKind: "imported",
-  catalogIdentity: ({ source }) => ({
-    kind: "mcp",
-    sourceId: source.id,
-  }),
-  getIrModel: ({ source }) =>
-    Effect.gen(function* () {
-      const stored = yield* options.storage.get({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-      });
-      if (stored === null) {
-        return createSourceCatalogSyncResult({
-          fragment: {
-            version: "ir.v1.fragment",
-          },
-          importMetadata: {
-            ...createCatalogImportMetadata({
-              source,
-              pluginKey: "mcp",
-            }),
-            importerVersion: "ir.v1.mcp",
-            sourceConfigHash: "missing",
-          },
-          sourceHash: null,
-        });
-      }
-
-      const connector = yield* createStoredMcpConnector({
-        scopeId: source.scopeId,
-        sourceId: source.id,
-        stored,
-        storage: options.storage,
-      });
-      const discovered = yield* discoverMcpToolsFromConnector({
-        connect: connector,
-        namespace:
-          source.namespace
-          ?? deriveMcpNamespace({
-            name: source.name,
-            endpoint: stored.endpoint,
-            command: stored.command,
-          })
-          ?? undefined,
-        sourceKey: source.id,
-      }).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error
-            ? cause
-            : new Error(String(cause)),
-        ),
-      );
-      const manifestJson = JSON.stringify(discovered.manifest);
-      const now = Date.now();
-
-      return createSourceCatalogSyncResult({
-        fragment: createMcpCatalogFragment({
-          source,
-          documents: [
-            {
-              documentKind: "mcp_manifest",
-              documentKey: mcpDocumentKey(stored),
-              contentText: manifestJson,
-              fetchedAt: now,
-            },
-          ],
-          operations: discovered.manifest.tools.map((entry) =>
-            mcpCatalogOperationFromManifestEntry({
-              entry,
-              server: discovered.manifest.server,
-            })
-          ),
-        }),
-        importMetadata: {
-          ...createCatalogImportMetadata({
-            source,
-            pluginKey: "mcp",
-          }),
-          importerVersion: "ir.v1.mcp",
-        },
-        sourceHash: contentHash(manifestJson),
-      });
-    }),
-  invoke: (input) =>
-    Effect.gen(function* () {
-      const stored = yield* options.storage.get({
-        scopeId: input.source.scopeId,
-        sourceId: input.source.id,
-      });
-      if (stored === null) {
-        return yield* Effect.fail(
-          new Error(`MCP source storage missing for ${input.source.id}`),
-        );
-      }
-
-      const providerData = decodeProviderData(
-        input.executable.binding,
-      ) as McpExecutableBinding;
-      const connector = createPooledMcpConnector({
-        connect: yield* createStoredMcpConnector({
-          scopeId: input.source.scopeId,
-          sourceId: input.source.id,
-          stored,
-          storage: options.storage,
-        }),
-        runId:
-          typeof input.context?.runId === "string" && input.context.runId.length > 0
-            ? input.context.runId
-            : undefined,
-        sourceKey: input.source.id,
-      });
-      const manifest = {
-        version: 2 as const,
-        server: providerData.server as McpServerMetadata | null,
-        tools: [
-          {
-            toolId: providerData.toolId,
-            toolName: providerData.toolName,
-            displayTitle: providerData.displayTitle,
-            title: providerData.title,
-            description: providerData.description,
-            annotations: providerData.annotations as McpToolManifestEntry["annotations"],
-            execution: providerData.execution as McpToolManifestEntry["execution"],
-            icons: providerData.icons as McpToolManifestEntry["icons"],
-            meta: providerData.meta,
-            rawTool: providerData.rawTool,
-            inputSchema: input.descriptor.contract?.inputSchema,
-            outputSchema: input.descriptor.contract?.outputSchema,
-          },
-        ],
-      };
-      const tools = createMcpToolsFromManifest({
-        manifest,
-        connect: connector,
-        namespace: input.source.namespace ?? undefined,
-        sourceKey: input.source.id,
-      });
-      const toolPath = joinToolPath(input.source.namespace ?? undefined, providerData.toolId);
-      const entry = (
-        tools[toolPath]
-        ?? tools[providerData.toolId]
-        ?? tools[providerData.toolName]
-      ) as ToolInput | undefined;
-      const definition =
-        entry && typeof entry === "object" && entry !== null && "tool" in entry
-          ? entry.tool
-          : entry;
-
-      if (!definition) {
-        return yield* Effect.fail(
-          new Error(`Missing MCP tool definition for ${providerData.toolName}`),
-        );
-      }
-
-      const inputShape = input.executable.projection.callShapeId
-        ? input.catalog.symbols[input.executable.projection.callShapeId]
-        : undefined;
-      const payload =
-        inputShape?.kind === "shape" && inputShape.node.type !== "object"
-          ? asRecord(input.args).input
-          : input.args;
-      const executionContext: ToolExecutionContext | undefined =
-        input.onElicitation
-          ? {
-              path: input.descriptor.path as ToolPath,
-              sourceKey: input.source.id,
-              metadata: {
-                sourceKey: input.source.id,
-                interaction: input.descriptor.interaction,
-                contract: {
-                  ...(input.descriptor.contract?.inputSchema !== undefined
-                    ? { inputSchema: input.descriptor.contract.inputSchema }
-                    : {}),
-                  ...(input.descriptor.contract?.outputSchema !== undefined
-                    ? { outputSchema: input.descriptor.contract.outputSchema }
-                    : {}),
-                },
-                pluginKind: input.descriptor.pluginKind,
-                pluginData: input.descriptor.pluginData,
-              },
-              invocation: input.context,
-              onElicitation: input.onElicitation,
-            }
-          : undefined;
-      const result = yield* Effect.tryPromise({
-        try: async () =>
-          await definition.execute(asRecord(payload), executionContext),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      const resultRecord = asRecord(result);
-      const isError = resultRecord.isError === true;
-
-      return {
-        data: isError ? null : (result ?? null),
-        error: isError ? result : null,
-        headers: {},
-        status: null,
-      };
-    }),
-});
-
 export const mcpSdkPlugin = (
   options: McpSdkPluginOptions,
-): ExecutorSdkPlugin<"mcp", McpSdk> => ({
+) => defineExecutorSourcePlugin<
+  "mcp",
+  McpExecutorAddInput,
+  McpConnectInput,
+  McpSourceConfigPayload,
+  McpStoredSourceData,
+  McpUpdateSourceInput,
+  McpSdk
+>({
   key: "mcp",
-  sources: [createMcpSourceRuntime(options)],
-  sourceConnectors: [mcpSourceConnector(options)],
-  extendExecutor: ({ host, executor }) => {
-    const sourceSdk = createMcpSourceSdk(options, host);
+  source: {
+    kind: "mcp",
+    displayName: "MCP",
+    add: {
+      inputSchema: McpExecutorAddInputSchema,
+      inputSignatureWidth: 320,
+      helpText: [
+        "Remote MCP sources use `endpoint`; local stdio sources use `command` plus `transport: \"stdio\"`.",
+        "OAuth browser setup stays on the plugin-owned HTTP/UI surfaces.",
+      ],
+      toConnectInput: mcpConnectInputFromAddInput,
+    },
+    storage: options.storage,
+    source: {
+      create: (input) => ({
+        source: {
+          name: input.name.trim(),
+          kind: "mcp",
+          status: "connected",
+          enabled: true,
+          namespace: deriveMcpNamespace({
+            name: input.name,
+            endpoint: input.endpoint,
+            command: input.command,
+          }),
+        },
+        stored: Effect.runSync(normalizeStoredSourceData(input)),
+      }),
+      update: ({ source, config }) => {
+        const stored = Effect.runSync(normalizeStoredSourceData(config));
+
+        return {
+          source: {
+            ...source,
+            name: config.name.trim(),
+            namespace: deriveMcpNamespace({
+              name: config.name,
+              endpoint: stored.endpoint,
+              command: stored.command,
+            }),
+          },
+          stored,
+        };
+      },
+      toConfig: ({ source, stored }) => sourceConfigFromStored(source, stored),
+      remove: ({ stored }) =>
+        Effect.gen(function* () {
+          if (stored?.auth.kind === "oauth2") {
+            const deleteSecretMaterial = yield* SecretMaterialDeleterService;
+            yield* Effect.either(deleteSecretMaterial(stored.auth.accessTokenRef));
+            if (stored.auth.refreshTokenRef) {
+              yield* Effect.either(deleteSecretMaterial(stored.auth.refreshTokenRef));
+            }
+          }
+        }),
+    },
+    catalog: {
+      kind: "imported",
+      identity: ({ source }) => ({
+        kind: "mcp",
+        sourceId: source.id,
+      }),
+      sync: ({ source, stored }) =>
+        Effect.gen(function* () {
+          if (stored === null) {
+            return createSourceCatalogSyncResult({
+              fragment: {
+                version: "ir.v1.fragment",
+              },
+              importMetadata: {
+                ...createCatalogImportMetadata({
+                  source,
+                  pluginKey: "mcp",
+                }),
+                importerVersion: "ir.v1.mcp",
+                sourceConfigHash: "missing",
+              },
+              sourceHash: null,
+            });
+          }
+
+          const connector = yield* createStoredMcpConnector({
+            scopeId: source.scopeId,
+            sourceId: source.id,
+            stored,
+            storage: options.storage,
+          });
+          const discovered = yield* discoverMcpToolsFromConnector({
+            connect: connector,
+            namespace:
+              source.namespace
+              ?? deriveMcpNamespace({
+                name: source.name,
+                endpoint: stored.endpoint,
+                command: stored.command,
+              })
+              ?? undefined,
+            sourceKey: source.id,
+          }).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+            ),
+          );
+          const manifestJson = JSON.stringify(discovered.manifest);
+          const now = Date.now();
+
+          return createSourceCatalogSyncResult({
+            fragment: createMcpCatalogFragment({
+              source,
+              documents: [
+                {
+                  documentKind: "mcp_manifest",
+                  documentKey: mcpDocumentKey(stored),
+                  contentText: manifestJson,
+                  fetchedAt: now,
+                },
+              ],
+              operations: discovered.manifest.tools.map((entry) =>
+                mcpCatalogOperationFromManifestEntry({
+                  entry,
+                  server: discovered.manifest.server,
+                })
+              ),
+            }),
+            importMetadata: {
+              ...createCatalogImportMetadata({
+                source,
+                pluginKey: "mcp",
+              }),
+              importerVersion: "ir.v1.mcp",
+            },
+            sourceHash: contentHash(manifestJson),
+          });
+        }),
+      invoke: (input) =>
+        Effect.gen(function* () {
+          if (input.stored === null) {
+            return yield* Effect.fail(
+              new Error(`MCP source storage missing for ${input.source.id}`),
+            );
+          }
+
+          const providerData = decodeProviderData(
+            input.executable.binding,
+          ) as McpExecutableBinding;
+          const connector = createPooledMcpConnector({
+            connect: yield* createStoredMcpConnector({
+              scopeId: input.source.scopeId,
+              sourceId: input.source.id,
+              stored: input.stored,
+              storage: options.storage,
+            }),
+            runId:
+              typeof input.context?.runId === "string" && input.context.runId.length > 0
+                ? input.context.runId
+                : undefined,
+            sourceKey: input.source.id,
+          });
+          const manifest = {
+            version: 2 as const,
+            server: providerData.server as McpServerMetadata | null,
+            tools: [
+              {
+                toolId: providerData.toolId,
+                toolName: providerData.toolName,
+                displayTitle: providerData.displayTitle,
+                title: providerData.title,
+                description: providerData.description,
+                annotations: providerData.annotations as McpToolManifestEntry["annotations"],
+                execution: providerData.execution as McpToolManifestEntry["execution"],
+                icons: providerData.icons as McpToolManifestEntry["icons"],
+                meta: providerData.meta,
+                rawTool: providerData.rawTool,
+                inputSchema: input.descriptor.contract?.inputSchema,
+                outputSchema: input.descriptor.contract?.outputSchema,
+              },
+            ],
+          };
+          const tools = createMcpToolsFromManifest({
+            manifest,
+            connect: connector,
+            namespace: input.source.namespace ?? undefined,
+            sourceKey: input.source.id,
+          });
+          const toolPath = joinToolPath(input.source.namespace ?? undefined, providerData.toolId);
+          const entry = (
+            tools[toolPath]
+            ?? tools[providerData.toolId]
+            ?? tools[providerData.toolName]
+          ) as ToolInput | undefined;
+          const definition =
+            entry && typeof entry === "object" && entry !== null && "tool" in entry
+              ? entry.tool
+              : entry;
+
+          if (!definition) {
+            return yield* Effect.fail(
+              new Error(`Missing MCP tool definition for ${providerData.toolName}`),
+            );
+          }
+
+          const inputShape = input.executable.projection.callShapeId
+            ? input.catalog.symbols[input.executable.projection.callShapeId]
+            : undefined;
+          const payload =
+            inputShape?.kind === "shape" && inputShape.node.type !== "object"
+              ? asRecord(input.args).input
+              : input.args;
+          const executionContext: ToolExecutionContext | undefined =
+            input.onElicitation
+              ? {
+                  path: input.descriptor.path as ToolPath,
+                  sourceKey: input.source.id,
+                  metadata: {
+                    sourceKey: input.source.id,
+                    interaction: input.descriptor.interaction,
+                    contract: {
+                      ...(input.descriptor.contract?.inputSchema !== undefined
+                        ? { inputSchema: input.descriptor.contract.inputSchema }
+                        : {}),
+                      ...(input.descriptor.contract?.outputSchema !== undefined
+                        ? { outputSchema: input.descriptor.contract.outputSchema }
+                        : {}),
+                    },
+                    pluginKind: input.descriptor.pluginKind,
+                    pluginData: input.descriptor.pluginData,
+                  },
+                  invocation: input.context,
+                  onElicitation: input.onElicitation,
+                }
+              : undefined;
+          const result = yield* Effect.tryPromise({
+            try: async () =>
+              await definition.execute(asRecord(payload), executionContext),
+            catch: (cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+          });
+          const resultRecord = asRecord(result);
+          const isError = resultRecord.isError === true;
+
+          return {
+            data: isError ? null : (result ?? null),
+            error: isError ? result : null,
+            headers: {},
+            status: null,
+          };
+        }),
+    },
+  },
+  extendExecutor: ({ source, executor }) => {
     const provideRuntime = <A>(
       effect: Effect.Effect<A, Error, any>,
     ): Effect.Effect<A, Error, never> =>
       provideExecutorRuntime(effect, executor.runtime);
 
     return {
-      getSourceConfig: (sourceId) =>
-        provideRuntime(sourceSdk.getSourceConfig(sourceId)),
       discoverSource: (input) =>
-        provideRuntime(sourceSdk.discoverSource(input)),
+        provideRuntime(
+          Effect.gen(function* () {
+            const normalizedUrl = normalizeSourceDiscoveryUrl(input.endpoint);
+            const discovered = yield* detectMcpSource({
+              normalizedUrl,
+              headers: probeHeadersFromAuth(input.probeAuth ?? null),
+            });
+            return discovered satisfies SourceDiscoveryResult | null;
+          }),
+        ),
+      getSourceConfig: (sourceId) =>
+        provideRuntime(source.getSourceConfig(sourceId)),
       createSource: (input) =>
-        provideRuntime(sourceSdk.createSource(input)),
+        provideRuntime(source.createSource(input)),
       updateSource: (input) =>
-        provideRuntime(sourceSdk.updateSource(input)),
+        provideRuntime(source.updateSource(input)),
       removeSource: (sourceId) =>
-        provideRuntime(sourceSdk.removeSource(sourceId)),
+        provideRuntime(source.removeSource(sourceId)),
       startOAuth: (input) =>
         provideRuntime(
           Effect.gen(function* () {
@@ -1037,7 +971,7 @@ export const mcpSdkPlugin = (
           },
         };
           }),
-        ),
+      ),
     };
   },
 });

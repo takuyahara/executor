@@ -1,19 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useSource } from "@executor/react";
 import {
   ExecutorPluginRouteProvider,
-  LoadableBlock,
-  SourcePluginRouteProvider,
   createSourcePluginPaths,
   type ExecutorPluginNavigation,
   type FrontendPluginRouteDefinition,
   type FrontendPluginRouteParams,
   type FrontendPluginRouteSearch,
-  type FrontendSourceDetailRouteDefinition,
-  type SourcePluginNavigation,
-  type SourcePluginRouteParams,
-  type SourcePluginRouteSearch,
 } from "@executor/react/plugins";
 
 import { DefaultSourceIcon } from "../components/source-favicon";
@@ -22,9 +15,7 @@ import { SourcePluginsResetState } from "../components/source-plugins-reset-stat
 import {
   getFrontendPlugin,
   getFrontendPluginRoute,
-  getSourceFrontendTypeEntry,
-  getSourceFrontendTypeEntryByKey,
-  registeredSourceFrontendTypes,
+  registeredSourceFrontendPlugins,
 } from "./index";
 import {
   buildSourcePresetSearch,
@@ -41,44 +32,8 @@ const FrontendPluginUnavailableState = () => (
 
 const SourcePluginUnavailableState = () => (
   <SourcePluginsResetState
-    title="No source types available"
-    message="No source types are available in this build."
-  />
-);
-
-const SourcePluginPicker = (props: {
-  activeKey: string | null;
-}) => {
-  if (registeredSourceFrontendTypes.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mb-8 flex flex-wrap gap-2">
-      {registeredSourceFrontendTypes.map((definition) => (
-        <Link
-          key={definition.key}
-          to={createSourcePluginPaths(definition.key).add}
-          className={
-            props.activeKey === definition.key
-              ? "rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground"
-              : "rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          }
-        >
-          {definition.displayName}
-        </Link>
-      ))}
-    </div>
-  );
-};
-
-const SourcePluginRouteMismatchState = (props: {
-  requestedDisplayName: string;
-  actualDisplayName: string;
-}) => (
-  <SourcePluginsResetState
-    title="Wrong source type"
-    message={`This source uses ${props.actualDisplayName}, but you navigated to ${props.requestedDisplayName}. Open it from the sidebar instead.`}
+    title="No source plugins available"
+    message="No source plugins are available in this build."
   />
 );
 
@@ -182,25 +137,24 @@ export function ExecutorPluginRoutePage(input: {
 }
 
 export function SourcePluginsIndexPage() {
-  if (registeredSourceFrontendTypes.length === 0) {
+  if (registeredSourceFrontendPlugins.length === 0) {
     return <SourcePluginUnavailableState />;
   }
 
-  const hasMcpPlugin = registeredSourceFrontendTypes.some(
-    (definition) => definition.key === "mcp",
+  const hasMcpPlugin = registeredSourceFrontendPlugins.some(
+    (plugin) => plugin.key === "mcp",
   );
 
-  const presetsByPlugin = registeredSourceFrontendTypes
-    .map((definition) => ({
-      definition,
-      presets: sourcePresets.filter((preset) => preset.pluginKey === definition.key),
+  const presetsByPlugin = registeredSourceFrontendPlugins
+    .map((plugin) => ({
+      plugin,
+      presets: sourcePresets.filter((preset) => preset.pluginKey === plugin.key),
     }))
     .filter((entry) => entry.presets.length > 0);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-6 py-10 lg:px-10 lg:py-14">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="font-display text-3xl tracking-tight text-foreground lg:text-4xl">
             Add source
@@ -220,7 +174,6 @@ export function SourcePluginsIndexPage() {
           />
         )}
 
-        {/* Presets */}
         {presetsByPlugin.length > 0 && (
           <div className="mt-10">
             <h2 className="text-lg font-semibold text-foreground">Popular sources</h2>
@@ -229,13 +182,13 @@ export function SourcePluginsIndexPage() {
             </p>
 
             <div className="mt-5 space-y-8">
-              {presetsByPlugin.map(({ definition, presets }) => {
-                const paths = createSourcePluginPaths(definition.key);
+              {presetsByPlugin.map(({ plugin, presets }) => {
+                const paths = createSourcePluginPaths(plugin.key);
 
                 return (
-                  <section key={definition.key}>
+                  <section key={plugin.key}>
                     <h3 className="mb-3 text-sm font-semibold text-foreground">
-                      {definition.displayName}
+                      {plugin.displayName ?? plugin.key}
                     </h3>
 
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -259,9 +212,10 @@ export function SourcePluginsIndexPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="text-xs leading-5 text-muted-foreground">
+
+                          <p className="text-sm leading-6 text-muted-foreground">
                             {preset.summary}
-                          </div>
+                          </p>
                         </Link>
                       ))}
                     </div>
@@ -272,35 +226,28 @@ export function SourcePluginsIndexPage() {
           </div>
         )}
 
-        {/* Browse by plugin type */}
         <div className="mt-10">
-          <h2 className="text-lg font-semibold text-foreground">By type</h2>
+          <h2 className="text-lg font-semibold text-foreground">All source plugins</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Start from scratch with a specific plugin.
+            Start from a clean configuration page for any installed source plugin.
           </p>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {registeredSourceFrontendTypes.map((definition) => {
-              const paths = createSourcePluginPaths(definition.key);
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {registeredSourceFrontendPlugins.map((plugin) => {
+              const paths = createSourcePluginPaths(plugin.key);
 
               return (
                 <Link
-                  key={definition.key}
+                  key={plugin.key}
                   to={paths.add}
-                  className="group rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/25 hover:bg-card/90"
+                  className="rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/25 hover:bg-card/90"
                 >
-                  <div className="flex h-full flex-col">
-                    <div className="text-sm font-semibold text-foreground">
-                      {definition.displayName}
-                    </div>
-                    <div className="mt-1.5 flex-1 text-sm leading-6 text-muted-foreground">
-                      {definition.description
-                        ?? "Configure a new source from scratch."}
-                    </div>
-                    <div className="mt-4 text-xs font-medium text-primary">
-                      Get started &rarr;
-                    </div>
+                  <div className="mb-2 text-sm font-semibold text-foreground">
+                    {plugin.displayName ?? plugin.key}
                   </div>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {plugin.description ?? "Configure a new source for this plugin."}
+                  </p>
                 </Link>
               );
             })}
@@ -308,259 +255,5 @@ export function SourcePluginsIndexPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-export function SourcePluginAddPage(props: {
-  definitionKey: string;
-  search?: SourcePluginRouteSearch;
-  navigation: SourcePluginNavigation;
-}) {
-  const entry = getSourceFrontendTypeEntryByKey(props.definitionKey);
-  if (entry === null) {
-    return <SourcePluginUnavailableState />;
-  }
-
-  const AddPage = entry.definition.renderAddPage;
-  const search = props.search ?? {};
-
-  return (
-    <SourcePluginRouteProvider
-      value={{
-        plugin: entry.plugin,
-        definition: entry.definition,
-        params: {},
-        search,
-        navigation: props.navigation,
-      }}
-    >
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-6 py-10 lg:px-10 lg:py-14">
-          <div className="mb-8">
-            <h1 className="font-display text-3xl tracking-tight text-foreground lg:text-4xl">
-              {entry.definition.displayName}
-            </h1>
-            {entry.definition.description && (
-              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
-                {entry.definition.description}
-              </p>
-            )}
-          </div>
-
-          <SourcePluginPicker activeKey={entry.definition.key} />
-          <AddPage key={JSON.stringify(search)} />
-        </div>
-      </div>
-    </SourcePluginRouteProvider>
-  );
-}
-
-export function SourcePluginEditPage(input: {
-  definitionKey: string;
-  sourceId: string;
-  params?: SourcePluginRouteParams;
-  search?: SourcePluginRouteSearch;
-  navigation: SourcePluginNavigation;
-}) {
-  const requestedEntry = getSourceFrontendTypeEntryByKey(input.definitionKey);
-  const source = useSource(input.sourceId);
-
-  if (requestedEntry === null) {
-    return <SourcePluginUnavailableState />;
-  }
-
-  return (
-    <LoadableBlock loadable={source} loading="Loading source...">
-      {(loadedSource) => {
-        const entry = getSourceFrontendTypeEntry(loadedSource.kind);
-        if (entry === null) {
-          return (
-            <SourcePluginsResetState
-              title="Source type unavailable"
-              message={`No plugin is available for source type "${loadedSource.kind}".`}
-            />
-          );
-        }
-
-        if (entry.definition.key !== requestedEntry.definition.key) {
-          return (
-            <SourcePluginRouteMismatchState
-              requestedDisplayName={requestedEntry.definition.displayName}
-              actualDisplayName={entry.definition.displayName}
-            />
-          );
-        }
-
-        if (entry.definition.renderEditPage === undefined) {
-          return (
-            <SourcePluginsResetState
-              title="Editing unavailable"
-              message={`No plugin is available for source type "${loadedSource.kind}".`}
-            />
-          );
-        }
-
-        const EditPage = entry.definition.renderEditPage;
-
-        return (
-          <SourcePluginRouteProvider
-            value={{
-              plugin: entry.plugin,
-              definition: entry.definition,
-              params: input.params ?? {
-                sourceId: input.sourceId,
-              },
-              search: input.search ?? {},
-              navigation: input.navigation,
-            }}
-          >
-            <div className="mx-auto max-w-4xl px-6 py-10 lg:px-10 lg:py-14">
-              <EditPage source={loadedSource} />
-            </div>
-          </SourcePluginRouteProvider>
-        );
-      }}
-    </LoadableBlock>
-  );
-}
-
-export function SourcePluginDetailPage(input: {
-  definitionKey: string;
-  sourceId: string;
-  params?: SourcePluginRouteParams;
-  search: SourcePluginRouteSearch;
-  navigation: SourcePluginNavigation;
-}) {
-  const requestedEntry = getSourceFrontendTypeEntryByKey(input.definitionKey);
-  const source = useSource(input.sourceId);
-
-  if (requestedEntry === null) {
-    return <SourcePluginUnavailableState />;
-  }
-
-  return (
-    <LoadableBlock loadable={source} loading="Loading source...">
-      {(loadedSource) => {
-        const entry = getSourceFrontendTypeEntry(loadedSource.kind);
-        if (entry === null) {
-          return (
-            <SourcePluginsResetState
-              title="Source type unavailable"
-              message={`No plugin is available for source type "${loadedSource.kind}".`}
-            />
-          );
-        }
-
-        if (entry.definition.key !== requestedEntry.definition.key) {
-          return (
-            <SourcePluginRouteMismatchState
-              requestedDisplayName={requestedEntry.definition.displayName}
-              actualDisplayName={entry.definition.displayName}
-            />
-          );
-        }
-
-        if (entry.definition.renderDetailPage === undefined) {
-          return (
-            <SourcePluginsResetState
-              title="Details unavailable"
-              message={`No plugin is available for source type "${loadedSource.kind}".`}
-            />
-          );
-        }
-
-        const DetailPage = entry.definition.renderDetailPage;
-
-        return (
-          <SourcePluginRouteProvider
-            value={{
-              plugin: entry.plugin,
-              definition: entry.definition,
-              params: input.params ?? {
-                sourceId: input.sourceId,
-              },
-              search: input.search,
-              navigation: input.navigation,
-            }}
-          >
-            <div className="h-full min-h-0">
-              <DetailPage source={loadedSource} />
-            </div>
-          </SourcePluginRouteProvider>
-        );
-      }}
-    </LoadableBlock>
-  );
-}
-
-export function SourcePluginDetailChildPage(input: {
-  definitionKey: string;
-  routeKey: FrontendSourceDetailRouteDefinition["key"];
-  sourceId: string;
-  params: SourcePluginRouteParams;
-  search: SourcePluginRouteSearch;
-  navigation: SourcePluginNavigation;
-}) {
-  const requestedEntry = getSourceFrontendTypeEntryByKey(input.definitionKey);
-  const source = useSource(input.sourceId);
-
-  if (requestedEntry === null) {
-    return <SourcePluginUnavailableState />;
-  }
-
-  return (
-    <LoadableBlock loadable={source} loading="Loading source...">
-      {(loadedSource) => {
-        const entry = getSourceFrontendTypeEntry(loadedSource.kind);
-        if (entry === null) {
-          return (
-            <SourcePluginsResetState
-              title="Source type unavailable"
-              message={`No plugin is available for source type "${loadedSource.kind}".`}
-            />
-          );
-        }
-
-        if (entry.definition.key !== requestedEntry.definition.key) {
-          return (
-            <SourcePluginRouteMismatchState
-              requestedDisplayName={requestedEntry.definition.displayName}
-              actualDisplayName={entry.definition.displayName}
-            />
-          );
-        }
-
-        const detailRoute = entry.definition.detailRoutes?.find((route) =>
-          route.key === input.routeKey
-        );
-
-        if (!detailRoute) {
-          return (
-            <SourcePluginsResetState
-              title="Route unavailable"
-              message={`The route "${input.routeKey}" is not available for this source type.`}
-            />
-          );
-        }
-
-        const DetailRoutePage = detailRoute.component;
-
-        return (
-          <SourcePluginRouteProvider
-            value={{
-              plugin: entry.plugin,
-              definition: entry.definition,
-              params: input.params,
-              search: input.search,
-              navigation: input.navigation,
-            }}
-          >
-            <div className="h-full min-h-0">
-              <DetailRoutePage source={loadedSource} />
-            </div>
-          </SourcePluginRouteProvider>
-        );
-      }}
-    </LoadableBlock>
   );
 }

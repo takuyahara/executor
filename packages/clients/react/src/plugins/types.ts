@@ -1,5 +1,4 @@
 import type { ComponentType } from "react";
-import type { Source } from "@executor/platform-sdk/schema";
 
 import type {
   ExecutorPluginPaths,
@@ -20,7 +19,10 @@ export type FrontendPluginRouteDefinition = {
   key: string;
   path?: string;
   component: ComponentType;
-  navigationLabel?: string;
+  nav?: {
+    label: string;
+    section?: string;
+  };
 };
 
 export type ExecutorPluginRouteContextValue = {
@@ -48,36 +50,9 @@ export type SourcePluginNavigation = {
   updateSearch: (search: SourcePluginRouteSearch) => void | Promise<void>;
 };
 
-export type FrontendSourceDetailRouteDefinition = {
-  key: string;
-  path: string;
-  component: ComponentType<{ source: Source }>;
-};
-
-export type FrontendSourceTypeDefinition = {
-  key: string;
-  kind: string;
-  displayName: string;
-  description?: string;
-  getIconUrl?: (source: Source) => string | null;
-  renderAddPage: ComponentType;
-  renderEditPage?: ComponentType<{ source: Source }>;
-  renderDetailPage?: ComponentType<{ source: Source }>;
-  detailRoutes?: readonly FrontendSourceDetailRouteDefinition[];
-};
-
-export type SourcePluginRouteContextValue = {
-  plugin: ExecutorFrontendPlugin;
-  definition: FrontendSourceTypeDefinition;
-  params: SourcePluginRouteParams;
-  search: SourcePluginRouteSearch;
-  navigation: SourcePluginNavigation;
-};
-
 export type ExecutorFrontendPlugin = {
   key: string;
   displayName?: string;
   description?: string;
   routes?: readonly FrontendPluginRouteDefinition[];
-  sourceTypes?: readonly FrontendSourceTypeDefinition[];
 };

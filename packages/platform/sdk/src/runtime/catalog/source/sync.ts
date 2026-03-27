@@ -21,7 +21,7 @@ import {
   type LocalScopeState,
 } from "../../scope-state";
 import {
-  getSourcePluginForSource,
+  getSourceContributionForSource,
 } from "../../sources/source-plugins";
 import {
   snapshotFromSourceCatalogSyncResult,
@@ -113,8 +113,8 @@ const syncSourceCatalogWithDeps = (
       return;
     }
 
-    const definition = getSourcePluginForSource(input.source);
-    const irModel = yield* definition.getIrModel({
+    const definition = getSourceContributionForSource(input.source);
+    const irModel = yield* definition.syncCatalog({
       source: input.source,
     });
     const snapshot = snapshotFromSourceCatalogSyncResult(irModel);
