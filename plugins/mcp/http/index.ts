@@ -199,7 +199,8 @@ const popupDocument = (payload: McpOAuthPopupResult): string => {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title)}</title>
   </head>
-  <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fafafa;">
+  <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fafafa; color: #111;">
+    <style>@media (prefers-color-scheme: dark) { body { background: #09090b !important; color: #fafafa !important; } p { color: #a1a1aa !important; } }</style>
     <main style="text-align: center; max-width: 360px; padding: 24px;">
       <div style="width: 40px; height: 40px; border-radius: 50%; background: ${statusColor}; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center;">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -208,7 +209,7 @@ const popupDocument = (payload: McpOAuthPopupResult): string => {
             : '<path d="M7 7l6 6M13 7l-6 6" stroke="white" stroke-width="2" stroke-linecap="round"/>'}
         </svg>
       </div>
-      <h1 style="margin: 0 0 8px; font-size: 18px; font-weight: 600; color: #111;">${escapeHtml(title)}</h1>
+      <h1 style="margin: 0 0 8px; font-size: 18px; font-weight: 600;">${escapeHtml(title)}</h1>
       <p style="margin: 0; font-size: 14px; color: #666; line-height: 1.5;">${escapeHtml(message)}</p>
     </main>
     <script>
