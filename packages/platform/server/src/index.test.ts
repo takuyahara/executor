@@ -127,12 +127,6 @@ const writeConfiguredLocalMcpSource = (input: {
           [input.sourceId]: {
             kind: "mcp",
             name: input.name ?? "Demo",
-            connection: {
-              endpoint: input.endpoint,
-            },
-            binding: {
-              transport: "streamable-http",
-            },
           },
         },
       },
