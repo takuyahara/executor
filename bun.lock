@@ -19,7 +19,7 @@
     },
     "apps/executor": {
       "name": "executor",
-      "version": "1.3.0-beta.0",
+      "version": "1.3.0-beta.3",
       "bin": {
         "executor": "bin/executor",
       },
@@ -239,6 +239,7 @@
       "dependencies": {
         "@standard-schema/spec": "^1.0.0",
         "ajv": "^8.17.1",
+        "ajv-formats": "^3.0.1",
         "effect": "catalog:",
       },
       "devDependencies": {
