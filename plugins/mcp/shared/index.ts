@@ -36,6 +36,7 @@ export const McpConnectionAuthSchema = Schema.Union(
 
 export const McpConnectInputSchema = Schema.Struct({
   name: Schema.String,
+  iconUrl: Schema.optional(Schema.String),
   endpoint: Schema.NullOr(Schema.String),
   transport: Schema.NullOr(SourceTransportSchema),
   queryParams: Schema.NullOr(StringMapSchema),

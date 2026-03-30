@@ -338,8 +338,10 @@ const normalizeStoredSourceData = (
 const sourceConfigFromStored = (
   source: Source,
   stored: McpStoredSourceData,
+  configSource: { iconUrl?: string } | null,
 ): McpSourceConfigPayload => ({
   name: source.name,
+  ...(configSource?.iconUrl ? { iconUrl: configSource.iconUrl } : {}),
   endpoint: stored.endpoint,
   transport: stored.transport,
   queryParams: stored.queryParams,
@@ -689,6 +691,9 @@ export const mcpSdkPlugin = (
             endpoint: input.endpoint,
             command: input.command,
           }),
+          ...(input.iconUrl && input.iconUrl.trim().length > 0
+            ? { iconUrl: input.iconUrl.trim() }
+            : {}),
         },
         stored: Effect.runSync(normalizeStoredSourceData(input)),
       }),
@@ -704,11 +709,15 @@ export const mcpSdkPlugin = (
               endpoint: stored.endpoint,
               command: stored.command,
             }),
+            ...(config.iconUrl && config.iconUrl.trim().length > 0
+              ? { iconUrl: config.iconUrl.trim() }
+              : { iconUrl: undefined }),
           },
           stored,
         };
       },
-      toConfig: ({ source, stored }) => sourceConfigFromStored(source, stored),
+      toConfig: ({ source, stored, configSource }) =>
+        sourceConfigFromStored(source, stored, configSource),
       remove: ({ stored }) =>
         Effect.gen(function* () {
           if (stored?.auth.kind === "oauth2") {
@@ -725,6 +734,7 @@ export const mcpSdkPlugin = (
         pluginScopeConfigSourceFromConfig({
           source,
           config: stored,
+          iconUrl: source.iconUrl ?? null,
         }),
       recoverStored: ({ config }) =>
         mcpStoredSourceDataFromLocalConfig(config),
