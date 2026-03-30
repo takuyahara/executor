@@ -50,6 +50,7 @@
     "@executor/plugin-openapi-shared": "0.0.0"
   },
   "changesets": [
+    "cute-steaks-sink",
     "funny-forks-listen",
     "fuzzy-camels-cheer",
     "quick-cars-approve",
