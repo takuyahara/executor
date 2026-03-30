@@ -25,37 +25,17 @@ describe("distribution flow", () => {
 }
 `);
 
-      const initialDoctor = yield* runCommand([
-        "doctor",
-        "--json",
+      expect(yield* harness.isReachable()).toBe(false);
+
+      const initialCall = yield* runCommand([
+        "call",
+        "return 1 + 1;",
         "--base-url",
         harness.baseUrl,
+        "--no-open",
       ]);
-      const initialDoctorJson = JSON.parse(initialDoctor.stdout) as {
-        ok: boolean;
-        checks: Record<string, { ok: boolean }>;
-      };
-      expect(initialDoctorJson.ok).toBe(false);
-      expect(initialDoctorJson.checks.webAssets?.ok).toBe(true);
-      expect(initialDoctorJson.checks.database?.ok).toBe(true);
-
-      yield* runCommand(["up", "--base-url", harness.baseUrl]);
-
-      const statusResult = yield* runCommand([
-        "status",
-        "--json",
-        "--base-url",
-        harness.baseUrl,
-      ]);
-      const status = JSON.parse(statusResult.stdout) as {
-        reachable: boolean;
-        pidRunning: boolean;
-        installation: { workspaceId: string; accountId: string } | null;
-      };
-
-      expect(status.reachable).toBe(true);
-      expect(status.pidRunning).toBe(true);
-      expect(status.installation).not.toBeNull();
+      expect(initialCall.stdout).toBe("2");
+      expect(yield* harness.isReachable()).toBe(true);
 
       const html = yield* harness.fetchText("/");
       expect(html.status).toBe(200);
@@ -80,8 +60,17 @@ describe("distribution flow", () => {
       );
       expect(sesCall.stderr).toContain("fetch is disabled in SES executor");
 
-      yield* runCommand(["down", "--base-url", harness.baseUrl]);
-      yield* runCommand(["up", "--base-url", harness.baseUrl]);
+      yield* harness.stopServer();
+      expect(yield* harness.isReachable()).toBe(false);
+
+      const restartedCall = yield* runCommand([
+        "call",
+        "return 3;",
+        "--base-url",
+        harness.baseUrl,
+        "--no-open",
+      ]);
+      expect(restartedCall.stdout).toBe("3");
 
       const installationAfterRestartResponse = yield* harness.fetchText("/v1/local/installation");
       expect(installationAfterRestartResponse.status).toBe(200);
@@ -95,7 +84,8 @@ describe("distribution flow", () => {
       expect(installationAfterRestart.scopeId).toBe(installation.scopeId);
       expect(installationAfterRestart.actorScopeId).toBe(installation.actorScopeId);
 
-      yield* runCommand(["down", "--base-url", harness.baseUrl]);
+      yield* harness.stopServer();
+      expect(yield* harness.isReachable()).toBe(false);
     });
 
   it.live("boots a staged package artifact in a fresh home", () =>

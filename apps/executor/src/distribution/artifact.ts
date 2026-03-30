@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 
@@ -136,9 +136,76 @@ const createPackageJson = (input: {
 
 const createLauncherSource = () => [
   "#!/usr/bin/env node",
-  'import "./executor.mjs";',
+  'import { readFileSync, readdirSync } from "node:fs";',
+  'import { dirname, join } from "node:path";',
+  'import { fileURLToPath } from "node:url";',
+  "",
+  "const isMusl = () => {",
+  '  try {',
+  '    return readFileSync("/usr/bin/ldd", "utf8").includes("musl");',
+  "  } catch {}",
+  "",
+  '  if (typeof process.report?.getReport === "function") {',
+  "    const report = process.report.getReport();",
+  "    if (report?.header?.glibcVersionRuntime) {",
+  "      return false;",
+  "    }",
+  "    if (Array.isArray(report?.sharedObjects)) {",
+  '      return report.sharedObjects.some((file) => file.includes("libc.musl-") || file.includes("ld-musl-"));',
+  "    }",
+  "  }",
+  "",
+  "  return false;",
+  "};",
+  "",
+  "const resolveBundledKeyringNativeLibraryPath = () => {",
+  '  if (process.platform !== "linux" || process.arch !== "x64") {',
+  "    return null;",
+  "  }",
+  "",
+  "  const binDir = dirname(fileURLToPath(import.meta.url));",
+  '  const pattern = isMusl()',
+  '    ? /^keyring\\.linux-x64-musl-.*\\.node$/',
+  '    : /^keyring\\.linux-x64-gnu-.*\\.node$/;',
+  '  const match = readdirSync(binDir).find((entry) => pattern.test(entry));',
+  "  return match ? join(binDir, match) : null;",
+  "};",
+  "",
+  "const bundledKeyringNativeLibraryPath = resolveBundledKeyringNativeLibraryPath();",
+  'if (bundledKeyringNativeLibraryPath && !process.env.NAPI_RS_NATIVE_LIBRARY_PATH) {',
+  "  process.env.NAPI_RS_NATIVE_LIBRARY_PATH = bundledKeyringNativeLibraryPath;",
+  "}",
+  "",
+  'await import("./executor.mjs");',
   "",
 ].join("\n");
+
+const buildCliBundle = async (input: {
+  binDir: string;
+  bundlePath: string;
+}): Promise<void> => {
+  const builtEntrypointPath = join(input.binDir, "main.js");
+
+  await runCommand({
+    command: "bun",
+    args: [
+      "build",
+      "./apps/executor/src/cli/main.ts",
+      "--target",
+      "node",
+      "--outdir",
+      input.binDir,
+    ],
+    cwd: repoRoot,
+  });
+
+  if (!existsSync(builtEntrypointPath)) {
+    throw new Error(`Missing bundled CLI entrypoint at ${builtEntrypointPath}`);
+  }
+
+  await rm(input.bundlePath, { force: true });
+  await rename(builtEntrypointPath, input.bundlePath);
+};
 
 export const buildDistributionPackage = async (
   options: BuildDistributionPackageOptions = {},
@@ -172,17 +239,9 @@ export const buildDistributionPackage = async (
     throw new Error(`Missing built web assets at ${webDistDir}`);
   }
 
-  await runCommand({
-    command: "bun",
-    args: [
-      "build",
-      "./apps/executor/src/cli/main.ts",
-      "--target",
-      "node",
-      "--outfile",
-      bundlePath,
-    ],
-    cwd: repoRoot,
+  await buildCliBundle({
+    binDir,
+    bundlePath,
   });
 
   await cp(webDistDir, webDir, { recursive: true });
