@@ -23,6 +23,7 @@ import {
 } from "@executor/platform-sdk/plugins";
 import {
   SecretMaterialResolverService,
+  configuredIconUrlFromConfigInput,
   createPluginScopeConfigEntrySchema,
   pluginScopeConfigSourceFromConfig,
   provideExecutorRuntime,
@@ -406,12 +407,7 @@ export const graphqlSdkPlugin = (options: {
         pluginScopeConfigSourceFromConfig({
           source,
           config: normalizeStoredSourceData(stored),
-          iconUrl:
-            configInput && typeof configInput === "object" && "iconUrl" in configInput
-              ? (typeof configInput.iconUrl === "string"
-                  ? configInput.iconUrl.trim() || null
-                  : null)
-              : null,
+          iconUrl: configuredIconUrlFromConfigInput(configInput),
         }),
       recoverStored: ({ config, loadedConfig }) =>
         graphqlStoredSourceDataFromLocalConfig({

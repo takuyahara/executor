@@ -31,6 +31,7 @@ import {
   defineExecutorSourcePlugin,
 } from "@executor/platform-sdk/plugins";
 import {
+  configuredIconUrlFromConfigInput,
   createPluginScopeConfigEntrySchema,
   pluginScopeConfigSourceFromConfig,
   SecretMaterialDeleterService,
@@ -734,12 +735,7 @@ export const mcpSdkPlugin = (
         pluginScopeConfigSourceFromConfig({
           source,
           config: stored,
-          iconUrl:
-            configInput && typeof configInput === "object" && "iconUrl" in configInput
-              ? (typeof configInput.iconUrl === "string"
-                  ? configInput.iconUrl.trim() || null
-                  : null)
-              : null,
+          iconUrl: configuredIconUrlFromConfigInput(configInput),
         }),
       recoverStored: ({ config }) =>
         mcpStoredSourceDataFromLocalConfig(config),

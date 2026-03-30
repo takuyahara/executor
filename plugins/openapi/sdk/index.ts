@@ -18,11 +18,12 @@ import {
   defineExecutorSourcePlugin,
 } from "@executor/platform-sdk/plugins";
 import {
+  configuredIconUrlFromConfigInput,
   createPluginScopeConfigEntrySchema,
-  provideExecutorRuntime,
   pluginScopeConfigSourceFromConfig,
-  runtimeEffectError,
   SecretMaterialResolverService,
+  provideExecutorRuntime,
+  runtimeEffectError,
 } from "@executor/platform-sdk/runtime";
 import {
   OpenApiConnectionAuthSchema,
@@ -553,12 +554,7 @@ export const openApiSdkPlugin = (
             auth: stored.auth,
             defaultHeaders: stored.defaultHeaders,
           },
-          iconUrl:
-            configInput && typeof configInput === "object" && "iconUrl" in configInput
-              ? (typeof configInput.iconUrl === "string"
-                  ? configInput.iconUrl.trim() || null
-                  : null)
-              : null,
+          iconUrl: configuredIconUrlFromConfigInput(configInput),
         }),
       recoverStored: ({ config, loadedConfig }) =>
         openApiStoredSourceDataFromLocalConfig({
