@@ -21,10 +21,6 @@ import { openApiHttpPlugin } from "@executor/plugin-openapi-http";
 import {
   openApiSdkPlugin,
 } from "@executor/plugin-openapi-sdk";
-import { onePasswordHttpPlugin } from "@executor/plugin-onepassword-http";
-import {
-  onePasswordSdkPlugin,
-} from "@executor/plugin-onepassword-sdk";
 import {
   createExecutorApiLayer,
 } from "@executor/platform-api/http";
@@ -66,7 +62,6 @@ import { createFileGraphqlSourceStorage } from "./graphql-source-storage";
 import { createFileMcpOAuthSessionStorage } from "./mcp-oauth-session-storage";
 import { createFileMcpSourceStorage } from "./mcp-source-storage";
 import { createFileOpenApiSourceStorage } from "./openapi-source-storage";
-import { createFileOnePasswordStoreStorage } from "./onepassword-store-storage";
 
 export { createFileGoogleDiscoveryOAuthSessionStorage } from "./google-discovery-oauth-session-storage";
 export { createFileGoogleDiscoverySourceStorage } from "./google-discovery-source-storage";
@@ -74,7 +69,6 @@ export { createFileGraphqlSourceStorage } from "./graphql-source-storage";
 export { createFileMcpOAuthSessionStorage } from "./mcp-oauth-session-storage";
 export { createFileMcpSourceStorage } from "./mcp-source-storage";
 export { createFileOpenApiSourceStorage } from "./openapi-source-storage";
-export { createFileOnePasswordStoreStorage } from "./onepassword-store-storage";
 
 export {
   DEFAULT_EXECUTOR_DATA_DIR,
@@ -142,7 +136,6 @@ const executorHttpPlugins = [
   graphqlHttpPlugin(),
   googleDiscoveryHttpPlugin(),
   mcpHttpPlugin(),
-  onePasswordHttpPlugin(),
   openApiHttpPlugin(),
 ] as const;
 
@@ -192,11 +185,6 @@ const createExecutorRuntime = (
       openApiSdkPlugin({
         storage: createFileOpenApiSourceStorage({
           rootDir: resolve(localDataDir, "plugins", "openapi", "sources"),
-        }),
-      }),
-      onePasswordSdkPlugin({
-        storage: createFileOnePasswordStoreStorage({
-          rootDir: resolve(localDataDir, "plugins", "onepassword", "stores"),
         }),
       }),
     ] as const,
