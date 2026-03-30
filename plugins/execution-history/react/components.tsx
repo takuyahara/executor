@@ -72,7 +72,7 @@ const STATUS_STYLES = {
 const statusDot = (status: ExecutionStatus): string => STATUS_STYLES[status].dot;
 const statusText = (status: ExecutionStatus): string => STATUS_STYLES[status].text;
 
-const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+const STATUS_OPTIONS: Array<{ value: "all" | ExecutionStatus; label: string }> = [
   { value: "all", label: "All" },
   { value: "completed", label: "Completed" },
   { value: "failed", label: "Failed" },
