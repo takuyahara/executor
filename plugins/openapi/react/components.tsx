@@ -30,6 +30,9 @@ import {
 import {
   openApiHttpApiExtension,
 } from "@executor/plugin-openapi-http";
+import {
+  getFaviconUrlForRemoteUrl,
+} from "@executor/plugin-openapi-shared";
 import type {
   OpenApiConnectInput,
   OpenApiPreviewRequest,
@@ -37,7 +40,7 @@ import type {
   OpenApiPreviewResponse,
   OpenApiSourceConfigPayload,
 } from "@executor/plugin-openapi-shared";
-import { startTransition, useEffect, useState, type ReactNode } from "react";
+import { startTransition, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 
 type RouteToolSearch = SourceToolExplorerSearch;
 
@@ -53,63 +56,6 @@ const defaultOpenApiInput = (): OpenApiConnectInput => ({
 
 const DEFAULT_BEARER_HEADER_NAME = "Authorization";
 const DEFAULT_BEARER_PREFIX = "Bearer ";
-
-const COMMON_COMPOUND_SUFFIXES = new Set([
-  "ac.uk",
-  "co.in",
-  "co.jp",
-  "co.nz",
-  "co.uk",
-  "com.au",
-  "com.br",
-  "com.mx",
-  "net.au",
-  "org.au",
-  "org.uk",
-]);
-
-const isIpv4Address = (value: string): boolean =>
-  /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);
-
-const toRegistrableDomain = (hostname: string): string | null => {
-  const normalized = hostname.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized === "localhost" || isIpv4Address(normalized)) {
-    return normalized;
-  }
-
-  const parts = normalized.split(".").filter((part) => part.length > 0);
-  if (parts.length < 2) {
-    return null;
-  }
-
-  const suffix = parts.slice(-2).join(".");
-  if (parts.length >= 3 && COMMON_COMPOUND_SUFFIXES.has(suffix)) {
-    return parts.slice(-3).join(".");
-  }
-
-  return parts.slice(-2).join(".");
-};
-
-const getPreviewFaviconUrl = (value: string | null | undefined): string | null => {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  try {
-    const url = new URL(trimmed);
-    const domain = toRegistrableDomain(url.hostname);
-    return domain
-      ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`
-      : null;
-  } catch {
-    return null;
-  }
-};
 
 const presetString = (
   search: Record<string, unknown>,
@@ -342,9 +288,9 @@ function OpenApiSourceForm(props: {
     })
   );
   const submitMutation = useExecutorMutation<OpenApiConnectInput, void>(props.onSubmit);
-  const resolvedIconUrl = iconUrl.trim() || getPreviewFaviconUrl(baseUrl || specUrl);
+  const resolvedIconUrl = iconUrl.trim() || getFaviconUrlForRemoteUrl(baseUrl || specUrl);
 
-  const runPreview = async (input: {
+  const runPreview = useEffectEvent(async (input: {
     mode: "auto" | "manual";
   }) => {
     const trimmedSpecUrl = specUrl.trim();
@@ -387,7 +333,7 @@ function OpenApiSourceForm(props: {
       }
       setPreview(null);
     }
-  };
+  });
 
   useEffect(() => {
     const trimmedSpecUrl = specUrl.trim();

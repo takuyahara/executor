@@ -30,6 +30,7 @@ import {
   mcpHttpApiExtension,
 } from "@executor/plugin-mcp-http";
 import {
+  getFaviconUrlForRemoteUrl,
   type McpConnectInput,
   type McpConnectionAuth,
   type McpOAuthPopupResult,
@@ -108,63 +109,6 @@ const presetJsonStringArray = (
 ): Array<string> | null => {
   const value = presetString(search, key);
   return value ? parseJsonStringArray(key, value) : null;
-};
-
-const COMMON_COMPOUND_SUFFIXES = new Set([
-  "ac.uk",
-  "co.in",
-  "co.jp",
-  "co.nz",
-  "co.uk",
-  "com.au",
-  "com.br",
-  "com.mx",
-  "net.au",
-  "org.au",
-  "org.uk",
-]);
-
-const isIpv4Address = (value: string): boolean =>
-  /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);
-
-const toRegistrableDomain = (hostname: string): string | null => {
-  const normalized = hostname.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized === "localhost" || isIpv4Address(normalized)) {
-    return normalized;
-  }
-
-  const parts = normalized.split(".").filter((part) => part.length > 0);
-  if (parts.length < 2) {
-    return null;
-  }
-
-  const suffix = parts.slice(-2).join(".");
-  if (parts.length >= 3 && COMMON_COMPOUND_SUFFIXES.has(suffix)) {
-    return parts.slice(-3).join(".");
-  }
-
-  return parts.slice(-2).join(".");
-};
-
-const getPreviewFaviconUrl = (value: string): string | null => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  try {
-    const url = new URL(trimmed);
-    const domain = toRegistrableDomain(url.hostname);
-    return domain
-      ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`
-      : null;
-  } catch {
-    return null;
-  }
 };
 
 const mcpInputFromSearch = (
@@ -347,7 +291,7 @@ function McpSourceForm(props: {
 
   const isStdio = transportFields.transport === "stdio";
   const resolvedIconUrl = iconUrl.trim()
-    || (!isStdio ? getPreviewFaviconUrl(endpoint) : null);
+    || (!isStdio ? getFaviconUrlForRemoteUrl(endpoint) : null);
 
   const runOauth = async () => {
     if (installation.status !== "ready") {
@@ -371,7 +315,7 @@ function McpSourceForm(props: {
       ).toString(),
     };
 
-    let started;
+    let started: Awaited<ReturnType<typeof startOAuth>>;
     try {
       started = await startOAuth({
         path: {
