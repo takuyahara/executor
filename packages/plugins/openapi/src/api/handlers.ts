@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "@effect/platform";
 import { Context, Effect } from "effect";
 
 import { addGroup } from "@executor/api";
-import type { OpenApiPluginExtension } from "../sdk/plugin";
+import type { OpenApiPluginExtension, HeaderValue } from "../sdk/plugin";
 import { OpenApiGroup } from "./group";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ export const OpenApiHandlers = HttpApiBuilder.group(
             spec: payload.spec,
             baseUrl: payload.baseUrl,
             namespace: payload.namespace,
-            headers: payload.headers as Record<string, string> | undefined,
+            headers: payload.headers as Record<string, HeaderValue> | undefined,
           });
           return {
             toolCount: result.toolCount,
