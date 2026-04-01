@@ -3,43 +3,58 @@ import { Effect, Option } from "effect";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import type { ParsedDocument } from "./parse";
 import { parse } from "./parse";
 import { extract } from "./extract";
+import type { ExtractionResult } from "./types";
 import { createExecutor, makeTestConfig } from "@executor/sdk";
 import { openApiPlugin } from "./plugin";
 
 // ---------------------------------------------------------------------------
-// Load the Cloudflare OpenAPI spec (~9MB, 1729 paths)
+// Load + parse once, share across tests
 // ---------------------------------------------------------------------------
 
 const specPath = resolve(__dirname, "../fixtures/cloudflare.json");
 const specText = readFileSync(specPath, "utf-8");
 
+let cachedDoc: ParsedDocument | null = null;
+let cachedResult: ExtractionResult | null = null;
+
+const getDoc = () =>
+  Effect.gen(function* () {
+    if (!cachedDoc) cachedDoc = yield* parse(specText);
+    return cachedDoc;
+  });
+
+const getResult = () =>
+  Effect.gen(function* () {
+    if (!cachedResult) {
+      const doc = yield* getDoc();
+      cachedResult = yield* extract(doc);
+    }
+    return cachedResult;
+  });
+
 describe("Real specs: Cloudflare API", () => {
   it.effect("parses the full Cloudflare spec", () =>
     Effect.gen(function* () {
-      const doc = yield* parse(specText);
+      const doc = yield* getDoc();
       expect(doc).toBeDefined();
     }),
   );
 
   it.effect("extracts operations from the Cloudflare spec", () =>
     Effect.gen(function* () {
-      const doc = yield* parse(specText);
-      const result = yield* extract(doc);
+      const result = yield* getResult();
 
       expect(Option.getOrElse(result.title, () => "")).toBe("Cloudflare API");
       expect(Option.getOrElse(result.version, () => "")).toBe("4.0.0");
-
-      // Should extract thousands of operations
       expect(result.operations.length).toBeGreaterThan(1000);
 
-      // Every operation has an operationId
       for (const op of result.operations) {
         expect(op.operationId).toBeTruthy();
       }
 
-      // Every operation has a valid HTTP method
       const validMethods = new Set([
         "get", "post", "put", "delete", "patch", "head", "options", "trace",
       ]);
@@ -47,13 +62,11 @@ describe("Real specs: Cloudflare API", () => {
         expect(validMethods.has(op.method)).toBe(true);
       }
 
-      // Spot-check: there should be zone-related operations
       const zoneOps = result.operations.filter((op) =>
         op.pathTemplate.includes("/zones"),
       );
       expect(zoneOps.length).toBeGreaterThan(0);
 
-      // Spot-check: there should be DNS record operations
       const dnsOps = result.operations.filter((op) =>
         op.pathTemplate.includes("/dns_records"),
       );
@@ -63,10 +76,8 @@ describe("Real specs: Cloudflare API", () => {
 
   it.effect("operations have input schemas", () =>
     Effect.gen(function* () {
-      const doc = yield* parse(specText);
-      const result = yield* extract(doc);
+      const result = yield* getResult();
 
-      // Most operations with parameters or request bodies should have input schemas
       const opsWithInput = result.operations.filter((op) =>
         Option.isSome(op.inputSchema),
       );
@@ -76,15 +87,12 @@ describe("Real specs: Cloudflare API", () => {
 
   it.effect("operations have output schemas", () =>
     Effect.gen(function* () {
-      const doc = yield* parse(specText);
-      const result = yield* extract(doc);
+      const result = yield* getResult();
 
-      // Most GET operations should have output schemas
       const getOps = result.operations.filter((op) => op.method === "get");
       const getOpsWithOutput = getOps.filter((op) =>
         Option.isSome(op.outputSchema),
       );
-      // At least half of GETs should have output schemas
       expect(getOpsWithOutput.length).toBeGreaterThan(getOps.length / 2);
     }),
   );
@@ -107,13 +115,11 @@ describe("Real specs: Cloudflare API", () => {
       const tools = yield* executor.tools.list();
       expect(tools.length).toBe(result.toolCount);
 
-      // All tools should be tagged
       for (const tool of tools) {
         expect(tool.tags).toContain("openapi");
         expect(tool.tags).toContain("cloudflare");
       }
 
-      // Spot-check: can find zone list tool
       const zoneTools = yield* executor.tools.list({ query: "zone" });
       expect(zoneTools.length).toBeGreaterThan(0);
     }),
@@ -132,27 +138,23 @@ describe("Real specs: Cloudflare API", () => {
           namespace: "cloudflare",
         });
 
-        // Shared definitions store contains all component schemas
         const definitions = yield* executor.tools.definitions();
         expect(Object.keys(definitions).length).toBeGreaterThan(5000);
         expect(definitions["dns-records_dns_response_single"]).toBeDefined();
 
-        // Tool schemas use $ref pointers with re-attached definitions
         const tools = yield* executor.tools.list({ query: "dns-record-details" });
         expect(tools.length).toBeGreaterThan(0);
-        
+
         const schema = yield* executor.tools.schema(tools[0]!.id);
         const output = schema.outputSchema as Record<string, unknown>;
-        
-        // Root is a $ref pointer
+
         expect(output["$ref"]).toBeTypeOf("string");
         expect((output["$ref"] as string).startsWith("#/components/schemas/")).toBe(true);
-        
-        // Referenced definitions are re-attached for self-contained use
+
         expect(output["$defs"]).toBeDefined();
         const defs = output["$defs"] as Record<string, unknown>;
         expect(Object.keys(defs).length).toBeGreaterThan(0);
-        expect(Object.keys(defs).length).toBeLessThan(100); // Only referenced ones, not all 5611
+        expect(Object.keys(defs).length).toBeLessThan(100);
       }),
   );
 
