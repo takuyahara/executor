@@ -10,6 +10,13 @@ export {
   makeInMemoryOperationStore,
   type OpenApiOperationStore,
 } from "./operation-store";
+export {
+  previewSpec,
+  SecurityScheme,
+  AuthStrategy,
+  HeaderPreset,
+  SpecPreview,
+} from "./preview";
 export { DocResolver, resolveBaseUrl, preferredContent } from "./openapi-utils";
 
 export {
@@ -19,10 +26,6 @@ export {
 } from "./errors";
 
 export {
-  AuthConfig,
-  NoAuth,
-  BearerAuth,
-  ApiKeyAuth,
   ExtractedOperation,
   ExtractionResult,
   InvocationConfig,

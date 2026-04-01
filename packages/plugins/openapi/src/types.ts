@@ -8,33 +8,6 @@ export const OperationId = Schema.String.pipe(Schema.brand("OperationId"));
 export type OperationId = typeof OperationId.Type;
 
 // ---------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------
-
-export class NoAuth extends Schema.TaggedClass<NoAuth>()("NoAuth", {}) {}
-
-export class BearerAuth extends Schema.TaggedClass<BearerAuth>()(
-  "BearerAuth",
-  {
-    token: Schema.String,
-    headerName: Schema.optionalWith(Schema.String, { default: () => "Authorization" }),
-    prefix: Schema.optionalWith(Schema.String, { default: () => "Bearer " }),
-  },
-) {}
-
-export class ApiKeyAuth extends Schema.TaggedClass<ApiKeyAuth>()(
-  "ApiKeyAuth",
-  {
-    name: Schema.String,
-    value: Schema.String,
-    in: Schema.Literal("header", "query", "cookie"),
-  },
-) {}
-
-export const AuthConfig = Schema.Union(NoAuth, BearerAuth, ApiKeyAuth);
-export type AuthConfig = typeof AuthConfig.Type;
-
-// ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
 
@@ -125,7 +98,11 @@ export class InvocationConfig extends Schema.Class<InvocationConfig>(
   "InvocationConfig",
 )({
   baseUrl: Schema.String,
-  auth: AuthConfig,
+  /** Static headers applied to every request (auth, custom headers, etc.) */
+  headers: Schema.optionalWith(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+    { default: () => ({}) },
+  ),
 }) {}
 
 export class InvocationResult extends Schema.Class<InvocationResult>(

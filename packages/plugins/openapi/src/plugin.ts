@@ -18,11 +18,10 @@ import {
   makeInMemoryOperationStore,
   type OpenApiOperationStore,
 } from "./operation-store";
+import { previewSpec, type SpecPreview } from "./preview";
 import {
-  type AuthConfig,
   type ExtractedOperation,
   InvocationConfig,
-  NoAuth,
   OperationBinding,
 } from "./types";
 
@@ -34,7 +33,8 @@ export interface OpenApiSpecConfig {
   readonly spec: string;
   readonly baseUrl?: string;
   readonly namespace?: string;
-  readonly auth?: AuthConfig;
+  /** Static headers applied to every request for this spec */
+  readonly headers?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,10 +42,17 @@ export interface OpenApiSpecConfig {
 // ---------------------------------------------------------------------------
 
 export interface OpenApiPluginExtension {
+  /** Preview a spec without registering — returns metadata, auth strategies, header presets */
+  readonly previewSpec: (
+    specText: string,
+  ) => Effect.Effect<SpecPreview, Error>;
+
+  /** Add an OpenAPI spec and register its operations as tools */
   readonly addSpec: (
     config: OpenApiSpecConfig,
   ) => Effect.Effect<{ readonly toolCount: number }, Error>;
 
+  /** Remove all tools from a previously added spec by namespace */
   readonly removeSpec: (namespace: string) => Effect.Effect<void>;
 }
 
@@ -103,6 +110,8 @@ export const openApiPlugin = (options?: {
 
         return {
           extension: {
+            previewSpec: (specText: string) => previewSpec(specText),
+
             addSpec: (config: OpenApiSpecConfig) =>
               Effect.gen(function* () {
                 const doc = yield* parse(config.spec);
@@ -121,7 +130,7 @@ export const openApiPlugin = (options?: {
                 const baseUrl = config.baseUrl ?? resolveBaseUrl(result.servers);
                 const invocationConfig = new InvocationConfig({
                   baseUrl,
-                  auth: config.auth ?? new NoAuth(),
+                  headers: config.headers ?? {},
                 });
 
                 const registrations = result.operations.map((op) =>

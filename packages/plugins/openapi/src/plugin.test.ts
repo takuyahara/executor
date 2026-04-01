@@ -78,6 +78,26 @@ const TestLayer = HttpApiBuilder.serve().pipe(
 // ---------------------------------------------------------------------------
 
 layer(TestLayer)("OpenAPI Plugin", (it) => {
+  it.effect("previewSpec returns metadata and header presets", () =>
+    Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [
+            openApiPlugin({ httpClientLayer: clientLayer }),
+          ] as const,
+        }),
+      );
+
+      const preview = yield* executor.openapi.previewSpec(specJson);
+
+      expect(preview.operationCount).toBeGreaterThanOrEqual(2);
+      expect(preview.servers).toBeDefined();
+    }),
+  );
+
   it.effect("registers tools from an OpenAPI spec", () =>
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;

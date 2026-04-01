@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import type { ParsedDocument } from "./parse";
 import { parse } from "./parse";
 import { extract } from "./extract";
+import { previewSpec } from "./preview";
 import type { ExtractionResult } from "./types";
 import { createExecutor, makeTestConfig } from "@executor/sdk";
 import { openApiPlugin } from "./plugin";
@@ -156,6 +157,42 @@ describe("Real specs: Cloudflare API", () => {
         expect(Object.keys(defs).length).toBeGreaterThan(0);
         expect(Object.keys(defs).length).toBeLessThan(100);
       }),
+  );
+
+  it.effect("previewSpec returns security schemes and header presets", () =>
+    Effect.gen(function* () {
+      const preview = yield* previewSpec(specText);
+
+      expect(preview.operationCount).toBeGreaterThan(1000);
+      expect(Option.isSome(preview.title)).toBe(true);
+      expect(preview.servers.length).toBeGreaterThan(0);
+
+      // Cloudflare has 4 security schemes
+      expect(preview.securitySchemes.length).toBe(4);
+      const schemeNames = preview.securitySchemes.map((s) => s.name);
+      expect(schemeNames).toContain("api_token");
+      expect(schemeNames).toContain("api_key");
+      expect(schemeNames).toContain("api_email");
+
+      // Should have header presets derived from security strategies
+      expect(preview.headerPresets.length).toBeGreaterThan(0);
+
+      // Bearer token preset should include Authorization header
+      const bearerPreset = preview.headerPresets.find((p) =>
+        p.label.includes("Bearer"),
+      );
+      expect(bearerPreset).toBeDefined();
+      expect(bearerPreset!.headers["Authorization"]).toBeNull(); // user must provide
+      expect(bearerPreset!.secretHeaders).toContain("Authorization");
+
+      // API key + email preset
+      const keyEmailPreset = preview.headerPresets.find((p) =>
+        p.label.includes("api_email"),
+      );
+      expect(keyEmailPreset).toBeDefined();
+      expect(keyEmailPreset!.headers["X-Auth-Email"]).toBeNull();
+      expect(keyEmailPreset!.headers["X-Auth-Key"]).toBeNull();
+    }),
   );
 
   it.effect("removeSpec cleans up all Cloudflare tools", () =>

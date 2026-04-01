@@ -1,4 +1,4 @@
-import { Effect, Layer, Match, Option } from "effect";
+import { Effect, Layer, Option } from "effect";
 import {
   HttpClient,
   HttpClientRequest,
@@ -14,7 +14,6 @@ import {
 import { OpenApiInvocationError } from "./errors";
 import type { OpenApiOperationStore } from "./operation-store";
 import {
-  type AuthConfig,
   type OperationBinding,
   InvocationConfig,
   InvocationResult,
@@ -117,35 +116,19 @@ const resolvePath = Effect.fn("OpenApi.resolvePath")(function* (
 });
 
 // ---------------------------------------------------------------------------
-// Auth application
+// Header application
 // ---------------------------------------------------------------------------
 
-const applyAuth = (
+const applyHeaders = (
   request: HttpClientRequest.HttpClientRequest,
-  auth: AuthConfig,
-): HttpClientRequest.HttpClientRequest =>
-  Match.valueTags(auth, {
-    NoAuth: () => request,
-    BearerAuth: ({ token, headerName, prefix }) =>
-      HttpClientRequest.setHeader(request, headerName, `${prefix}${token}`),
-    ApiKeyAuth: ({ name, value, in: location }) => {
-      if (location === "header") {
-        return HttpClientRequest.setHeader(request, name, value);
-      }
-      if (location === "query") {
-        return HttpClientRequest.setUrlParam(request, name, value);
-      }
-      // cookie
-      const existing =
-        request.headers["cookie"] ?? "";
-      const cookie = `${name}=${encodeURIComponent(value)}`;
-      return HttpClientRequest.setHeader(
-        request,
-        "cookie",
-        existing ? `${existing}; ${cookie}` : cookie,
-      );
-    },
-  });
+  headers: Record<string, string>,
+): HttpClientRequest.HttpClientRequest => {
+  let req = request;
+  for (const [name, value] of Object.entries(headers)) {
+    req = HttpClientRequest.setHeader(req, name, value);
+  }
+  return req;
+};
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -221,8 +204,8 @@ export const invoke = Effect.fn("OpenApi.invoke")(function* (
     }
   }
 
-  // Auth
-  request = applyAuth(request, config.auth);
+  // Static headers (auth, custom headers, etc.)
+  request = applyHeaders(request, config.headers);
 
   // Execute
   const response = yield* client.execute(request).pipe(
