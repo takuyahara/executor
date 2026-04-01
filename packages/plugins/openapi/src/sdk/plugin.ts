@@ -57,6 +57,7 @@ export interface OpenApiPluginExtension {
 
   /** Remove all tools from a previously added spec by namespace */
   readonly removeSpec: (namespace: string) => Effect.Effect<void>;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +169,7 @@ export const openApiPlugin = (options?: {
                   yield* ctx.tools.unregister(toolIds);
                 }
               }),
+
           },
 
           close: () =>

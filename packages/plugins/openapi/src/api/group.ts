@@ -40,13 +40,6 @@ const AddSpecResponse = Schema.Struct({
   namespace: Schema.String,
 });
 
-const ListSpecsResponse = Schema.Array(
-  Schema.Struct({
-    namespace: Schema.String,
-    toolCount: Schema.Number,
-  }),
-);
-
 // ---------------------------------------------------------------------------
 // Errors with HTTP status
 // ---------------------------------------------------------------------------
@@ -62,8 +55,6 @@ const ExtractionError = OpenApiExtractionError.annotations(
 // Group
 // ---------------------------------------------------------------------------
 
-const namespaceParam = HttpApiSchema.param("namespace", Schema.String);
-
 export class OpenApiGroup extends HttpApiGroup.make("openapi")
   .add(
     HttpApiEndpoint.post("previewSpec")`/scopes/${scopeIdParam}/openapi/preview`
@@ -78,13 +69,5 @@ export class OpenApiGroup extends HttpApiGroup.make("openapi")
       .addSuccess(AddSpecResponse)
       .addError(ParseError)
       .addError(ExtractionError),
-  )
-  .add(
-    HttpApiEndpoint.get("listSpecs")`/scopes/${scopeIdParam}/openapi/specs`
-      .addSuccess(ListSpecsResponse),
-  )
-  .add(
-    HttpApiEndpoint.del("removeSpec")`/scopes/${scopeIdParam}/openapi/specs/${namespaceParam}`
-      .addSuccess(Schema.Struct({ removed: Schema.Boolean })),
   )
   .prefix("/v1") {}

@@ -49,15 +49,5 @@ export const OpenApiHandlers = HttpApiBuilder.group(
           };
         }).pipe(Effect.orDie),
       )
-      .handle("listSpecs", () =>
-        // TODO: wire to operation store listByNamespace
-        Effect.succeed([] as { namespace: string; toolCount: number }[]),
-      )
-      .handle("removeSpec", ({ path }) =>
-        Effect.gen(function* () {
-          const ext = yield* OpenApiExtensionService;
-          yield* ext.removeSpec(path.namespace);
-          return { removed: true };
-        }),
-      ),
+      ,
 );

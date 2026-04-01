@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@executor/plugin-openapi": "workspace:*",
     "@executor/react": "workspace:*",
     "@executor/server": "workspace:*",
     "@tanstack/react-router": "^1.168.10",

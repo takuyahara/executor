@@ -26,6 +26,7 @@ export interface OpenApiOperationStore {
 
   /** Remove all entries for a namespace */
   readonly removeByNamespace: (namespace: string) => Effect.Effect<readonly ToolId[]>;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -73,5 +74,6 @@ export const makeInMemoryOperationStore = (): OpenApiOperationStore => {
         }
         return ids;
       }),
+
   };
 };

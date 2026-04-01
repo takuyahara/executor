@@ -10,6 +10,7 @@
     "@effect/platform": "catalog:",
 
     "@executor/api": "workspace:*",
+    "@executor/plugin-openapi": "workspace:*",
     "@executor/sdk": "workspace:*",
     "effect": "catalog:"
   },
