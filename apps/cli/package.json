@@ -9,6 +9,12 @@
   "exports": {
     ".": "./src/main.ts"
   },
+  "scripts": {
+    "build": "bun run src/build.ts binary --single",
+    "build:all": "bun run src/build.ts binary",
+    "build:publish": "bun run src/build.ts publish",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@effect/cli": "catalog:",
     "@effect/platform": "catalog:",

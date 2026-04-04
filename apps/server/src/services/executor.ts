@@ -51,8 +51,19 @@ export class ExecutorService extends Context.Tag("ExecutorService")<
 // Data directory
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = process.env.EXECUTOR_DATA_DIR
-  ?? `${import.meta.dirname}/../../../../.executor-data`;
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+const resolveDataDir = (): string => {
+  if (process.env.EXECUTOR_DATA_DIR) return process.env.EXECUTOR_DATA_DIR;
+  const platform = process.platform;
+  const home = homedir();
+  if (platform === "darwin") return join(home, "Library", "Application Support", "Executor");
+  if (platform === "win32") return join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "Executor");
+  return join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "executor");
+};
+
+const DATA_DIR = resolveDataDir();
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 

@@ -1,4 +1,3 @@
-import { resolve, join } from "node:path";
 import { Command, Options } from "@effect/cli";
 import { BunRuntime } from "@effect/platform-bun";
 import * as Effect from "effect/Effect";
@@ -14,7 +13,10 @@ const CLI_NAME = "executor";
 const { version: CLI_VERSION } = await import("../package.json");
 const DEFAULT_PORT = 8788;
 
-const WEB_DIST_DIR = resolve(import.meta.dirname, "../../web/dist");
+// Embedded web UI — baked into compiled binaries via `with { type: "file" }`
+const embeddedWebUI: Record<string, string> | null = await import("embedded-web-ui.gen.ts")
+  .then((m) => m.default as Record<string, string>)
+  .catch(() => null);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,43 +59,22 @@ const renderSessionSummary = (kind: "web" | "mcp", baseUrl: string): string => {
 };
 
 // ---------------------------------------------------------------------------
-// Static file serving for the built web app
+// Static file serving from embedded web UI
 // ---------------------------------------------------------------------------
 
-const CONTENT_TYPES: Record<string, string> = {
-  ".html": "text/html",
-  ".js": "application/javascript",
-  ".css": "text/css",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-};
-
 const serveStatic = async (pathname: string): Promise<Response | null> => {
-  const filePath = join(WEB_DIST_DIR, pathname);
+  if (!embeddedWebUI) return null;
 
-  // Prevent directory traversal
-  if (!filePath.startsWith(WEB_DIST_DIR)) return null;
+  const key = pathname.replace(/^\//, "");
+  const match = embeddedWebUI[key] ?? embeddedWebUI["index.html"] ?? null;
+  if (!match) return null;
 
-  const file = Bun.file(filePath);
+  const file = Bun.file(match);
   if (await file.exists()) {
-    const ext = pathname.slice(pathname.lastIndexOf("."));
     return new Response(file, {
-      headers: { "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream" },
+      headers: { "content-type": file.type || "application/octet-stream" },
     });
   }
-
-  // SPA fallback — serve index.html for non-file paths
-  const index = Bun.file(join(WEB_DIST_DIR, "index.html"));
-  if (await index.exists()) {
-    return new Response(index, {
-      headers: { "content-type": "text/html" },
-    });
-  }
-
   return null;
 };
 
@@ -110,12 +91,10 @@ const runForegroundSession = (input: { kind: "web" | "mcp"; port: number }) =>
       async fetch(request) {
         const url = new URL(request.url);
 
-        // MCP
         if (url.pathname.startsWith("/mcp")) {
           return handlers.mcp.handleRequest(request);
         }
 
-        // API + docs
         if (
           url.pathname.startsWith("/v1/") ||
           url.pathname.startsWith("/docs") ||
@@ -124,7 +103,6 @@ const runForegroundSession = (input: { kind: "web" | "mcp"; port: number }) =>
           return handlers.api.handler(request);
         }
 
-        // Web UI static files
         const staticResponse = await serveStatic(url.pathname);
         if (staticResponse) return staticResponse;
 
