@@ -177,6 +177,25 @@ const serveStatic = async (pathname: string): Promise<Response | null> => {
 };
 
 // ---------------------------------------------------------------------------
+// Host-header allowlist — blocks DNS rebinding attacks
+// ---------------------------------------------------------------------------
+
+const ALLOWED_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+  "::1",
+]);
+
+const isAllowedHost = (request: Request): boolean => {
+  const host = request.headers.get("host");
+  if (!host) return true; // no host header (e.g. HTTP/1.0) — allow
+  // Strip port ("localhost:4788" → "localhost")
+  const hostname = host.replace(/:\d+$/, "");
+  return ALLOWED_HOSTS.has(hostname);
+};
+
+// ---------------------------------------------------------------------------
 // Foreground session — API + MCP + Web UI on one Bun.serve()
 // ---------------------------------------------------------------------------
 
@@ -184,36 +203,53 @@ const runForegroundSession = (input: { kind: "web" | "mcp"; port: number }) =>
   Effect.gen(function* () {
     const handlers = yield* Effect.promise(() => createServerHandlers());
 
-    const server = Bun.serve({
-      port: input.port,
-      async fetch(request) {
-        const url = new URL(request.url);
+    // Bind to loopback only — one server per address family so both
+    // "localhost" (which may resolve to ::1 on Windows) and 127.0.0.1 work,
+    // without exposing the server on the LAN.
+    const fetch = async (request: Request): Promise<Response> => {
+      if (!isAllowedHost(request)) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
-        if (url.pathname.startsWith("/mcp")) {
-          return handlers.mcp.handleRequest(request);
-        }
+      const url = new URL(request.url);
 
-        if (
-          url.pathname.startsWith("/v1/") ||
-          url.pathname.startsWith("/docs") ||
-          url.pathname === "/openapi.json"
-        ) {
-          return handlers.api.handler(request);
-        }
+      if (url.pathname.startsWith("/mcp")) {
+        return handlers.mcp.handleRequest(request);
+      }
 
-        const staticResponse = await serveStatic(url.pathname);
-        if (staticResponse) return staticResponse;
+      if (
+        url.pathname.startsWith("/v1/") ||
+        url.pathname.startsWith("/docs") ||
+        url.pathname === "/openapi.json"
+      ) {
+        return handlers.api.handler(request);
+      }
 
-        return new Response("Not Found", { status: 404 });
-      },
-    });
+      const staticResponse = await serveStatic(url.pathname);
+      if (staticResponse) return staticResponse;
+
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const serverV4 = Bun.serve({ port: input.port, hostname: "127.0.0.1", fetch });
+
+    // IPv6 loopback — may fail on systems without IPv6; that's fine.
+    let serverV6: ReturnType<typeof Bun.serve> | null = null;
+    try {
+      serverV6 = Bun.serve({ port: input.port, hostname: "::1", fetch });
+    } catch {
+      // IPv6 not available — continue with IPv4 only
+    }
+
+    const server = serverV4;
 
     const baseUrl = `http://localhost:${server.port}`;
     console.log(renderSessionSummary(input.kind, baseUrl));
 
     yield* waitForShutdownSignal();
 
-    server.stop(true);
+    serverV4.stop(true);
+    serverV6?.stop(true);
     yield* Effect.promise(() => handlers.mcp.close());
     yield* Effect.promise(() => handlers.api.dispose());
   });

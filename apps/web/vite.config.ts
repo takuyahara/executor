@@ -173,6 +173,9 @@ export default defineConfig({
             });
         });
 
+        // Host-header allowlist — blocks DNS rebinding attacks
+        const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
         server.middlewares.use(async (req, res, next) => {
           const url = req.url ?? "/";
 
@@ -183,6 +186,17 @@ export default defineConfig({
           const isMcp = url.startsWith("/mcp");
 
           if (!isApi && !isMcp) return next();
+
+          // Validate host header to prevent DNS rebinding
+          const host = req.headers.host;
+          if (host) {
+            const hostname = host.replace(/:\d+$/, "");
+            if (!ALLOWED_HOSTS.has(hostname)) {
+              res.statusCode = 403;
+              res.end("Forbidden");
+              return;
+            }
+          }
 
           const backend = await getBackend();
           const request = await toWebRequest(req);
