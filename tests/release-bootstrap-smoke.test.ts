@@ -208,6 +208,17 @@ describe("release bootstrap smoke", () => {
           const rootHtml = await rootResponse!.text();
           expect(rootHtml.toLowerCase()).toContain("<html");
 
+          const assetJs = rootHtml.match(/src="([^"]+\.js)"/)?.[1];
+          const assetCss = rootHtml.match(/href="([^"]+\.css)"/)?.[1];
+          expect(assetJs, rootHtml).toBeDefined();
+          expect(assetCss, rootHtml).toBeDefined();
+
+          const assetJsResponse = await fetch(`http://127.0.0.1:${webPort}${assetJs}`);
+          expect(assetJsResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
+
+          const assetCssResponse = await fetch(`http://127.0.0.1:${webPort}${assetCss}`);
+          expect(assetCssResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
+
           const docsResponse = await fetch(`http://127.0.0.1:${webPort}/docs`);
           expect(docsResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
 

@@ -151,12 +151,9 @@ const serveStatic = async (pathname: string): Promise<Response | null> => {
     const match = embeddedWebUI[key] ?? embeddedWebUI["index.html"] ?? null;
     if (!match) return null;
     const file = Bun.file(match);
-    if (await file.exists()) {
-      return new Response(file, {
-        headers: { "content-type": file.type || "application/octet-stream" },
-      });
-    }
-    return null;
+    return new Response(file, {
+      headers: { "content-type": file.type || "application/octet-stream" },
+    });
   }
 
   // Dev mode: serve from apps/web/dist on disk
