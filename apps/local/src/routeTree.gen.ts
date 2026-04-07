@@ -12,9 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ToolsRouteImport } from './routes/tools'
 import { Route as SecretsRouteImport } from './routes/secrets'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as V1SplatRouteImport } from './routes/v1.$'
 import { Route as SourcesNamespaceRouteImport } from './routes/sources.$namespace'
 import { Route as McpSplatRouteImport } from './routes/mcp.$'
+import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as SourcesAddPluginKeyRouteImport } from './routes/sources.add.$pluginKey'
 
 const ToolsRoute = ToolsRouteImport.update({
@@ -32,11 +32,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const V1SplatRoute = V1SplatRouteImport.update({
-  id: '/v1/$',
-  path: '/v1/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SourcesNamespaceRoute = SourcesNamespaceRouteImport.update({
   id: '/sources/$namespace',
   path: '/sources/$namespace',
@@ -45,6 +40,11 @@ const SourcesNamespaceRoute = SourcesNamespaceRouteImport.update({
 const McpSplatRoute = McpSplatRouteImport.update({
   id: '/mcp/$',
   path: '/mcp/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSplatRoute = ApiSplatRouteImport.update({
+  id: '/api/$',
+  path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SourcesAddPluginKeyRoute = SourcesAddPluginKeyRouteImport.update({
@@ -57,18 +57,18 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/secrets': typeof SecretsRoute
   '/tools': typeof ToolsRoute
+  '/api/$': typeof ApiSplatRoute
   '/mcp/$': typeof McpSplatRoute
   '/sources/$namespace': typeof SourcesNamespaceRoute
-  '/v1/$': typeof V1SplatRoute
   '/sources/add/$pluginKey': typeof SourcesAddPluginKeyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/secrets': typeof SecretsRoute
   '/tools': typeof ToolsRoute
+  '/api/$': typeof ApiSplatRoute
   '/mcp/$': typeof McpSplatRoute
   '/sources/$namespace': typeof SourcesNamespaceRoute
-  '/v1/$': typeof V1SplatRoute
   '/sources/add/$pluginKey': typeof SourcesAddPluginKeyRoute
 }
 export interface FileRoutesById {
@@ -76,9 +76,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/secrets': typeof SecretsRoute
   '/tools': typeof ToolsRoute
+  '/api/$': typeof ApiSplatRoute
   '/mcp/$': typeof McpSplatRoute
   '/sources/$namespace': typeof SourcesNamespaceRoute
-  '/v1/$': typeof V1SplatRoute
   '/sources/add/$pluginKey': typeof SourcesAddPluginKeyRoute
 }
 export interface FileRouteTypes {
@@ -87,27 +87,27 @@ export interface FileRouteTypes {
     | '/'
     | '/secrets'
     | '/tools'
+    | '/api/$'
     | '/mcp/$'
     | '/sources/$namespace'
-    | '/v1/$'
     | '/sources/add/$pluginKey'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/secrets'
     | '/tools'
+    | '/api/$'
     | '/mcp/$'
     | '/sources/$namespace'
-    | '/v1/$'
     | '/sources/add/$pluginKey'
   id:
     | '__root__'
     | '/'
     | '/secrets'
     | '/tools'
+    | '/api/$'
     | '/mcp/$'
     | '/sources/$namespace'
-    | '/v1/$'
     | '/sources/add/$pluginKey'
   fileRoutesById: FileRoutesById
 }
@@ -115,9 +115,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SecretsRoute: typeof SecretsRoute
   ToolsRoute: typeof ToolsRoute
+  ApiSplatRoute: typeof ApiSplatRoute
   McpSplatRoute: typeof McpSplatRoute
   SourcesNamespaceRoute: typeof SourcesNamespaceRoute
-  V1SplatRoute: typeof V1SplatRoute
   SourcesAddPluginKeyRoute: typeof SourcesAddPluginKeyRoute
 }
 
@@ -144,13 +144,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/v1/$': {
-      id: '/v1/$'
-      path: '/v1/$'
-      fullPath: '/v1/$'
-      preLoaderRoute: typeof V1SplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sources/$namespace': {
       id: '/sources/$namespace'
       path: '/sources/$namespace'
@@ -163,6 +156,13 @@ declare module '@tanstack/react-router' {
       path: '/mcp/$'
       fullPath: '/mcp/$'
       preLoaderRoute: typeof McpSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/$': {
+      id: '/api/$'
+      path: '/api/$'
+      fullPath: '/api/$'
+      preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sources/add/$pluginKey': {
@@ -179,9 +179,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SecretsRoute: SecretsRoute,
   ToolsRoute: ToolsRoute,
+  ApiSplatRoute: ApiSplatRoute,
   McpSplatRoute: McpSplatRoute,
   SourcesNamespaceRoute: SourcesNamespaceRoute,
-  V1SplatRoute: V1SplatRoute,
   SourcesAddPluginKeyRoute: SourcesAddPluginKeyRoute,
 }
 export const routeTree = rootRouteImport

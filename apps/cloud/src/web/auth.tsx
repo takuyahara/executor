@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react";
-import { useAtomValue, Result } from "@effect-atom/atom-react";
+import { useAtomMount, useAtomValue, Result } from "@effect-atom/atom-react";
 
 import { CloudApiClient } from "./client";
 
@@ -40,7 +40,8 @@ const AuthContext = createContext<AuthState>({ status: "loading" });
 
 export const useAuth = () => useContext(AuthContext);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+const AuthProviderClient = ({ children }: { children: React.ReactNode }) => {
+  useAtomMount(authAtom);
   const result = useAtomValue(authAtom);
 
   const state: AuthState = Result.match(result, {
@@ -54,4 +55,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   });
 
   return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
+};
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  if (typeof window === "undefined") {
+    return (
+      <AuthContext.Provider value={{ status: "loading" }}>
+        {children}
+      </AuthContext.Provider>
+    );
+  }
+  return <AuthProviderClient>{children}</AuthProviderClient>;
 };

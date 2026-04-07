@@ -1,9 +1,9 @@
-import { createCloudApiHandler } from "../api";
-import { getDb } from "../services/db";
+import { handleApiRequest as _handleApiRequest } from "../api";
 
-const handlerPromise = getDb().then((db) =>
-  createCloudApiHandler(db, process.env.ENCRYPTION_KEY ?? "local-dev-encryption-key"),
-);
-
-export const handleApiRequest = async (request: Request) =>
-  (await handlerPromise)(request);
+export const handleApiRequest = (request: Request) => {
+  // Strip /api prefix — route catch-all (api.$.ts) matches /api/*
+  // but Effect endpoints are defined without the prefix
+  const url = new URL(request.url);
+  url.pathname = url.pathname.replace(/^\/api/, "");
+  return _handleApiRequest(new Request(url, request));
+};

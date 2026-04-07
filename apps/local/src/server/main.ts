@@ -62,7 +62,7 @@ export const createServerHandlers = async (): Promise<ServerHandlers> => {
   );
 
   const api = HttpApiBuilder.toWebHandler(
-    HttpApiSwagger.layer().pipe(
+    HttpApiSwagger.layer({ path: "/docs" }).pipe(
       Layer.provideMerge(HttpApiBuilder.middlewareOpenApi()),
       Layer.provideMerge(LocalApiBase),
       Layer.provideMerge(pluginExtensions),
