@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext } from "react";
+import { useAtomValue, Result } from "@effect-atom/atom-react";
+
+import { CloudApiClient } from "./client";
+
+// ---------------------------------------------------------------------------
+// Types (from CloudAuthApi response schema)
+// ---------------------------------------------------------------------------
 
 type AuthUser = {
   id: string;
@@ -12,40 +19,39 @@ type AuthTeam = {
   name: string;
 };
 
+// ---------------------------------------------------------------------------
+// Auth atom — typed query against CloudAuthApi
+// ---------------------------------------------------------------------------
+
+export const authAtom = CloudApiClient.query("cloudAuth", "me", {
+  timeToLive: "5 minutes",
+});
+
+// ---------------------------------------------------------------------------
+// Provider + hook
+// ---------------------------------------------------------------------------
+
 type AuthState =
   | { status: "loading" }
   | { status: "unauthenticated" }
-  | { status: "authenticated"; user: AuthUser; team: AuthTeam };
+  | { status: "authenticated"; user: AuthUser; team: AuthTeam | null };
 
 const AuthContext = createContext<AuthState>({ status: "loading" });
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [state, setState] = useState<AuthState>({ status: "loading" });
+  const result = useAtomValue(authAtom);
 
-  useEffect(() => {
-    fetch("/auth/me")
-      .then((res) => {
-        if (!res.ok) {
-          setState({ status: "unauthenticated" });
-          return;
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (data?.user) {
-          setState({
-            status: "authenticated",
-            user: data.user,
-            team: data.team,
-          });
-        }
-      })
-      .catch(() => {
-        setState({ status: "unauthenticated" });
-      });
-  }, []);
+  const state: AuthState = Result.match(result, {
+    onInitial: () => ({ status: "loading" as const }),
+    onSuccess: ({ value }) => ({
+      status: "authenticated" as const,
+      user: value.user,
+      team: value.team,
+    }),
+    onFailure: () => ({ status: "unauthenticated" as const }),
+  });
 
   return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
 };

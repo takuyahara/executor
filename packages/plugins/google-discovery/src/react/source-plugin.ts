@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import type { SourcePlugin } from "@executor/react";
+import type { SourcePlugin } from "@executor/react/plugins/source-plugin";
 import { googleDiscoveryPresets } from "../sdk/presets";
 
 export const googleDiscoverySourcePlugin: SourcePlugin = {

@@ -1,7 +1,7 @@
 import { AtomHttpApi } from "@effect-atom/atom-react";
 import { FetchHttpClient } from "@effect/platform";
 import { addGroup } from "@executor/api";
-import { getBaseUrl } from "@executor/react";
+import { getBaseUrl } from "@executor/react/api/base-url";
 import { GoogleDiscoveryGroup } from "../api/group";
 
 const GoogleDiscoveryApi = addGroup(GoogleDiscoveryGroup);

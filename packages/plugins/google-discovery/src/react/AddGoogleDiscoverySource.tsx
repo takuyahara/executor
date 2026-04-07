@@ -1,25 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtomSet, useAtomValue, useAtomRefresh, Result } from "@effect-atom/atom-react";
 
-import {
-  useScope,
-  SecretPicker,
-  secretsAtom,
-  setSecret,
-  type SecretPickerSecret,
-} from "@executor/react";
+import { secretsAtom, setSecret } from "@executor/react/api/atoms";
+import { useScope } from "@executor/react/api/scope-context";
+import { SecretPicker, type SecretPickerSecret } from "@executor/react/plugins/secret-picker";
 import { SecretId } from "@executor/sdk";
-import { Badge } from "@executor/ui/components/badge";
-import { Button } from "@executor/ui/components/button";
+import { Badge } from "@executor/react/components/badge";
+import { Button } from "@executor/react/components/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@executor/ui/components/collapsible";
-import { Input } from "@executor/ui/components/input";
-import { Label } from "@executor/ui/components/label";
-import { RadioGroup, RadioGroupItem } from "@executor/ui/components/radio-group";
-import { Spinner } from "@executor/ui/components/spinner";
+} from "@executor/react/components/collapsible";
+import { Input } from "@executor/react/components/input";
+import { Label } from "@executor/react/components/label";
+import { RadioGroup, RadioGroupItem } from "@executor/react/components/radio-group";
+import { Spinner } from "@executor/react/components/spinner";
 import {
   addGoogleDiscoverySource,
   probeGoogleDiscovery,

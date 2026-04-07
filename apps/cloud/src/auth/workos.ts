@@ -48,6 +48,10 @@ export const authenticateWithCode = async (code: string) => {
  * Authenticate a request using the sealed session cookie.
  * Returns user info or null if not authenticated.
  */
+/**
+ * Authenticate a request using the sealed session cookie.
+ * Automatically refreshes expired tokens and returns a new cookie if needed.
+ */
 export const authenticateRequest = async (request: Request) => {
   const cookieHeader = request.headers.get("cookie");
   const sessionData = parseCookie(cookieHeader, COOKIE_NAME);
@@ -60,39 +64,38 @@ export const authenticateRequest = async (request: Request) => {
   });
 
   const result = await session.authenticate();
-  if (!result.authenticated) return null;
 
-  return {
-    userId: result.user.id,
-    email: result.user.email,
-    firstName: result.user.firstName,
-    lastName: result.user.lastName,
-    avatarUrl: result.user.profilePictureUrl,
-    sessionId: result.sessionId,
-  };
-};
+  if (result.authenticated) {
+    return {
+      userId: result.user.id,
+      email: result.user.email,
+      firstName: result.user.firstName,
+      lastName: result.user.lastName,
+      avatarUrl: result.user.profilePictureUrl,
+      sessionId: result.sessionId,
+      refreshedCookie: undefined as string | undefined,
+    };
+  }
 
-/**
- * Refresh the sealed session cookie. Returns new cookie value or null.
- */
-export const refreshSession = async (request: Request) => {
-  const cookieHeader = request.headers.get("cookie");
-  const sessionData = parseCookie(cookieHeader, COOKIE_NAME);
-  if (!sessionData) return null;
+  // Token expired — try refreshing
+  if (result.reason === "no_session_cookie_provided") return null;
 
-  const wos = getWorkOS();
-  const session = wos.userManagement.loadSealedSession({
-    sessionData,
-    cookiePassword: getCookiePassword(),
-  });
+  try {
+    const refreshed = await session.refresh();
+    if (!refreshed.authenticated || !refreshed.sealedSession) return null;
 
-  const result = await session.refresh();
-  if (!result.authenticated || !result.sealedSession) return null;
-
-  return {
-    sealedSession: result.sealedSession,
-    cookie: makeSessionCookie(result.sealedSession),
-  };
+    return {
+      userId: refreshed.user.id,
+      email: refreshed.user.email,
+      firstName: refreshed.user.firstName,
+      lastName: refreshed.user.lastName,
+      avatarUrl: refreshed.user.profilePictureUrl,
+      sessionId: refreshed.sessionId,
+      refreshedCookie: makeSessionCookie(refreshed.sealedSession),
+    };
+  } catch {
+    return null;
+  }
 };
 
 /**

@@ -1,12 +1,12 @@
 import { useReducer, useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect-atom/atom-react";
 
-import { useScope } from "@executor/react";
-import { Button } from "@executor/ui/components/button";
-import { Input } from "@executor/ui/components/input";
-import { Label } from "@executor/ui/components/label";
-import { Badge } from "@executor/ui/components/badge";
-import { Spinner } from "@executor/ui/components/spinner";
+import { useScope } from "@executor/react/api/scope-context";
+import { Button } from "@executor/react/components/button";
+import { Input } from "@executor/react/components/input";
+import { Label } from "@executor/react/components/label";
+import { Badge } from "@executor/react/components/badge";
+import { Spinner } from "@executor/react/components/spinner";
 import { probeMcpEndpoint, addMcpSource, startMcpOAuth } from "./atoms";
 import { mcpPresets, type McpPreset } from "../sdk/presets";
 

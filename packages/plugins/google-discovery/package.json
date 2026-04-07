@@ -24,8 +24,7 @@
     "react": "^19.1.0",
     "@effect-atom/atom-react": "^0.5.0",
     "@tanstack/react-router": "^1.168.10",
-    "@executor/react": "workspace:*",
-    "@executor/ui": "workspace:*"
+    "@executor/react": "workspace:*"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -39,16 +38,12 @@
     },
     "@executor/react": {
       "optional": true
-    },
-    "@executor/ui": {
-      "optional": true
     }
   },
   "devDependencies": {
     "@effect-atom/atom-react": "^0.5.0",
     "@effect/vitest": "catalog:",
     "@executor/react": "workspace:*",
-    "@executor/ui": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "^19.1.0",
     "bun-types": "catalog:",

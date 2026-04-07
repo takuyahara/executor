@@ -33,8 +33,7 @@
   "peerDependencies": {
     "react": ">=18",
     "@effect-atom/atom-react": "^0.5.0",
-    "@executor/react": "workspace:*",
-    "@executor/ui": "workspace:*"
+    "@executor/react": "workspace:*"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -44,9 +43,6 @@
       "optional": true
     },
     "@executor/react": {
-      "optional": true
-    },
-    "@executor/ui": {
       "optional": true
     }
   }

@@ -1,5 +1,5 @@
-import { Button } from "@executor/ui/components/button";
-import { Badge } from "@executor/ui/components/badge";
+import { Button } from "@executor/react/components/button";
+import { Badge } from "@executor/react/components/badge";
 
 // ---------------------------------------------------------------------------
 // Edit MCP Source — config view for an existing MCP source

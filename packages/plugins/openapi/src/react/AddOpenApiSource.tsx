@@ -2,22 +2,17 @@ import { useState, useEffect, useRef } from "react";
 import { useAtomSet, useAtomValue, useAtomRefresh, Result } from "@effect-atom/atom-react";
 import { Option } from "effect";
 
-import {
-  secretsAtom,
-  setSecret,
-  resolveSecret,
-  useScope,
-  SecretPicker,
-  type SecretPickerSecret,
-} from "@executor/react";
+import { secretsAtom, setSecret, resolveSecret } from "@executor/react/api/atoms";
+import { useScope } from "@executor/react/api/scope-context";
+import { SecretPicker, type SecretPickerSecret } from "@executor/react/plugins/secret-picker";
 import { SecretId } from "@executor/sdk";
-import { Button } from "@executor/ui/components/button";
-import { Input } from "@executor/ui/components/input";
-import { Label } from "@executor/ui/components/label";
-import { Textarea } from "@executor/ui/components/textarea";
-import { Badge } from "@executor/ui/components/badge";
-import { RadioGroup, RadioGroupItem } from "@executor/ui/components/radio-group";
-import { Spinner } from "@executor/ui/components/spinner";
+import { Button } from "@executor/react/components/button";
+import { Input } from "@executor/react/components/input";
+import { Label } from "@executor/react/components/label";
+import { Textarea } from "@executor/react/components/textarea";
+import { Badge } from "@executor/react/components/badge";
+import { RadioGroup, RadioGroupItem } from "@executor/react/components/radio-group";
+import { Spinner } from "@executor/react/components/spinner";
 import { previewOpenApiSpec, addOpenApiSpec } from "./atoms";
 import type { SpecPreview, HeaderPreset } from "../sdk/preview";
 import type { HeaderValue } from "../sdk/types";

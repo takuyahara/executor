@@ -26,8 +26,6 @@
     "@executor/plugin-keychain",
     "@executor/plugin-mcp",
     "@executor/plugin-onepassword",
-    "@executor/plugin-openapi",
-    "@executor/ui",
-    "@executor/marketing"
+    "@executor/plugin-openapi"
   ]
 }

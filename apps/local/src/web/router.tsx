@@ -3,12 +3,12 @@ import {
   createRootRoute,
   createRoute,
 } from "@tanstack/react-router";
-import { ExecutorProvider } from "@executor/react";
-import { ToolsPage } from "./pages/tools";
-import { SourcesPage } from "./pages/sources";
-import { SourcesAddPage } from "./pages/sources-add";
-import { SourceDetailPage } from "./pages/source-detail";
-import { SecretsPage } from "./pages/secrets";
+import { ExecutorProvider } from "@executor/react/api/provider";
+import { ToolsPage } from "@executor/react/pages/tools";
+import { SourcesPage } from "@executor/react/pages/sources";
+import { SourcesAddPage } from "@executor/react/pages/sources-add";
+import { SourceDetailPage } from "@executor/react/pages/source-detail";
+import { SecretsPage } from "@executor/react/pages/secrets";
 import { Shell } from "./shell";
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -10,11 +9,6 @@ export default defineConfig({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify("0.0.0"),
     "import.meta.env.VITE_GITHUB_URL": JSON.stringify("https://github.com/RhysSullivan/executor"),
-  },
-  resolve: {
-    alias: {
-      "@web": resolve(__dirname, "../local/src/web"),
-    },
   },
   server: {
     proxy: {

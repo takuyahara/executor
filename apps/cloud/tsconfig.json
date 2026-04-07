@@ -12,9 +12,6 @@
     "declarationMap": true,
     "sourceMap": true,
     "jsx": "react-jsx",
-    "paths": {
-      "@web/*": ["../local/src/web/*"]
-    },
     "plugins": [
       {
         "name": "@effect/language-service",

@@ -15,7 +15,6 @@
     "@executor/react": "workspace:*",
     "@executor/sdk": "workspace:*",
     "@executor/storage-postgres": "workspace:*",
-    "@executor/ui": "workspace:*",
     "@tanstack/react-router": "^1.168.10",
     "@workos-inc/node": "^7.0.0",
     "drizzle-orm": "catalog:",

@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import type { SourcePlugin } from "@executor/react";
+import type { SourcePlugin } from "@executor/react/plugins/source-plugin";
 import { mcpPresets } from "../sdk/presets";
 
 export const mcpSourcePlugin: SourcePlugin = {

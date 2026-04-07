@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Cloud API — core handlers from @executor/api + cloud-specific plugins
+// Cloud API — core handlers from @executor/api + cloud-specific plugins + auth
 // ---------------------------------------------------------------------------
 
 import {
@@ -20,16 +20,20 @@ import { GraphqlGroup, GraphqlExtensionService, GraphqlHandlers } from "@executo
 
 import { createTeamExecutor } from "./services/executor";
 import { authenticateRequest } from "./auth/workos";
+import { CloudAuthApi } from "./auth/api";
+import { CloudAuthHandlers } from "./auth/handlers";
+import { AuthContext, UserStoreService } from "./auth/context";
 import type { DrizzleDb } from "./services/db";
 
 // ---------------------------------------------------------------------------
-// Cloud API — core + cloud plugins (no onepassword)
+// Cloud API — core + cloud plugins + cloud auth (no onepassword)
 // ---------------------------------------------------------------------------
 
 const CloudApi = addGroup(OpenApiGroup)
   .add(McpGroup)
   .add(GoogleDiscoveryGroup)
-  .add(GraphqlGroup);
+  .add(GraphqlGroup)
+  .add(CloudAuthApi);
 
 const CloudApiBase = HttpApiBuilder.api(CloudApi).pipe(
   Layer.provide(CoreHandlers),
@@ -38,6 +42,7 @@ const CloudApiBase = HttpApiBuilder.api(CloudApi).pipe(
     McpHandlers,
     GoogleDiscoveryHandlers,
     GraphqlHandlers,
+    CloudAuthHandlers,
   )),
 );
 
@@ -96,13 +101,29 @@ export const createCloudApiHandler = (db: DrizzleDb, encryptionKey: string) => {
         Layer.provideMerge(pluginExtensions),
         Layer.provideMerge(Layer.succeed(ExecutorService, executor)),
         Layer.provideMerge(Layer.succeed(ExecutionEngineService, engine)),
+        Layer.provideMerge(Layer.succeed(AuthContext, {
+          userId: auth.userId,
+          email: auth.email,
+          teamId,
+          name: `${auth.firstName ?? ""} ${auth.lastName ?? ""}`.trim() || null,
+          avatarUrl: auth.avatarUrl,
+        })),
+        Layer.provideMerge(Layer.succeed(UserStoreService, userStore)),
         Layer.provideMerge(HttpServer.layerContext),
       ),
       { middleware: HttpMiddleware.logger },
     );
 
     try {
-      return await handler.handler(request);
+      const response = await handler.handler(request);
+
+      if (auth.refreshedCookie) {
+        const newResponse = new Response(response.body, response);
+        newResponse.headers.append("Set-Cookie", auth.refreshedCookie);
+        return newResponse;
+      }
+
+      return response;
     } finally {
       await Effect.runPromise(executor.close()).catch(() => undefined);
       handler.dispose();

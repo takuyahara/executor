@@ -1,4 +1,4 @@
-import { Badge } from "@executor/ui/components/badge";
+import { Badge } from "@executor/react/components/badge";
 
 // ---------------------------------------------------------------------------
 // MCP Source Summary — shown in the source list

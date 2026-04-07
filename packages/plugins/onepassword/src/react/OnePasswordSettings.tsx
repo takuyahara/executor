@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { useAtomSet, useAtomValue, useAtomRefresh } from "@effect-atom/atom-react";
 import { Result } from "@effect-atom/atom-react";
-import { useScope } from "@executor/react";
-import { Button } from "@executor/ui/components/button";
-import { Input } from "@executor/ui/components/input";
-import { Label } from "@executor/ui/components/label";
+import { useScope } from "@executor/react/api/scope-context";
+import { Button } from "@executor/react/components/button";
+import { Input } from "@executor/react/components/input";
+import { Label } from "@executor/react/components/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@executor/ui/components/select";
+} from "@executor/react/components/select";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "@executor/ui/components/dialog";
+} from "@executor/react/components/dialog";
 
 import {
   onepasswordConfigAtom,

@@ -1,15 +1,9 @@
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  useAtomRefresh,
-  useAtomValue,
-  Result,
-  sourcesAtom,
-  toolsAtom,
-  useScope,
-  useScopeInfo,
-} from "@executor/react";
-import { Button } from "@executor/ui/components/button";
+import { useAtomRefresh, useAtomValue, Result } from "@effect-atom/atom-react";
+import { sourcesAtom, toolsAtom } from "@executor/react/api/atoms";
+import { useScope, useScopeInfo } from "@executor/react/api/scope-context";
+import { Button } from "@executor/react/components/button";
 
 // ── Env ─────────────────────────────────────────────────────────────────
 

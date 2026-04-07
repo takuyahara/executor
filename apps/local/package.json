@@ -25,7 +25,6 @@
     "@executor/react": "workspace:*",
     "@executor/sdk": "workspace:*",
     "@executor/storage-file": "workspace:*",
-    "@executor/ui": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@shikijs/langs": "^4.0.2",
     "@shikijs/themes": "^4.0.2",

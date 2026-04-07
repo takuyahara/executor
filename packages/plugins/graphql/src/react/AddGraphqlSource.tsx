@@ -1,18 +1,14 @@
 import { useState } from "react";
 import { useAtomSet, useAtomValue, useAtomRefresh, Result } from "@effect-atom/atom-react";
 
-import {
-  secretsAtom,
-  setSecret,
-  useScope,
-  SecretPicker,
-  type SecretPickerSecret,
-} from "@executor/react";
+import { secretsAtom, setSecret } from "@executor/react/api/atoms";
+import { useScope } from "@executor/react/api/scope-context";
+import { SecretPicker, type SecretPickerSecret } from "@executor/react/plugins/secret-picker";
 import { SecretId } from "@executor/sdk";
-import { Button } from "@executor/ui/components/button";
-import { Input } from "@executor/ui/components/input";
-import { Label } from "@executor/ui/components/label";
-import { Spinner } from "@executor/ui/components/spinner";
+import { Button } from "@executor/react/components/button";
+import { Input } from "@executor/react/components/input";
+import { Label } from "@executor/react/components/label";
+import { Spinner } from "@executor/react/components/spinner";
 import { addGraphqlSource } from "./atoms";
 import type { HeaderValue } from "../sdk/types";
 
