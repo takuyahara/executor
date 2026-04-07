@@ -23,7 +23,7 @@ import { McpSourceHandlersLive } from "./handlers/mcp-source";
 import { GoogleDiscoveryHandlersLive } from "./handlers/google-discovery";
 import { OnePasswordHandlersLive } from "./handlers/onepassword";
 import { GraphqlHandlersLive } from "./handlers/graphql";
-import { ExecutorService, ExecutorServiceLayer, getExecutor, type ServerExecutor } from "./services/executor";
+import { ExecutorService, ExecutorServiceLayer, getExecutor, type ApiExecutor } from "./services/executor";
 import { ExecutionEngineService } from "./services/engine";
 import { createMcpRequestHandler, type McpRequestHandler } from "./mcp";
 
@@ -77,7 +77,7 @@ export type ServerHandlers = {
   readonly mcp: McpRequestHandler;
 };
 
-const createApiHandlerWithExecutor = (executor: ServerExecutor, engine: ReturnType<typeof createExecutionEngine>) =>
+const createApiHandlerWithExecutor = (executor: ApiExecutor, engine: ReturnType<typeof createExecutionEngine>) =>
   HttpApiBuilder.toWebHandler(
     HttpApiSwagger.layer().pipe(
       Layer.provideMerge(HttpApiBuilder.middlewareOpenApi()),
@@ -90,7 +90,7 @@ const createApiHandlerWithExecutor = (executor: ServerExecutor, engine: ReturnTy
   );
 
 export const createServerHandlersWithExecutor = async (
-  executor: ServerExecutor,
+  executor: ApiExecutor,
 ): Promise<ServerHandlers> => {
   const engine = createExecutionEngine({ executor });
   const api = createApiHandlerWithExecutor(executor, engine);

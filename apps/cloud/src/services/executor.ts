@@ -1,62 +1,31 @@
 // ---------------------------------------------------------------------------
-// Cloud ExecutorService — stateless, per-request executor from Postgres
+// Cloud executor — stateless, per-request, from Postgres
 // ---------------------------------------------------------------------------
 
-import { Context, Effect } from "effect";
+import { Effect } from "effect";
 
 import { createExecutor, scopeKv } from "@executor/sdk";
 import type { DrizzleDb } from "@executor/storage-postgres";
-import type { Executor, ExecutorPlugin } from "@executor/sdk";
 import { makePgConfig, makePgKv } from "@executor/storage-postgres";
 import {
   openApiPlugin,
   makeKvOperationStore,
-  type OpenApiPluginExtension,
 } from "@executor/plugin-openapi";
 import {
   mcpPlugin,
   makeKvBindingStore,
-  type McpPluginExtension,
 } from "@executor/plugin-mcp";
 import {
   googleDiscoveryPlugin,
   makeKvBindingStore as makeKvGoogleDiscoveryBindingStore,
-  type GoogleDiscoveryPluginExtension,
 } from "@executor/plugin-google-discovery";
 import {
   graphqlPlugin,
   makeKvOperationStore as makeKvGraphqlOperationStore,
-  type GraphqlPluginExtension,
 } from "@executor/plugin-graphql";
-import {
-  onepasswordPlugin,
-  type OnePasswordExtension,
-} from "@executor/plugin-onepassword";
+import { onepasswordPlugin } from "@executor/plugin-onepassword";
 
-import { AuthContext } from "../auth/context";
-
-// ---------------------------------------------------------------------------
-// Plugin types
-// ---------------------------------------------------------------------------
-
-type CloudPlugins = readonly [
-  ExecutorPlugin<"openapi", OpenApiPluginExtension>,
-  ExecutorPlugin<"mcp", McpPluginExtension>,
-  ExecutorPlugin<"googleDiscovery", GoogleDiscoveryPluginExtension>,
-  ExecutorPlugin<"graphql", GraphqlPluginExtension>,
-  ExecutorPlugin<"onepassword", OnePasswordExtension>,
-];
-
-export type CloudExecutor = Executor<CloudPlugins>;
-
-// ---------------------------------------------------------------------------
-// Service tag
-// ---------------------------------------------------------------------------
-
-export class ExecutorService extends Context.Tag("ExecutorService")<
-  ExecutorService,
-  CloudExecutor
->() {}
+import type { ApiPlugins } from "@executor/server";
 
 // ---------------------------------------------------------------------------
 // Create a fresh executor for a team (stateless, per-request)
@@ -90,7 +59,7 @@ export const createTeamExecutor = (
         onepasswordPlugin({
           kv: scopeKv(kv, "onepassword"),
         }),
-      ] as const,
+      ] as const satisfies ApiPlugins,
     });
 
     return yield* createExecutor(config);

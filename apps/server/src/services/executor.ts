@@ -41,17 +41,26 @@ import {
 
 import type { Executor, ExecutorPlugin } from "@executor/sdk";
 
-type ServerPlugins = readonly [
+// Plugins that have API routes — the minimum set ExecutorService must expose
+export type ApiPlugins = readonly [
   ExecutorPlugin<"openapi", OpenApiPluginExtension>,
   ExecutorPlugin<"mcp", McpPluginExtension>,
   ExecutorPlugin<"googleDiscovery", GoogleDiscoveryPluginExtension>,
   ExecutorPlugin<"graphql", GraphqlPluginExtension>,
-  ReturnType<typeof fileSecretsPlugin>,
   ExecutorPlugin<"onepassword", OnePasswordExtension>,
 ];
+
+type ServerPlugins = readonly [
+  ...ApiPlugins,
+  ReturnType<typeof fileSecretsPlugin>,
+];
 export type ServerExecutor = Executor<ServerPlugins>;
+
+// ExecutorService is typed to ApiPlugins so any executor with at least
+// those plugins can be provided (both local server and cloud)
+export type ApiExecutor = Executor<ApiPlugins>;
 export type ServerExecutorHandle = {
-  readonly executor: ServerExecutor;
+  readonly executor: ApiExecutor;
   readonly dispose: () => Promise<void>;
 };
 
@@ -61,7 +70,7 @@ export type ServerExecutorHandle = {
 
 export class ExecutorService extends Context.Tag("ExecutorService")<
   ExecutorService,
-  ServerExecutor
+  ApiExecutor
 >() {}
 
 // ---------------------------------------------------------------------------
@@ -101,7 +110,7 @@ const ExecutorLayer = Layer.effect(
     const configPath = join(cwd, "executor.jsonc");
     const fsLayer = NodeFileSystem.layer;
 
-    return yield* createExecutor({
+    return (yield* createExecutor({
       ...config,
       plugins: [
         openApiPlugin({
@@ -137,7 +146,7 @@ const ExecutorLayer = Layer.effect(
           kv: scopeKv(scopedKv, "onepassword"),
         }),
       ] as const,
-    });
+    })) as ApiExecutor;
   }),
 ).pipe(Layer.provide(SqliteClient.layer({ filename: DB_PATH })));
 
@@ -172,7 +181,7 @@ const loadSharedHandle = (): Promise<ServerExecutorHandle> => {
  * Get the shared executor instance. The ManagedRuntime keeps the SQLite
  * connection (and everything else) alive until the process exits.
  */
-export const getExecutor = (): Promise<ServerExecutor> =>
+export const getExecutor = (): Promise<ApiExecutor> =>
   loadSharedHandle().then((handle) => handle.executor);
 
 /**
@@ -190,7 +199,7 @@ export const disposeExecutor = async (): Promise<void> => {
 /**
  * Dispose and eagerly recreate the shared executor.
  */
-export const reloadExecutor = async (): Promise<ServerExecutor> => {
+export const reloadExecutor = async (): Promise<ApiExecutor> => {
   await disposeExecutor();
   return getExecutor();
 };

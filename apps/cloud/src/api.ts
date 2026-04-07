@@ -1,75 +1,25 @@
 // ---------------------------------------------------------------------------
-// Cloud API — core groups + plugin groups with auth middleware
+// Cloud API — reuses @executor/server's composed API layer
 // ---------------------------------------------------------------------------
 
 import {
   HttpApiBuilder,
-  HttpApiSwagger,
   HttpMiddleware,
   HttpServer,
-  HttpServerRequest,
 } from "@effect/platform";
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 
-import { addGroup } from "@executor/api";
 import { createExecutionEngine } from "@executor/execution";
-import { OpenApiGroup } from "@executor/plugin-openapi/api";
-import { McpGroup } from "@executor/plugin-mcp/api";
-import { GoogleDiscoveryGroup } from "@executor/plugin-google-discovery/api";
-import { OnePasswordGroup } from "@executor/plugin-onepassword/api";
-import { GraphqlGroup } from "@executor/plugin-graphql/api";
 import { makeUserStore } from "@executor/storage-postgres";
+import {
+  ApiLayer,
+  ExecutorService,
+  ExecutionEngineService,
+} from "@executor/server";
 
-import { ExecutorService, createTeamExecutor } from "./services/executor";
-import { ExecutionEngineService } from "./services/engine";
-import { AuthContext } from "./auth/context";
+import { createTeamExecutor } from "./services/executor";
 import { parseSessionId, validateSession } from "./auth/session";
 import type { DrizzleDb } from "./services/db";
-
-// ---------------------------------------------------------------------------
-// Composed API — core + plugin groups (same as apps/server)
-// ---------------------------------------------------------------------------
-
-const ExecutorApiWithPlugins = addGroup(OpenApiGroup)
-  .add(McpGroup)
-  .add(GoogleDiscoveryGroup)
-  .add(OnePasswordGroup)
-  .add(GraphqlGroup);
-
-// ---------------------------------------------------------------------------
-// Handler imports — reuse exact same handlers as apps/server
-// These all resolve ExecutorService from context, which we provide per-request
-// ---------------------------------------------------------------------------
-
-import { ToolsHandlers } from "./handlers/core/tools";
-import { SourcesHandlers } from "./handlers/core/sources";
-import { SecretsHandlers } from "./handlers/core/secrets";
-import { ExecutionsHandlers } from "./handlers/core/executions";
-import { ScopeHandlers } from "./handlers/core/scope";
-import { OpenApiHandlersLive } from "./handlers/core/openapi";
-import { McpSourceHandlersLive } from "./handlers/core/mcp-source";
-import { GoogleDiscoveryHandlersLive } from "./handlers/core/google-discovery";
-import { OnePasswordHandlersLive } from "./handlers/core/onepassword";
-import { GraphqlHandlersLive } from "./handlers/core/graphql";
-
-// ---------------------------------------------------------------------------
-// API Layer
-// ---------------------------------------------------------------------------
-
-const ApiBase = HttpApiBuilder.api(ExecutorApiWithPlugins).pipe(
-  Layer.provide([
-    ToolsHandlers,
-    SourcesHandlers,
-    SecretsHandlers,
-    ExecutionsHandlers,
-    ScopeHandlers,
-    OpenApiHandlersLive,
-    McpSourceHandlersLive,
-    GoogleDiscoveryHandlersLive,
-    OnePasswordHandlersLive,
-    GraphqlHandlersLive,
-  ]),
-);
 
 // ---------------------------------------------------------------------------
 // Create API handler with auth-based executor resolution
@@ -106,18 +56,9 @@ export const createCloudApiHandler = (db: DrizzleDb, encryptionKey: string) => {
     const engine = createExecutionEngine({ executor });
 
     const handler = HttpApiBuilder.toWebHandler(
-      HttpApiSwagger.layer().pipe(
-        Layer.provideMerge(HttpApiBuilder.middlewareOpenApi()),
-        Layer.provideMerge(ApiBase),
+      ApiLayer.pipe(
         Layer.provideMerge(Layer.succeed(ExecutorService, executor)),
         Layer.provideMerge(Layer.succeed(ExecutionEngineService, engine)),
-        Layer.provideMerge(
-          Layer.succeed(AuthContext, {
-            userId: session.userId,
-            teamId: session.teamId,
-            email: user.email,
-          }),
-        ),
         Layer.provideMerge(HttpServer.layerContext),
       ),
       { middleware: HttpMiddleware.logger },
