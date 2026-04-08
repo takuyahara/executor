@@ -122,6 +122,76 @@ const createEmbeddedWebUISource = async () => {
 };
 
 // ---------------------------------------------------------------------------
+// Bun.build plugin for @secure-exec bundling issues
+// ---------------------------------------------------------------------------
+
+/**
+ * Plugin that fixes two issues with @secure-exec in compiled binaries:
+ *
+ * 1. node-stdlib-browser / web-streams-polyfill eagerly call require.resolve()
+ *    at import time, which fails in bunfs. We stub these out since our code
+ *    never uses the polyfill functions.
+ *
+ * 2. bridge-loader.js reads bridge.js from disk via fs.readFileSync using
+ *    __dirname. In a compiled binary __dirname points into bunfs where the
+ *    file doesn't exist. We replace bridge-loader with a version that embeds
+ *    bridge.js content directly.
+ */
+const secureExecBundlePlugin = async (): Promise<import("bun").BunPlugin> => {
+  // Read files at build time so we can inline them into the compiled binary.
+  // bridge.js is loaded via fs.readFileSync at runtime, which fails in bunfs.
+  // bridgeAttach comes from @secure-exec/core's generated isolate-runtime.
+  const secureExecNodejs = join(
+    repoRoot,
+    "node_modules/.bun/@secure-exec+nodejs@0.2.1/node_modules/@secure-exec/nodejs",
+  );
+  const secureExecCore = join(
+    repoRoot,
+    "node_modules/.bun/@secure-exec+core@0.2.1/node_modules/@secure-exec/core",
+  );
+  const bridgeCode = await Bun.file(join(secureExecNodejs, "dist/bridge.js")).text();
+  const isolateRuntime = await import(join(secureExecCore, "dist/generated/isolate-runtime.js"));
+  const bridgeAttachCode = isolateRuntime.ISOLATE_RUNTIME_SOURCES.bridgeAttach;
+
+  return {
+    name: "secure-exec-bundle-fixes",
+    setup(build) {
+      // Stub polyfill modules that fail at import time in compiled binaries
+      const stubTargets = /node-stdlib-browser|web-streams-polyfill/;
+      build.onResolve({ filter: stubTargets }, (args) => ({
+        path: args.path,
+        namespace: "stub",
+      }));
+      build.onResolve({ filter: /polyfills/ }, (args) => {
+        if (args.importer.includes("secure-exec")) {
+          return { path: args.path, namespace: "stub" };
+        }
+      });
+      build.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
+        contents: `export default {}; export const POLYFILL_CODE_MAP = {}; export const bundlePolyfill = () => {}; export const getAvailableStdlib = () => []; export const hasPolyfill = () => false; export const prebundleAllPolyfills = () => ({});`,
+        loader: "js",
+      }));
+
+      // Replace bridge-loader with pre-read content
+      build.onResolve({ filter: /bridge-loader/ }, (args) => {
+        if (args.importer.includes("secure-exec")) {
+          return { path: args.path, namespace: "bridge" };
+        }
+      });
+      build.onLoad({ filter: /.*/, namespace: "bridge" }, () => ({
+        contents: `
+const bridgeCode = ${JSON.stringify(bridgeCode)};
+const bridgeAttachCode = ${JSON.stringify(bridgeAttachCode)};
+export function getRawBridgeCode() { return bridgeCode; }
+export function getBridgeAttachCode() { return bridgeAttachCode; }
+        `,
+        loader: "js",
+      }));
+    },
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Build platform binaries
 // ---------------------------------------------------------------------------
 
@@ -155,30 +225,7 @@ const buildBinaries = async (targets: Target[]) => {
         target: bunTarget(target) as any,
         outfile: join(binDir, binaryName(target)),
       },
-      plugins: [
-        {
-          name: "stub-node-stdlib-browser",
-          setup(build) {
-            // @secure-exec re-exports polyfill helpers that eagerly resolve
-            // Node stdlib browser polyfill paths at import time (e.g. require.resolve("assert/")),
-            // which fails in compiled binaries. Our code never uses these polyfills, so stub them out.
-            const stubTargets = /node-stdlib-browser|web-streams-polyfill/;
-            build.onResolve({ filter: stubTargets }, (args) => ({
-              path: args.path,
-              namespace: "stub",
-            }));
-            build.onResolve({ filter: /polyfills/ }, (args) => {
-              if (args.importer.includes("secure-exec")) {
-                return { path: args.path, namespace: "stub" };
-              }
-            });
-            build.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
-              contents: `export default {}; export const POLYFILL_CODE_MAP = {}; export const bundlePolyfill = () => {}; export const getAvailableStdlib = () => []; export const hasPolyfill = () => false; export const prebundleAllPolyfills = () => ({});`,
-              loader: "js",
-            }));
-          },
-        },
-      ],
+      plugins: [await secureExecBundlePlugin()],
     });
 
     // Copy QuickJS WASM next to binary — loaded at runtime by the server
