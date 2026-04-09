@@ -30,9 +30,9 @@ const marketingMiddleware = createMiddleware({ type: "request" }).server(
     const marketing = await getMarketingWorker();
     if (!marketing) return next();
 
-    // Rewrite path: if user hits "/" without auth, serve marketing homepage
     const url = new URL(request.url);
-    if (pathname === "/") {
+    // Rewrite /home to / so marketing worker serves its homepage
+    if (pathname === "/home") {
       url.pathname = "/";
     }
     return marketing.fetch(new Request(url, request));
